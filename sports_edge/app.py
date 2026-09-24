@@ -179,7 +179,10 @@ def infer_market_sport(market: dict) -> str:
 def filter_markets(markets: list[dict], sport: str) -> list[dict]:
     if sport == "All":
         return markets
-    return [m for m in markets if infer_market_sport(m) in (sport, "Sports")]
+    # Qualification must know the Kalshi market belongs to the same sport.
+    # Unknown/generic markets stay visible in Market Tape but never enter the
+    # cross-source edge matcher.
+    return [m for m in markets if infer_market_sport(m) == sport]
 
 
 def odds_keys_for_sport(sport: str, active_sports: list[dict]) -> list[tuple[str, str]]:
@@ -371,7 +374,7 @@ elif view == "Underdog Radar":
     if underdogs:
         st.dataframe(signal_table(underdogs[:40]), use_container_width=True, hide_index=True)
     else:
-        raw = unverified_underdog_watchlist([m for m in markets if infer_market_sport(m) in ("Tennis", "Sports")])
+        raw = unverified_underdog_watchlist([m for m in markets if infer_market_sport(m) == "Tennis"])
         if raw:
             df = pd.DataFrame(
                 [
