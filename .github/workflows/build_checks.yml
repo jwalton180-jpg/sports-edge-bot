@@ -13,3 +13,25 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - run: pytest -q
       - run: python -m compileall -q sports_edge app.py launch_on_demand.py
+      - name: Public live-source smoke test
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from sports_edge.data.kalshi import KalshiPublicClient
+          from sports_edge.data.mlb import MLBClient
+          from sports_edge.data.nfl import NFLClient
+
+          k = KalshiPublicClient()
+          status = k.exchange_status()
+          markets = k.markets(status="open", limit=2)
+          assert status.status_code == 200
+          assert markets.status_code == 200
+          assert isinstance(markets.data, dict)
+
+          day = datetime.now(timezone.utc).date()
+          mlb = MLBClient().schedule(day)
+          nfl = NFLClient().scoreboard()
+          assert mlb.status_code == 200
+          assert nfl.status_code == 200
+          print("Kalshi, MLB and NFL public source smoke checks passed")
+          PY
