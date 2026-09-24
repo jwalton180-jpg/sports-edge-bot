@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets
+.env
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# Disposable runtime/session data
+.cache/
+cache/
+runtime/
+session_cache/
+*.log
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
