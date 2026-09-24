@@ -1,4 +1,4 @@
-from sports_edge.app import main
+import runpy
 
-if __name__ == "__main__":
-    main()
+# Execute the package UI module as the Streamlit script on every rerun.
+runpy.run_module("sports_edge.app", run_name="__main__")
