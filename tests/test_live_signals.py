@@ -39,10 +39,17 @@ def event(a="Kansas City Chiefs", b="Buffalo Bills", prices=(-150, 130), count=4
     }
 
 
-def market(price=0.35, title="Will the Kansas City Chiefs win?", yes="Kansas City Chiefs", no_price=None):
+def market(
+    price=0.35,
+    title="Will the Kansas City Chiefs win?",
+    yes="Kansas City Chiefs",
+    no_price=None,
+    event_title="Buffalo Bills @ Kansas City Chiefs",
+):
     row = {
         "ticker": "KXNFL-TEST-YES",
         "title": title,
+        "event_title": event_title,
         "yes_sub_title": yes,
         "yes_ask_dollars": price,
         "volume": 1000,
@@ -80,7 +87,7 @@ def test_market_match_requires_unambiguous_participant():
     assert matched is not None
     assert matched.selection == "Kansas City Chiefs"
 
-    ambiguous = market(title="Who wins the game?", yes="")
+    ambiguous = market(title="Who wins the game?", yes="", event_title="")
     assert match_market_to_event(ambiguous, [event()], now=NOW) is None
 
 
@@ -102,7 +109,12 @@ def test_live_edge_qualifies_large_fresh_consensus_gap():
 
 def test_underdog_band_and_gate():
     dog_event = event(a="Player Alpha", b="Player Beta", prices=(-250, 210), count=4)
-    dog_market = market(price=0.10, title="Will Player Alpha win?", yes="Player Alpha")
+    dog_market = market(
+        price=0.10,
+        title="Will Player Alpha win?",
+        yes="Player Alpha",
+        event_title="Player Beta @ Player Alpha",
+    )
     rows = build_underdog_signals([dog_market], [dog_event], sport="Tennis", now=NOW)
     assert len(rows) == 1
     assert rows[0].market_probability == 0.10
@@ -178,3 +190,28 @@ def test_parlay_preset_filters_market_family():
     p = build_parlay_research([hit, td], preset="MLB Hits", leg_count=2)
     assert len(p.legs) == 1
     assert p.legs[0].sport == "MLB"
+
+
+
+def test_pirates_movie_market_does_not_match_pittsburgh_pirates():
+    baseball_event = event(a="Pittsburgh Pirates", b="Chicago Cubs", prices=(120, -140), count=4)
+    movie_market = market(
+        price=0.20,
+        title="Will Johnny Depp be cast in the next Pirates of the Caribbean movie?",
+        yes="Pittsburgh Pirates",
+        event_title="Johnny Depp casting market",
+    )
+    assert match_market_to_event(movie_market, [baseball_event], now=NOW) is None
+    assert build_live_signals([movie_market], [baseball_event], sport="MLB", now=NOW) == []
+
+
+def test_single_team_name_without_opponent_fails_event_identity_gate():
+    panthers_event = event(a="Carolina Panthers", b="Cleveland Browns", prices=(110, -130), count=4)
+    unrelated_market = market(
+        price=0.25,
+        title="Miami Pro Basketball team, Miami Pro Football team",
+        yes="Carolina Panthers",
+        event_title="Miami sports teams",
+    )
+    assert match_market_to_event(unrelated_market, [panthers_event], now=NOW) is None
+    assert build_live_signals([unrelated_market], [panthers_event], sport="NFL", now=NOW) == []
