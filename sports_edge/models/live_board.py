@@ -17,6 +17,7 @@ class LiveSignal:
     event_id: str
     event_title: str
     market: str
+    side: str
     selection: str
     market_probability: float
     fair_probability: float
@@ -32,8 +33,14 @@ class LiveSignal:
     warnings: tuple[str, ...]
 
 
-def market_yes_probability(market: dict) -> float | None:
-    for key in ("yes_ask_dollars", "yes_ask", "last_price_dollars", "last_price"):
+def market_side_probability(market: dict, side: str) -> float | None:
+    side = side.upper()
+    keys = (
+        ("yes_ask_dollars", "yes_ask", "last_price_dollars", "last_price")
+        if side == "YES"
+        else ("no_ask_dollars", "no_ask")
+    )
+    for key in keys:
         raw = market.get(key)
         if raw is None:
             continue
@@ -46,6 +53,10 @@ def market_yes_probability(market: dict) -> float | None:
         if 0.0 < value < 1.0:
             return clamp(value)
     return None
+
+
+def market_yes_probability(market: dict) -> float | None:
+    return market_side_probability(market, "YES")
 
 
 def build_live_signals(
@@ -63,75 +74,80 @@ def build_live_signals(
     rows: list[LiveSignal] = []
 
     for market in markets:
-        market_p = market_yes_probability(market)
-        if market_p is None:
-            continue
         match = match_market_to_event(market, odds_events, now=now, max_age_s=max_source_age_s)
         if match is None:
             continue
 
         q = match.quote
         model_confidence = clamp(match.match_confidence * min(1.0, q.book_count / 4.0))
-        reasons = [
+        shared_reasons = [
             f"No-vig consensus from {q.book_count} fresh sportsbook source(s)",
             f"Matched to {match.event_title or match.event_id}",
         ]
-        warnings = list(q.warnings)
+        shared_warnings = list(q.warnings)
         if q.median_age_s > max_source_age_s:
-            warnings.append("Sportsbook source stale")
+            shared_warnings.append("Sportsbook source stale")
 
-        card = grade_edge(
-            key=str(market.get("ticker") or ""),
-            sport=sport,
-            market=str(market.get("title") or market.get("subtitle") or market.get("ticker") or ""),
-            selection=match.selection,
-            fair_p=q.fair_probability,
-            market_p=market_p,
-            model_confidence=model_confidence,
-            data_quality=q.data_quality,
-            reasons=reasons,
-            warnings=warnings,
-            min_edge_points=min_edge_points,
-        )
-        surfaced = should_surface(
-            card,
-            min_edge_points=min_edge_points,
-            min_confidence=min_confidence,
-            min_data_quality=min_data_quality,
-        ) and not q.warnings and q.median_age_s <= max_source_age_s
+        for side in ("YES", "NO"):
+            market_p = market_side_probability(market, side)
+            if market_p is None:
+                continue
+            fair_p = q.fair_probability if side == "YES" else 1.0 - q.fair_probability
+            selection = match.selection if side == "YES" else (match.opposite_selection or f"NO — {match.selection}")
+            reasons = [*shared_reasons, f"{side} side evaluated independently"]
 
-        if surfaced:
-            status = "QUALIFIED"
-        elif card.edge_points > 0:
-            status = "WATCH"
-        else:
-            status = "PASS"
-
-        rows.append(
-            LiveSignal(
-                ticker=card.key,
+            card = grade_edge(
+                key=str(market.get("ticker") or ""),
                 sport=sport,
-                event_id=match.event_id,
-                event_title=match.event_title,
-                market=card.market,
-                selection=card.selection,
-                market_probability=card.market_probability,
-                fair_probability=card.fair_probability,
-                edge_points=card.edge_points,
-                ev_per_contract=card.ev_per_dollar,
-                confidence=card.confidence,
-                data_quality=card.data_quality,
-                book_count=q.book_count,
-                source_age_s=q.median_age_s,
-                status=status,
-                tier="EDGE",
-                reasons=tuple(card.reasons),
-                warnings=tuple(card.warnings),
+                market=str(market.get("title") or market.get("subtitle") or market.get("ticker") or ""),
+                selection=selection,
+                fair_p=fair_p,
+                market_p=market_p,
+                model_confidence=model_confidence,
+                data_quality=q.data_quality,
+                reasons=reasons,
+                warnings=shared_warnings,
+                min_edge_points=min_edge_points,
             )
-        )
+            surfaced = should_surface(
+                card,
+                min_edge_points=min_edge_points,
+                min_confidence=min_confidence,
+                min_data_quality=min_data_quality,
+            ) and not q.warnings and q.median_age_s <= max_source_age_s
+
+            if surfaced:
+                status = "QUALIFIED"
+            elif card.edge_points > 0:
+                status = "WATCH"
+            else:
+                status = "PASS"
+
+            rows.append(
+                LiveSignal(
+                    ticker=card.key,
+                    sport=sport,
+                    event_id=match.event_id,
+                    event_title=match.event_title,
+                    market=card.market,
+                    side=side,
+                    selection=card.selection,
+                    market_probability=card.market_probability,
+                    fair_probability=card.fair_probability,
+                    edge_points=card.edge_points,
+                    ev_per_contract=card.ev_per_dollar,
+                    confidence=card.confidence,
+                    data_quality=card.data_quality,
+                    book_count=q.book_count,
+                    source_age_s=q.median_age_s,
+                    status=status,
+                    tier="EDGE",
+                    reasons=tuple(card.reasons),
+                    warnings=tuple(card.warnings),
+                )
+            )
 
     return sorted(rows, key=lambda x: (x.status == "QUALIFIED", x.edge_points, x.confidence), reverse=True)
-
 
 def build_underdog_signals(
     markets: list[dict],
@@ -173,6 +189,7 @@ def build_underdog_signals(
                 event_id=row.event_id,
                 event_title=row.event_title,
                 market=row.market,
+                side=row.side,
                 selection=row.selection,
                 market_probability=row.market_probability,
                 fair_probability=row.fair_probability,
