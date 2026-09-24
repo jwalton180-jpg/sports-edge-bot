@@ -32,13 +32,25 @@ jobs:
           mlb = MLBClient().schedule(day)
           assert mlb.status_code == 200
 
-          r = requests.get("https://cdn.espn.com/core/nfl/scoreboard", params={"xhr":"1"}, timeout=10)
+          r = requests.get(
+              "https://cdn.espn.com/core/nfl/scoreboard",
+              params={"xhr": "1"},
+              timeout=10,
+          )
           print("NFL CDN status", r.status_code)
-          if r.ok:
-              data = r.json()
-              print("NFL CDN keys", sorted(data.keys())[:20])\n              content = data.get("content")\n              print("NFL CDN content type", type(content).__name__)\n              if isinstance(content, dict):\n                  print("NFL CDN content keys", sorted(content.keys())[:30])\n                  for k, v in list(content.items())[:12]:\n                      if isinstance(v, dict): print("NEST", k, sorted(v.keys())[:20])\n                      elif isinstance(v, list): print("LIST", k, len(v), type(v[0]).__name__ if v else "empty")
-          else:
-              print("NFL CDN body", r.text[:200])
           assert r.ok
+          data = r.json()
+          print("NFL CDN keys", sorted(data.keys())[:20])
+          content = data.get("content")
+          print("NFL CDN content type", type(content).__name__)
+          if isinstance(content, dict):
+              print("NFL CDN content keys", sorted(content.keys())[:30])
+              for key, value in list(content.items())[:12]:
+                  if isinstance(value, dict):
+                      print("NEST", key, sorted(value.keys())[:20])
+                  elif isinstance(value, list):
+                      first_type = type(value[0]).__name__ if value else "empty"
+                      print("LIST", key, len(value), first_type)
+
           print("Kalshi, MLB and NFL CDN public source smoke checks passed")
           PY
