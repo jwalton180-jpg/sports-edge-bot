@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from sports_edge.models.consensus import consensus_from_event, match_market_to_event
 from sports_edge.models.live_board import build_live_signals, build_underdog_signals, market_yes_probability
-from sports_edge.models.parlay import build_parlay_research
+from sports_edge.models.parlay import build_parlay_research, kalshi_copy_ticket
 from sports_edge.models.live_board import LiveSignal
 
 
@@ -39,14 +39,17 @@ def event(a="Kansas City Chiefs", b="Buffalo Bills", prices=(-150, 130), count=4
     }
 
 
-def market(price=0.35, title="Will the Kansas City Chiefs win?", yes="Kansas City Chiefs"):
-    return {
+def market(price=0.35, title="Will the Kansas City Chiefs win?", yes="Kansas City Chiefs", no_price=None):
+    row = {
         "ticker": "KXNFL-TEST-YES",
         "title": title,
         "yes_sub_title": yes,
         "yes_ask_dollars": price,
         "volume": 1000,
     }
+    if no_price is not None:
+        row["no_ask_dollars"] = no_price
+    return row
 
 
 def test_consensus_removes_vig_and_uses_multiple_books():
@@ -148,3 +151,30 @@ def test_parlay_builder_deduplicates_events_and_fails_closed_on_short_pool():
 
     longshot = build_parlay_research(rows, mode="longshot")
     assert any("Need at least 5" in warning for warning in longshot.warnings)
+
+
+
+def test_live_edge_scores_no_side_when_no_ask_present():
+    rows = build_live_signals([market(price=0.70, no_price=0.22)], [event()], sport="NFL", now=NOW)
+    sides = {row.side: row for row in rows}
+    assert {"YES", "NO"} <= set(sides)
+    assert sides["NO"].selection == "Buffalo Bills"
+    assert sides["NO"].market_probability == 0.22
+
+
+def test_copy_ticket_contains_ticker_side_and_reference_price():
+    row = signal("event-a", "KXNFL-ABC", fair=0.65, market_p=0.50)
+    ticket = kalshi_copy_ticket([row])
+    assert "KXNFL-ABC" in ticket
+    assert "| YES |" in ticket
+    assert "reference 50¢" in ticket
+
+
+def test_parlay_preset_filters_market_family():
+    hit = signal("event-a", "MLB-HIT", sport="MLB")
+    hit = LiveSignal(**{**hit.__dict__, "market": "Will Player A record a hit?"})
+    td = signal("event-b", "NFL-TD", sport="NFL")
+    td = LiveSignal(**{**td.__dict__, "market": "Will Player B score a touchdown?"})
+    p = build_parlay_research([hit, td], preset="MLB Hits", leg_count=2)
+    assert len(p.legs) == 1
+    assert p.legs[0].sport == "MLB"
