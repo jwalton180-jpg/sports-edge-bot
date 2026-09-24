@@ -18,7 +18,7 @@ from sports_edge.models.live_board import (
     market_yes_probability,
     unverified_underdog_watchlist,
 )
-from sports_edge.models.parlay import build_parlay_research
+from sports_edge.models.parlay import PRESETS, build_parlay_research, kalshi_copy_ticket
 
 st.set_page_config(page_title="Sports Edge", page_icon="◈", layout="wide")
 
@@ -250,6 +250,7 @@ def signal_table(signals: list[LiveSignal]) -> pd.DataFrame:
             {
                 "Status": s.status,
                 "Sport": s.sport,
+                "Side": s.side,
                 "Selection": s.selection,
                 "Market": s.market,
                 "Kalshi": f"{s.market_probability:.1%}",
@@ -341,12 +342,14 @@ elif view == "Edge Board":
             with st.expander(f"{s.status} · {s.selection} · {s.edge_points:+.1f} pp"):
                 st.write(f"**Market:** {s.market}")
                 st.write(f"**Event:** {s.event_title or s.event_id}")
-                st.write(f"**Kalshi:** {s.market_probability:.1%} · **No-vig fair:** {s.fair_probability:.1%}")
+                st.write(f"**Kalshi side:** {s.side} · **price:** {s.market_probability:.1%} · **No-vig fair:** {s.fair_probability:.1%}")
                 st.write(f"**Fresh books:** {s.book_count} · **Consensus age:** {s.source_age_s:.0f}s · **Data quality:** {s.data_quality:.0%}")
                 if s.reasons:
                     st.caption("Evidence: " + " · ".join(s.reasons))
                 if s.warnings:
                     st.warning("Gate warnings: " + " · ".join(s.warnings))
+                st.caption("Manual Kalshi entry — tap the copy icon, then search the ticker in Kalshi and recheck the live price.")
+                st.code(kalshi_copy_ticket([s]), language=None)
 
 elif view == "Underdog Radar":
     st.header("Tennis Underdog Radar")
@@ -385,8 +388,17 @@ elif view == "Parlay Lab":
         unsafe_allow_html=True,
     )
     mode_label = st.selectbox("Builder", ["High-Confidence Builder", "Longshot Lab (5+ legs)"])
+    preset = st.selectbox(
+        "Parlay type",
+        PRESETS,
+        help="Choose MLB hits/HR/K, NFL passing/rushing/receiving/TD/game markets, or mix qualified sports.",
+    )
     mode = "longshot" if mode_label.startswith("Longshot") else "high_confidence"
-    parlay = build_parlay_research(signals, mode=mode)
+    min_legs = 5 if mode == "longshot" else 2
+    default_legs = 6 if mode == "longshot" else 4
+    max_legs = 10 if mode == "longshot" else 8
+    leg_count = st.slider("Target legs", min_value=min_legs, max_value=max_legs, value=default_legs)
+    parlay = build_parlay_research(signals, mode=mode, preset=preset, leg_count=leg_count)
 
     p1, p2 = st.columns(2)
     p1.metric("Qualified legs", len(parlay.legs))
@@ -397,6 +409,9 @@ elif view == "Parlay Lab":
 
     if parlay.legs:
         st.dataframe(signal_table(list(parlay.legs)), use_container_width=True, hide_index=True)
+        st.markdown("### Copy to Kalshi")
+        st.caption("This is a manual-entry slip, not an order. Tap the code-block copy icon, paste/search each ticker in Kalshi, and recheck the live price before entering anything.")
+        st.code(kalshi_copy_ticket(parlay.legs), language=None)
     if parlay.warnings:
         st.warning(" · ".join(parlay.warnings))
     if not parlay.legs:
