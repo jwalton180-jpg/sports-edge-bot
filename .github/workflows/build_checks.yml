@@ -36,7 +36,7 @@ jobs:
           print("NFL CDN status", r.status_code)
           if r.ok:
               data = r.json()
-              print("NFL CDN keys", sorted(data.keys())[:20])
+              print("NFL CDN keys", sorted(data.keys())[:20])\n              content = data.get("content")\n              print("NFL CDN content type", type(content).__name__)\n              if isinstance(content, dict):\n                  print("NFL CDN content keys", sorted(content.keys())[:30])\n                  for k, v in list(content.items())[:12]:\n                      if isinstance(v, dict): print("NEST", k, sorted(v.keys())[:20])\n                      elif isinstance(v, list): print("LIST", k, len(v), type(v[0]).__name__ if v else "empty")
           else:
               print("NFL CDN body", r.text[:200])
           assert r.ok
