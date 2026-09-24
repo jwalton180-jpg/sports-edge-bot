@@ -39,3 +39,20 @@ jobs:
           print("NFL source", nfl.data.get("_source", "espn_site"))
           print("Kalshi, MLB and NFL public source smoke checks passed")
           PY
+
+      - name: Streamlit boot smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          streamlit run app.py --server.headless true --server.port 8501 > /tmp/sports-edge-streamlit.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health >/tmp/health.txt; then
+              cat /tmp/health.txt
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/sports-edge-streamlit.log
+          exit 1
