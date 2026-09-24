@@ -117,6 +117,7 @@ def signal(event_id, ticker, fair=0.65, market_p=0.50, sport="NFL"):
         event_id=event_id,
         event_title=event_id,
         market=ticker,
+        side="YES",
         selection=ticker,
         market_probability=market_p,
         fair_probability=fair,
