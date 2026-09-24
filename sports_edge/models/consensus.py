@@ -27,6 +27,7 @@ class MarketConsensusMatch:
     event_id: str
     event_title: str
     selection: str
+    opposite_selection: str | None
     quote: ConsensusQuote
     match_confidence: float
 
@@ -227,10 +228,12 @@ def match_market_to_event(
             continue
 
         event_title = f"{event.get('away_team', '')} @ {event.get('home_team', '')}".strip(" @")
+        opposite = next((name for name in selections if name != chosen), None)
         candidate = MarketConsensusMatch(
             event_id=str(event.get("id") or ""),
             event_title=event_title,
             selection=chosen,
+            opposite_selection=opposite,
             quote=consensus[chosen],
             match_confidence=clamp(confidence),
         )
