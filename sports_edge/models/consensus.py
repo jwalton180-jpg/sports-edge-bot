@@ -56,12 +56,19 @@ def _aliases(name: str) -> tuple[str, ...]:
         return ()
     parts = normalized.split()
     aliases = {normalized}
-    if len(parts) >= 2 and len(parts[-1]) >= 5:
-        aliases.add(parts[-1])
+
+    # Safer shortened forms: require at least two tokens. A bare nickname such
+    # as "Pirates" or "Panthers" is too collision-prone for cross-source
+    # identity resolution.
     if len(parts) >= 3:
         last_two = " ".join(parts[-2:])
         if len(last_two) >= 8:
             aliases.add(last_two)
+    if len(parts) >= 2:
+        first_last = f"{parts[0]} {parts[-1]}"
+        if len(first_last) >= 8:
+            aliases.add(first_last)
+
     return tuple(sorted(aliases, key=len, reverse=True))
 
 
@@ -79,6 +86,46 @@ def _name_score(name: str, text: str) -> float:
         if re.search(rf"\b{re.escape(alias)}\b", hay):
             return 0.82
     return 0.0
+
+
+def _event_context_text(market: dict) -> str:
+    return " ".join(
+        str(market.get(key) or "")
+        for key in (
+            "title",
+            "subtitle",
+            "event_title",
+            "yes_sub_title",
+            "yes_title",
+            "yes_label",
+            "no_sub_title",
+            "no_title",
+            "no_label",
+            "ticker",
+            "event_ticker",
+            "series_ticker",
+        )
+    )
+
+
+def _event_identity_score(market: dict, event: dict) -> float:
+    """Require both external-event participants in the Kalshi event context.
+
+    This prevents cross-domain nickname collisions such as Pittsburgh Pirates
+    matching a Pirates-of-the-Caribbean entertainment market.
+    """
+    home = str(event.get("home_team") or "").strip()
+    away = str(event.get("away_team") or "").strip()
+    if not home or not away:
+        return 0.0
+
+    context = _event_context_text(market)
+    home_score = _name_score(home, context)
+    away_score = _name_score(away, context)
+
+    if home_score <= 0 or away_score <= 0:
+        return 0.0
+    return min(home_score, away_score)
 
 
 def _fresh_age_seconds(last_update: Any, now: datetime) -> float:
@@ -203,6 +250,10 @@ def match_market_to_event(
 
     best: MarketConsensusMatch | None = None
     for event in odds_events:
+        identity_score = _event_identity_score(market, event)
+        if identity_score <= 0:
+            continue
+
         consensus = consensus_from_event(event, now=now, max_age_s=max_age_s)
         if not consensus:
             continue
@@ -235,7 +286,7 @@ def match_market_to_event(
             selection=chosen,
             opposite_selection=opposite,
             quote=consensus[chosen],
-            match_confidence=clamp(confidence),
+            match_confidence=clamp(confidence * identity_score),
         )
         if best is None or candidate.match_confidence > best.match_confidence:
             best = candidate
