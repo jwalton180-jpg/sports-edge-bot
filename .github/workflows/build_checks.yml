@@ -17,9 +17,9 @@ jobs:
         run: |
           python - <<'PY'
           from datetime import datetime, timezone
-          import requests
           from sports_edge.data.kalshi import KalshiPublicClient
           from sports_edge.data.mlb import MLBClient
+          from sports_edge.data.nfl import NFLClient
 
           k = KalshiPublicClient()
           status = k.exchange_status()
@@ -32,25 +32,10 @@ jobs:
           mlb = MLBClient().schedule(day)
           assert mlb.status_code == 200
 
-          r = requests.get(
-              "https://cdn.espn.com/core/nfl/scoreboard",
-              params={"xhr": "1"},
-              timeout=10,
-          )
-          print("NFL CDN status", r.status_code)
-          assert r.ok
-          data = r.json()
-          print("NFL CDN keys", sorted(data.keys())[:20])
-          content = data.get("content")
-          print("NFL CDN content type", type(content).__name__)
-          if isinstance(content, dict):
-              print("NFL CDN content keys", sorted(content.keys())[:30])
-              for key, value in list(content.items())[:12]:
-                  if isinstance(value, dict):
-                      print("NEST", key, sorted(value.keys())[:20])
-                  elif isinstance(value, list):
-                      first_type = type(value[0]).__name__ if value else "empty"
-                      print("LIST", key, len(value), first_type)
-
-          print("Kalshi, MLB and NFL CDN public source smoke checks passed")
+          nfl = NFLClient().scoreboard()
+          assert nfl.status_code == 200
+          assert isinstance(nfl.data, dict)
+          assert isinstance(nfl.data.get("events"), list)
+          print("NFL source", nfl.data.get("_source", "espn_site"))
+          print("Kalshi, MLB and NFL public source smoke checks passed")
           PY
