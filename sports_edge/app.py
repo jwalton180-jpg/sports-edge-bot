@@ -60,11 +60,15 @@ def _secret(name: str) -> str | None:
     try:
         value = st.secrets.get(name)
         if value:
-            return str(value)
+            value = str(value).strip()
+            if value and "YOUR_REAL_API_KEY_HERE" not in value and "YOUR_" not in value:
+                return value
     except Exception:
         pass
-    value = os.getenv(name)
-    return value or None
+    value = (os.getenv(name) or "").strip()
+    if value and "YOUR_REAL_API_KEY_HERE" not in value and "YOUR_" not in value:
+        return value
+    return None
 
 
 @st.cache_data(ttl=8, show_spinner=False)
@@ -140,7 +144,10 @@ def get_odds_sports(api_key: str):
         r = OddsClient(api_key=api_key).sports()
         return (r.data if isinstance(r.data, list) else []), None
     except Exception as exc:
-        return [], str(exc)
+        msg = str(exc)
+        if "apiKey=" in msg:
+            msg = msg.split("apiKey=", 1)[0] + "apiKey=REDACTED"
+        return [], msg
 
 
 @st.cache_data(ttl=20, show_spinner=False)
@@ -149,7 +156,10 @@ def get_odds_for_key(api_key: str, sport_key: str):
         r = OddsClient(api_key=api_key).odds(sport_key=sport_key, markets="h2h")
         return (r.data if isinstance(r.data, list) else []), None, r.latency_ms
     except Exception as exc:
-        return [], str(exc), None
+        msg = str(exc)
+        if "apiKey=" in msg:
+            msg = msg.split("apiKey=", 1)[0] + "apiKey=REDACTED"
+        return [], msg, None
 
 
 def infer_market_sport(market: dict) -> str:
