@@ -191,8 +191,8 @@ elif view == "Live Games":
             names = [t.get("team", {}).get("displayName", "") for t in teams]
             scores = [t.get("score", "") for t in teams]
             detail = event.get("status", {}).get("type", {}).get("detail", "")
-            st.markdown(f"**{' vs '.join(names)}**  
-{' – '.join(scores)} · {detail}")
+            st.markdown(f"**{' vs '.join(names)}**")
+            st.caption(f"{' – '.join(scores)} · {detail}")
             st.divider()
     else:
         st.info(nerr or "No NFL events returned right now.")
@@ -206,8 +206,8 @@ elif view == "Live Games":
             away = game.get("teams", {}).get("away", {}).get("team", {}).get("name", "")
             home = game.get("teams", {}).get("home", {}).get("team", {}).get("name", "")
             detail = game.get("status", {}).get("detailedState", "")
-            st.markdown(f"**{away} @ {home}**  
-{detail}")
+            st.markdown(f"**{away} @ {home}**")
+            st.caption(detail)
             st.divider()
     else:
         st.info(merr or "No MLB events returned right now.")
