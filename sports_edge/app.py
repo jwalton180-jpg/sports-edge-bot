@@ -53,6 +53,7 @@ def _fallback_catalog_diagnostics(markets):
 catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
+from sports_edge.models.parlay_intelligence import build_intelligent_parlay
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
@@ -143,7 +144,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-fast-sport-catalog-1")
+st.caption("Build: 2026-09-25-intelligent-parlays-1")
 
 
 def _secret(name: str) -> str | None:
@@ -297,7 +298,7 @@ def sport_pairs(active_sports: list[dict]) -> list[tuple[str, str]]:
 
     return pairs
 
-def build_game_universe(api_key: str | None, active_sports: list[dict]):
+def build_game_universe(api_key: str | None, active_sports: list[dict], sport_filter_value: str = "All"):
     if not api_key:
         return [], {}, ["THE_ODDS_API_KEY is not configured"]
 
@@ -305,12 +306,14 @@ def build_game_universe(api_key: str | None, active_sports: list[dict]):
     raw_by_id: dict[str, dict] = {}
     errors: list[str] = []
     for label, key in sport_pairs(active_sports):
+        sport = _sport_from_odds_key(key)
+        if sport is None:
+            continue
+        if sport_filter_value != "All" and sport != sport_filter_value:
+            continue
         raw, err, _ = get_events(api_key, key)
         if err:
             errors.append(f"{label}: {err}")
-            continue
-        sport = _sport_from_odds_key(key)
-        if sport is None:
             continue
         built = build_game_events(raw, sport_key=key, sport=sport)
         games.extend(built)
@@ -566,10 +569,28 @@ PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     "NFL Rushing": [("NFL", ("player_rush_yds",))],
     "NFL Receiving": [("NFL", ("player_receptions", "player_reception_yds"))],
     "NFL Touchdowns": [("NFL", ("player_anytime_td",))],
-    # Best Available and Mixed Sports add a small prop sample after h2h so the
-    # generator can include more than favorites without exploding free-tier use.
-    "Best Available": [("MLB", ("batter_hits",)), ("NFL", ("player_anytime_td",))],
-    "Mixed Sports": [("MLB", ("batter_hits",)), ("NFL", ("player_anytime_td",))],
+    "NBA Points": [("NBA", ("player_points",))],
+    "NBA Rebounds": [("NBA", ("player_rebounds",))],
+    "NBA Assists": [("NBA", ("player_assists",))],
+    "NBA Threes": [("NBA", ("player_threes",))],
+    "NBA PRA": [("NBA", ("player_points_rebounds_assists",))],
+    "WNBA Points": [("WNBA", ("player_points",))],
+    "WNBA Rebounds": [("WNBA", ("player_rebounds",))],
+    "WNBA Assists": [("WNBA", ("player_assists",))],
+    "WNBA Threes": [("WNBA", ("player_threes",))],
+    "WNBA PRA": [("WNBA", ("player_points_rebounds_assists",))],
+    "Best Available": [
+        ("MLB", ("batter_hits",)),
+        ("NFL", ("player_anytime_td",)),
+        ("NBA", ("player_points",)),
+        ("WNBA", ("player_points",)),
+    ],
+    "Mixed Sports": [
+        ("MLB", ("batter_hits",)),
+        ("NFL", ("player_anytime_td",)),
+        ("NBA", ("player_points",)),
+        ("WNBA", ("player_points",)),
+    ],
 }
 
 
@@ -650,6 +671,10 @@ def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
         return ["Best Available", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"]
     if sport_filter_value == "NFL":
         return ["Best Available", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns"]
+    if sport_filter_value == "NBA":
+        return ["Best Available", "NBA Points", "NBA Rebounds", "NBA Assists", "NBA Threes", "NBA PRA"]
+    if sport_filter_value == "WNBA":
+        return ["Best Available", "WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"]
     return [
         "Best Available",
         "Mixed Sports",
@@ -998,82 +1023,155 @@ elif view == "Edge Board":
     else:
         st.info("No current game contract clears the live edge/watch gates. Sports Edge will not manufacture a pick.")
 
+
 elif view == "Parlay Generator":
-    st.header("Kalshi Parlay Generator")
+    st.header("Sports Edge Parlay Intelligence")
     st.markdown(
-        '<div class="section-note">Tickets are built directly from current Kalshi markets for the selected sport. '
-        'Best Available and Longshot now use different price profiles by design.</div>',
+        '<div class="section-note"><b>Evidence-first.</b> Kalshi price alone can never qualify a leg. '
+        'Every generated leg must have an exact Kalshi match, fresh independent sportsbook fair value, '
+        'positive price edge and sufficient book depth. Longshot means <i>mispriced low-priced outcome</i>, not simply cheap.</div>',
         unsafe_allow_html=True,
     )
 
     builder_label = st.selectbox(
         "Builder",
-        ["Best Available", "Longshot (5+ legs)"],
-        key="kalshi_builder_v1",
+        ["Best Available", "Priced Longshot (5+ legs)"],
+        key="intel_builder_v2",
     )
-    mode = "longshot" if builder_label.startswith("Longshot") else "best"
+    mode = "longshot" if builder_label.startswith("Priced Longshot") else "best"
+    preset_options = parlay_presets_for_sport(sport_filter)
+    preset = st.selectbox("Analysis type", preset_options, key=f"intel_preset_{sport_filter}")
+
     min_legs = 5 if mode == "longshot" else 2
     default_legs = 6 if mode == "longshot" else 4
     max_legs = 10 if mode == "longshot" else 8
-    target = st.slider("Target legs", min_value=min_legs, max_value=max_legs, value=default_legs, key="kalshi_target_v1")
+    target = st.slider(
+        "Target legs",
+        min_value=min_legs,
+        max_value=max_legs,
+        value=default_legs,
+        key=f"intel_target_{mode}",
+    )
+    scan_games_n = st.slider(
+        "Games to analyze",
+        min_value=4,
+        max_value=12,
+        value=8,
+        help="Larger scans use more sportsbook API calls. Sports Edge still refuses stale or unverified legs.",
+        key=f"intel_games_{sport_filter}",
+    )
 
-    available_rows = list(kalshi_rows)
-    family_options = ["All Markets"] + sorted({row.family for row in available_rows})
-    family = st.selectbox("Market family", family_options, key=f"kalshi_parlay_family_{sport_filter}")
-    if family != "All Markets":
-        available_rows = [row for row in available_rows if row.family == family]
-
-    candidates = kalshi_side_candidates(available_rows)
-    if st.button("Generate Kalshi ticket", type="primary", use_container_width=True):
-        ticket = choose_kalshi_ticket(
-            candidates,
-            mode=mode,
-            target_legs=target,
-            max_per_event=1,
+    if mode == "longshot":
+        st.info(
+            "Priced Longshot gate: Kalshi 5–35¢, independent edge at least +4pp, expected ROI on contract cost at least +15%, "
+            "value multiple at least 1.15x, at least 3 fresh books, exact Kalshi match. No forced filler legs."
         )
-        st.session_state["kalshi_ticket_v1"] = ticket
-        st.session_state["kalshi_ticket_mode_v1"] = mode
-
-    ticket = st.session_state.get("kalshi_ticket_v1", [])
-    ticket_mode = st.session_state.get("kalshi_ticket_mode_v1")
-    if ticket_mode and ticket_mode != mode:
-        ticket = []
-
-    if ticket:
-        implied = 1.0
-        for leg in ticket:
-            implied *= leg.price
-        c1, c2 = st.columns(2)
-        c1.metric("Legs", len(ticket))
-        c2.metric("Market-price product", f"{implied:.3%}")
-        rows = pd.DataFrame(
-            [
-                {
-                    "Sport": leg.sport,
-                    "Family": leg.family,
-                    "Event": leg.event_title,
-                    "Side": leg.side,
-                    "Selection": leg.selection,
-                    "Kalshi": f"{leg.price:.0%}",
-                    "Volume": int(leg.volume),
-                    "Ticker": leg.ticker,
-                }
-                for leg in ticket
-            ]
-        )
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-        if mode == "longshot":
-            st.warning(
-                "Longshot deliberately uses 7–35¢ Kalshi sides. This creates a different, higher-upside ticket; "
-                "the low prices are not themselves evidence of positive expected value."
-            )
-        else:
-            st.caption("Best Available uses a 40–82¢ Kalshi price band and favors liquid current markets.")
-        st.markdown("### Copy ticket")
-        st.code(kalshi_ticket_text(ticket), language=None)
     else:
-        band = "7–35¢" if mode == "longshot" else "40–82¢"
-        st.info(f"No generated ticket yet, or not enough current Kalshi legs in the {band} profile for this filter.")
+        st.info(
+            "Best Available gate: independent fair at least 45%, edge at least +3pp, value multiple at least 1.05x, "
+            "at least 3 fresh books, exact Kalshi match. It is not simply the highest Kalshi probability."
+        )
+
+    if st.button("Analyze markets & build ticket", type="primary", use_container_width=True):
+        if not api_key:
+            st.error("THE_ODDS_API_KEY is required for independent pricing. Sports Edge will not build an intelligence parlay from Kalshi price alone.")
+        else:
+            with st.spinner("Building independent fair values, matching exact Kalshi contracts, and scoring EV…"):
+                active, active_err = get_active_sports(api_key)
+                lazy_games, _, universe_errors = build_game_universe(api_key, active, sport_filter)
+                lazy_scoped = game_scoped_markets(markets, lazy_games)
+                candidate_mode = "longshot" if mode == "longshot" else "high_confidence"
+                candidates, scan_errors, calls = scan_parlay_candidates(
+                    preset=preset,
+                    mode=candidate_mode,
+                    sport_filter_value=sport_filter,
+                    games_in=lazy_games,
+                    scoped_markets=lazy_scoped,
+                    api_key_value=api_key,
+                    max_games=scan_games_n,
+                )
+                result = build_intelligent_parlay(
+                    candidates,
+                    mode=mode,
+                    target_legs=target,
+                    max_per_event=1,
+                    diversify_sports=(sport_filter == "All"),
+                )
+                st.session_state["intel_parlay_v2"] = {
+                    "result": result,
+                    "preset": preset,
+                    "mode": mode,
+                    "sport": sport_filter,
+                    "candidate_count": len(candidates),
+                    "calls": calls,
+                    "errors": [e for e in ([active_err] + universe_errors + scan_errors) if e],
+                }
+
+    state = st.session_state.get("intel_parlay_v2")
+    if state and state.get("mode") == mode and state.get("preset") == preset and state.get("sport") == sport_filter:
+        result = state["result"]
+        if result.legs:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Qualified legs", len(result.legs))
+            c2.metric("Independent fair", f"{result.fair_joint_probability:.2%}")
+            c3.metric("Kalshi price product", f"{result.market_joint_probability:.2%}")
+            c4.metric("Ticket value", f"{result.ticket_value_multiple:.2f}x")
+
+            rows = pd.DataFrame(
+                [
+                    {
+                        "Score": f"{row.score:.0f}",
+                        "Sport": row.leg.sport,
+                        "Game": row.leg.event_title,
+                        "Selection": row.leg.selection,
+                        "Fair": f"{row.fair_probability:.1%}",
+                        "Kalshi": f"{row.kalshi_probability:.1%}",
+                        "Edge": f"{row.edge_points:+.1f} pp",
+                        "EV/contract": f"USD {row.ev_per_contract:+.2f}",
+                        "ROI on cost": f"{row.expected_roi_on_cost:+.0%}",
+                        "Value": f"{row.value_multiple:.2f}x",
+                        "Books": row.leg.book_count,
+                        "Age": f"{row.leg.source_age_s:.0f}s",
+                    }
+                    for row in result.legs
+                ]
+            )
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+
+            for idx, row in enumerate(result.legs, 1):
+                with st.expander(f"{idx}. {row.leg.selection} — why it qualified"):
+                    st.write(f"**Event:** {row.leg.event_title}")
+                    st.write(f"**Kalshi:** {row.leg.kalshi_side} · {row.kalshi_probability:.1%} · {row.leg.kalshi_ticker}")
+                    st.write(f"**Independent fair:** {row.fair_probability:.1%}")
+                    st.write(f"**Price edge:** {row.edge_points:+.1f} percentage points")
+                    st.write(f"**Expected value:** USD {row.ev_per_contract:+.2f} per USD 1 payout contract")
+                    st.write(f"**Expected ROI on cost:** {row.expected_roi_on_cost:+.0%}")
+                    st.write(f"**Sports Edge leg score:** {row.score:.0f}/100")
+                    for reason in row.reasons:
+                        st.caption("• " + reason)
+                    if row.warnings:
+                        st.warning(" · ".join(row.warnings))
+
+            if result.warnings:
+                st.warning(" · ".join(result.warnings))
+            st.caption(
+                f"Analyzed {state['candidate_count']} independently priced candidate(s) using about {state['calls']} sportsbook request(s). "
+                f"Correlation risk: {result.correlation_risk}. Joint probabilities are independence benchmarks, not guarantees."
+            )
+            st.markdown("### Kalshi combo blueprint")
+            st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
+        else:
+            st.warning(
+                "No ticket met the independent pricing and EV gates. Sports Edge will not fill a parlay with favorites or cheap contracts just to reach the target leg count."
+            )
+            st.caption(
+                f"Scanned {state['candidate_count']} candidate(s) using about {state['calls']} sportsbook request(s). "
+                "Try a broader analysis type or more games—not weaker evidence."
+            )
+        if state.get("errors"):
+            with st.expander("Scan diagnostics"):
+                for error in state["errors"][:12]:
+                    st.caption("• " + str(error))
 
 elif view == "Live Feed":
     st.header("Live Feed")
