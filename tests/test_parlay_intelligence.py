@@ -91,3 +91,36 @@ def test_one_leg_per_event_reduces_obvious_same_game_correlation():
     result = build_intelligent_parlay(candidates, mode="longshot", target_legs=3, max_per_event=1)
     assert len(result.legs) == 2
     assert len({row.leg.event_id for row in result.legs}) == 2
+
+
+
+def test_extreme_model_market_gap_requires_secondary_confirmation():
+    row = leg(fair=0.55, price=0.10, books=0)
+    assessed = assess_leg(row, "longshot")
+    assert assessed.qualified is False
+    assert any("extreme model-market dislocation" in warning for warning in assessed.warnings)
+
+
+def test_extreme_gap_with_conflicting_fresh_books_still_fails_closed():
+    row = leg(fair=0.55, price=0.10, books=4, age=20)
+    row = ParlayCandidateLeg(
+        **{
+            **row.__dict__,
+            "consensus_probability": 0.25,
+        }
+    )
+    assessed = assess_leg(row, "longshot")
+    assert assessed.qualified is False
+    assert any("conflict" in warning for warning in assessed.warnings)
+
+
+def test_extreme_gap_can_pass_when_fresh_secondary_confirmation_agrees():
+    row = leg(fair=0.55, price=0.10, books=4, age=20)
+    row = ParlayCandidateLeg(
+        **{
+            **row.__dict__,
+            "consensus_probability": 0.48,
+        }
+    )
+    assessed = assess_leg(row, "longshot")
+    assert assessed.qualified is True
