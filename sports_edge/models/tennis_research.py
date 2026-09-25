@@ -201,7 +201,8 @@ class TennisResearchModel:
         if a is None or b is None or min(a.matches, b.matches) < 3:
             return None
 
-        p = self._elo_probability(a.elo, b.elo)
+        base_elo = self._elo_probability(a.elo, b.elo)
+        p = base_elo
         factors = [
             f"Elo {player_a} {a.elo:.0f} vs {player_b} {b.elo:.0f}",
         ]
@@ -241,14 +242,20 @@ class TennisResearchModel:
             )
 
         level_key = level.lower()
-        shrink = 1.0
         if "itf" in level_key:
-            shrink = 0.72
+            # Chronological 2026 holdout: supplemental form/serve/workload
+            # adjustments did not improve ITF probability quality over Elo.
+            p = base_elo
+            factors.append(
+                "ITF calibration: fair probability uses Elo-only; form/serve/workload remain diagnostics"
+            )
         elif "challenger" in level_key or "125" in level_key:
-            shrink = 0.84
-        p = 0.5 + (p - 0.5) * shrink
-        if shrink < 1.0:
-            factors.append(f"{level} calibration shrink applied")
+            # Pooled Challenger holdout slightly favored a conservative blend
+            # over either the enhanced model or Elo alone.
+            p = 0.5 * p + 0.5 * base_elo
+            factors.append(
+                "Challenger calibration: 50/50 enhanced-model and Elo blend"
+            )
 
         sample = min(a.matches, b.matches)
         stat_depth = min(len(a.serve_points_won), len(b.serve_points_won), 12)
@@ -261,9 +268,9 @@ class TennisResearchModel:
             0.88,
         )
         if "itf" in level_key:
-            confidence = min(confidence, 0.68)
-        elif "challenger" in level_key:
-            confidence = min(confidence, 0.76)
+            confidence = min(confidence, 0.55)
+        elif "challenger" in level_key or "125" in level_key:
+            confidence = min(confidence, 0.65)
 
         warnings: list[str] = []
         if stat_depth < 4:
