@@ -5,3 +5,4 @@ scipy>=1.11,<2
 requests>=2.31,<3
 websocket-client>=1.8,<2
 cryptography>=42,<46
+websockets>=13,<17
