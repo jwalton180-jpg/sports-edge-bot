@@ -13,15 +13,15 @@ from sports_edge.models.game_scope import normalize
 
 PLAYER_WEEK_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
-    "stats_player/stats_player_week_2026.csv"
+    "stats_player/stats_player_week_{season}.csv"
 )
 TEAM_WEEK_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
-    "stats_team/stats_team_week_2026.csv"
+    "stats_team/stats_team_week_{season}.csv"
 )
 ROSTER_WEEK_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
-    "weekly_rosters/roster_weekly_2026.csv"
+    "weekly_rosters/roster_weekly_{season}.csv"
 )
 SCHEDULE_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
@@ -48,6 +48,7 @@ class NFLPassingContext:
     roster_week: int
     scheduled_qb_name: str | None
     player_rows: tuple[dict, ...]
+    prior_player_rows: tuple[dict, ...]
     opponent_allowed_rows: tuple[dict, ...]
     league_rows: tuple[dict, ...]
 
@@ -58,19 +59,19 @@ def _download_csv(url: str, timeout: int = 20) -> tuple[dict, ...]:
     return tuple(csv.DictReader(io.StringIO(response.text)))
 
 
-@lru_cache(maxsize=1)
-def player_week_rows() -> tuple[dict, ...]:
-    return _download_csv(PLAYER_WEEK_URL)
+@lru_cache(maxsize=4)
+def player_week_rows(season: int) -> tuple[dict, ...]:
+    return _download_csv(PLAYER_WEEK_URL.format(season=int(season)))
 
 
-@lru_cache(maxsize=1)
-def team_week_rows() -> tuple[dict, ...]:
-    return _download_csv(TEAM_WEEK_URL)
+@lru_cache(maxsize=4)
+def team_week_rows(season: int) -> tuple[dict, ...]:
+    return _download_csv(TEAM_WEEK_URL.format(season=int(season)))
 
 
-@lru_cache(maxsize=1)
-def roster_week_rows() -> tuple[dict, ...]:
-    return _download_csv(ROSTER_WEEK_URL)
+@lru_cache(maxsize=4)
+def roster_week_rows(season: int) -> tuple[dict, ...]:
+    return _download_csv(ROSTER_WEEK_URL.format(season=int(season)))
 
 
 @lru_cache(maxsize=1)
@@ -132,7 +133,7 @@ def _candidate_players(player_name: str, event_date: date) -> list[tuple[str, st
     season = _season_for_date(event_date)
     by_id: dict[str, tuple[str, str, str]] = {}
 
-    for row in player_week_rows():
+    for row in player_week_rows(season):
         if _i(row.get("season")) != season:
             continue
         if str(row.get("season_type") or "") != "REG":
@@ -152,7 +153,7 @@ def _candidate_players(player_name: str, event_date: date) -> list[tuple[str, st
 
     # A current QB can have no stat row yet, so use the weekly roster as a
     # secondary identity source. The model still requires prior passing stats.
-    for row in roster_week_rows():
+    for row in roster_week_rows(season):
         if _i(row.get("season")) != season:
             continue
         if str(row.get("game_type") or "") != "REG":
@@ -178,7 +179,7 @@ def _latest_roster_status(
     target_week: int,
 ) -> tuple[str, int] | None:
     candidates: list[tuple[int, str]] = []
-    for row in roster_week_rows():
+    for row in roster_week_rows(season):
         if _i(row.get("season")) != season:
             continue
         if str(row.get("game_type") or "") != "REG":
@@ -247,7 +248,7 @@ def resolve_passing_context(
             continue
 
         p_rows = []
-        for row in player_week_rows():
+        for row in player_week_rows(season):
             if _i(row.get("season")) != season:
                 continue
             if str(row.get("season_type") or "") != "REG":
@@ -263,9 +264,27 @@ def resolve_passing_context(
             p_rows.append(dict(row))
         p_rows.sort(key=lambda r: _i(r.get("week")) or 0)
 
+        prior_rows = []
+        prior_season = season - 1
+        try:
+            for row in player_week_rows(prior_season):
+                if _i(row.get("season")) != prior_season:
+                    continue
+                if str(row.get("season_type") or "") != "REG":
+                    continue
+                if str(row.get("player_id") or "") != player_id:
+                    continue
+                attempts = _i(row.get("attempts"))
+                if attempts is None or attempts < 10:
+                    continue
+                prior_rows.append(dict(row))
+            prior_rows.sort(key=lambda r: _i(r.get("week")) or 0)
+        except requests.RequestException:
+            prior_rows = []
+
         allowed = []
         league = []
-        for row in team_week_rows():
+        for row in team_week_rows(season):
             if _i(row.get("season")) != season:
                 continue
             if str(row.get("season_type") or "") != "REG":
@@ -294,6 +313,7 @@ def resolve_passing_context(
                 roster_week=roster_week,
                 scheduled_qb_name=scheduled_qb,
                 player_rows=tuple(p_rows),
+                prior_player_rows=tuple(prior_rows),
                 opponent_allowed_rows=tuple(allowed),
                 league_rows=tuple(league),
             )
