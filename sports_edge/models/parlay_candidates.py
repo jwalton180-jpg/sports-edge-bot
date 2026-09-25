@@ -202,6 +202,36 @@ def candidate_legs_from_props(
     )
 
 
+def research_fallback_candidates(
+    candidates: list[ParlayCandidateLeg],
+    *,
+    min_books: int = 3,
+    max_source_age_s: float = 120.0,
+    min_consensus_probability: float = 0.52,
+) -> list[ParlayCandidateLeg]:
+    """Return fresh multi-book research candidates when strict edge is empty.
+
+    This is intentionally not an edge classifier. It only creates a clearly
+    labelled fallback slate from current consensus evidence.
+    """
+    rows = [
+        row for row in candidates
+        if row.book_count >= min_books
+        and row.source_age_s <= max_source_age_s
+        and row.consensus_probability >= min_consensus_probability
+    ]
+    return sorted(
+        rows,
+        key=lambda r: (
+            r.evidence_class == "EDGE-QUALIFIED",
+            r.book_count,
+            -r.source_age_s,
+            r.consensus_probability,
+        ),
+        reverse=True,
+    )
+
+
 def generate_candidate_parlay(
     candidates: list[ParlayCandidateLeg],
     *,
