@@ -126,17 +126,24 @@ def candidate_legs_from_h2h(
             )
         )
 
-    # One moneyline side per game: take the stronger consensus side.
-    return sorted(
+    ranked = sorted(
         rows,
         key=lambda r: (
             r.evidence_class == "EDGE-QUALIFIED",
             r.kalshi_ticker is not None,
-            r.consensus_probability,
+            r.kalshi_edge_points if r.kalshi_edge_points is not None else -999.0,
             r.book_count,
+            r.consensus_probability,
         ),
         reverse=True,
-    )[:1]
+    )
+
+    # Longshot research must preserve the underdog side long enough for the
+    # independent EV gate to evaluate it. The old behavior always discarded
+    # the underdog by taking the stronger consensus side first.
+    if mode == "longshot":
+        return ranked
+    return ranked[:1]
 
 def candidate_legs_from_props(
     game: GameEvent,
