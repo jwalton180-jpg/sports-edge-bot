@@ -38,6 +38,8 @@ PREMIUM_BOOKMAKER_KEYS: tuple[str, ...] = (
     "fanduel",
     "betmgm",
     "betrivers",
+    "williamhill_us",
+    "fanatics",
     "bovada",
     "betonlineag",
 )
