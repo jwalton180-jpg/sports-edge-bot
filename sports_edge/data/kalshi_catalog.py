@@ -394,23 +394,28 @@ def fetch_supported_sport_catalog(
     incomplete: list[str] = []
     pages = 0
 
-    try:
-        series_response = _with_backoff(
-            lambda: discovery_client.series_list(include_volume=True),
-            pacer=pacer,
-        )
-        if series_response.latency_ms is not None:
-            latencies.append(float(series_response.latency_ms))
-        payload = series_response.data if isinstance(series_response.data, dict) else {}
-        all_series = [row for row in payload.get("series", []) or [] if isinstance(row, dict)]
-    except Exception as exc:
-        return KalshiCatalogResult(
-            markets=(),
-            pages=0,
-            cursor_exhausted=False,
-            max_latency_ms=max(latencies) if latencies else None,
-            error=f"Kalshi series discovery failed: {str(exc)[:240]}",
-        )
+    if client is None:
+        # Production uses the bounded game/prop catalog below; no giant /series
+        # payload is needed on every Streamlit cache miss.
+        all_series: list[dict] = []
+    else:
+        try:
+            series_response = _with_backoff(
+                lambda: discovery_client.series_list(include_volume=True),
+                pacer=pacer,
+            )
+            if series_response.latency_ms is not None:
+                latencies.append(float(series_response.latency_ms))
+            payload = series_response.data if isinstance(series_response.data, dict) else {}
+            all_series = [row for row in payload.get("series", []) or [] if isinstance(row, dict)]
+        except Exception as exc:
+            return KalshiCatalogResult(
+                markets=(),
+                pages=0,
+                cursor_exhausted=False,
+                max_latency_ms=max(latencies) if latencies else None,
+                error=f"Kalshi series discovery failed: {str(exc)[:240]}",
+            )
 
     selected_sports = tuple(sports) if sports else tuple(PRODUCTION_SERIES_BY_SPORT)
 
