@@ -14,6 +14,11 @@ from sports_edge.data.mlb import MLBClient
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets
+from sports_edge.models.intelligence import (
+    PREMIUM_BOOKMAKER_KEYS,
+    h2h_intelligence,
+    prop_book_offer_edges,
+)
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_candidates import (
@@ -99,7 +104,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-24-import-resilience-1")
+st.caption("Build: 2026-09-24-premium-intelligence-1")
 
 
 def _secret(name: str) -> str | None:
@@ -192,7 +197,11 @@ def get_events(api_key: str, sport_key: str):
 @st.cache_data(ttl=20, show_spinner=False)
 def get_featured_odds(api_key: str, sport_key: str):
     try:
-        r = OddsClient(api_key=api_key).odds(sport_key=sport_key, markets="h2h")
+        r = OddsClient(api_key=api_key).odds(
+            sport_key=sport_key,
+            markets="h2h",
+            bookmakers=",".join(PREMIUM_BOOKMAKER_KEYS),
+        )
         return (r.data if isinstance(r.data, list) else []), None, r.latency_ms
     except Exception as exc:
         return [], _safe_error(exc), None
@@ -201,7 +210,12 @@ def get_featured_odds(api_key: str, sport_key: str):
 @st.cache_data(ttl=20, show_spinner=False)
 def get_event_odds(api_key: str, sport_key: str, event_id: str, markets: str):
     try:
-        r = OddsClient(api_key=api_key).event_odds(sport_key=sport_key, event_id=event_id, markets=markets)
+        r = OddsClient(api_key=api_key).event_odds(
+            sport_key=sport_key,
+            event_id=event_id,
+            markets=markets,
+            bookmakers=",".join(PREMIUM_BOOKMAKER_KEYS),
+        )
         return (r.data if isinstance(r.data, dict) else {}), None, r.latency_ms
     except Exception as exc:
         return {}, _safe_error(exc), None
