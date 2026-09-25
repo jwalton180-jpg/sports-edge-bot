@@ -1,0 +1,95 @@
+name: Team model live diagnostic
+on:
+  push:
+    branches: [repair-live-model-coverage-20260925]
+  workflow_dispatch:
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Diagnose public team model joins
+        run: |
+          python - <<'PY'
+          from collections import defaultdict
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.data.public_team_data import (
+              ESPN_SLUGS, _espn_scoreboard, _overall_record, _resolve_competitors,
+              _mlb_team_names, _mlb_match_team_id, _mlb_standings,
+              team_game_model,
+          )
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import _event_choices, _parse_date
+
+          for sport in ("NFL","NBA","WNBA","MLB"):
+              result=fetch_supported_sport_catalog(
+                  sports=(sport,), page_limit_per_series=50, page_size=1000,
+                  max_workers=4, request_interval_s=0.20,
+              )
+              grouped=group_kalshi_sports(result.markets)
+              events=defaultdict(list)
+              for row in grouped.get(sport,[]):
+                  if row.family!="Moneyline":
+                      continue
+                  key=str(row.market.get("event_ticker") or row.market.get("ticker") or "")
+                  events[key].append(row)
+
+              print("====",sport,"events",len(events),"====")
+              shown=0
+              for eid, rows in events.items():
+                  choices=_event_choices(rows)
+                  if len(choices)!=2:
+                      print("BAD_CHOICES",eid,len(choices),[
+                          (r.market.get("ticker"),r.market.get("yes_sub_title"),r.market.get("no_sub_title"))
+                          for r in rows
+                      ])
+                      continue
+                  a,b=choices
+                  d=_parse_date(a[3])
+                  ev=team_game_model(sport,a[0],b[0],event_date=d)
+                  print("EVENT",eid,"date",d,"choices",a[0],"vs",b[0],"model",None if ev is None else (ev.fair_probability,ev.confidence))
+
+                  if sport in ESPN_SLUGS:
+                      try:
+                          payload=_espn_scoreboard(sport,d.strftime("%Y%m%d"))
+                          print(" SCOREBOARD events",len(payload.get("events",[]) or []))
+                          matches=[]
+                          for pe in payload.get("events",[]) or []:
+                              comps=(pe.get("competitions") or [])
+                              if not comps: continue
+                              competitors=comps[0].get("competitors",[]) or []
+                              resolved=_resolve_competitors(a[0],b[0],competitors)
+                              names=[
+                                  (
+                                      (c.get("team") or {}).get("displayName"),
+                                      (c.get("team") or {}).get("location"),
+                                      (c.get("team") or {}).get("name"),
+                                      (c.get("team") or {}).get("abbreviation"),
+                                      _overall_record(c),
+                                  )
+                                  for c in competitors
+                              ]
+                              if resolved is not None:
+                                  matches.append(names)
+                          print(" RESOLVED_MATCHES",matches[:3])
+                      except Exception as exc:
+                          print(" SCOREBOARD_ERROR",type(exc).__name__,str(exc)[:200])
+                  else:
+                      try:
+                          aliases=_mlb_team_names(d.year)
+                          aid=_mlb_match_team_id(a[0],aliases)
+                          bid=_mlb_match_team_id(b[0],aliases)
+                          standings={int((r.get("team") or {}).get("id")):r for r in _mlb_standings(d.year)}
+                          print(" MLB_IDS",aid,bid,"standings",aid in standings if aid else None,bid in standings if bid else None)
+                      except Exception as exc:
+                          print(" MLB_ERROR",type(exc).__name__,str(exc)[:200])
+
+                  shown += 1
+                  if shown>=6:
+                      break
+          PY
