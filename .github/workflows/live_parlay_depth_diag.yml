@@ -1,0 +1,87 @@
+name: Live parlay depth diagnostic
+
+on:
+  push:
+    branches: [repair-model-first-parlay-depth-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Audit live Tennis model-first depth
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+          result = fetch_supported_sport_catalog(
+              sports=("Tennis",),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped = group_kalshi_sports(result.markets)
+          match_rows = [r for r in grouped.get("Tennis", []) if r.family == "Match Winner"]
+          events = {
+              str(r.market.get("event_ticker") or r.market.get("ticker") or "")
+              for r in match_rows
+          }
+          candidates = [
+              c for c in model_candidates_from_kalshi(grouped, sport_filter="Tennis")
+              if c.market_key == "model_h2h"
+          ]
+          assessments = [assess_leg(c, "best") for c in candidates]
+          qualified = [a for a in assessments if a.qualified]
+          ticket = build_intelligent_parlay(candidates, mode="best", target_legs=4, max_per_event=1)
+
+          print("catalog_error", result.error)
+          print("catalog_complete", result.cursor_exhausted)
+          print("match_events", len(events))
+          print("model_candidate_events", len({c.event_id for c in candidates}))
+          print("model_candidates", len(candidates))
+          print("best_qualified", len(qualified))
+          print("ticket_legs", len(ticket.legs))
+          print("selected", [
+              (
+                  x.leg.selection,
+                  x.leg.event_id,
+                  round(x.fair_probability, 4),
+                  round(x.kalshi_probability or 0, 4),
+                  round(x.edge_points or 0, 2),
+                  round(x.leg.model_confidence, 3),
+                  x.leg.model_sample_size,
+                  round(x.score, 1),
+              )
+              for x in ticket.legs
+          ])
+          print("top_qualified", [
+              (
+                  x.leg.selection,
+                  round(x.fair_probability, 4),
+                  round(x.kalshi_probability or 0, 4),
+                  round(x.edge_points or 0, 2),
+                  round(x.leg.model_confidence, 3),
+                  x.leg.model_sample_size,
+                  round(x.score, 1),
+              )
+              for x in sorted(qualified, key=lambda y:y.score, reverse=True)[:12]
+          ])
+          failures = Counter()
+          for x in assessments:
+              if x.qualified:
+                  continue
+              for warning in x.warnings:
+                  failures[warning] += 1
+          print("failure_counts", failures.most_common(20))
+          PY
