@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
 import os
 from statistics import median
 
@@ -59,6 +60,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
+st.caption("Build: 2026-09-24-parlay-hotfix-1")
 
 
 def _secret(name: str) -> str | None:
@@ -384,6 +386,57 @@ def parlay_candidate_table(legs: list[ParlayCandidateLeg] | tuple[ParlayCandidat
             for x in legs
         ]
     )
+
+
+def _generate_parlay_compat(
+    candidates: list[ParlayCandidateLeg],
+    *,
+    target_legs: int,
+    mode: str,
+    max_per_event: int,
+    require_edge: bool,
+    diversify_sports: bool,
+):
+    """Call the generator safely across Streamlit hot-reload version skew.
+
+    Streamlit can briefly retain an older imported module while app.py has
+    already updated. We inspect the live callable and emulate newer options
+    before calling older signatures so a deploy cannot crash the UI.
+    """
+    working = list(candidates)
+    params = inspect.signature(generate_candidate_parlay).parameters
+
+    if require_edge and "require_edge" not in params:
+        working = [
+            row for row in working
+            if getattr(row, "evidence_class", "") == "EDGE-QUALIFIED"
+            and getattr(row, "kalshi_edge_points", None) is not None
+            and float(row.kalshi_edge_points) >= 3.0
+        ]
+
+    if diversify_sports and "diversify_sports" not in params:
+        diversified: list[ParlayCandidateLeg] = []
+        remainder: list[ParlayCandidateLeg] = []
+        seen_sports: set[str] = set()
+        for row in working:
+            if row.sport not in seen_sports:
+                diversified.append(row)
+                seen_sports.add(row.sport)
+            else:
+                remainder.append(row)
+        working = diversified + remainder
+
+    kwargs = {
+        "target_legs": target_legs,
+        "mode": mode,
+        "max_per_event": max_per_event,
+    }
+    if "require_edge" in params:
+        kwargs["require_edge"] = require_edge
+    if "diversify_sports" in params:
+        kwargs["diversify_sports"] = diversify_sports
+
+    return generate_candidate_parlay(working, **kwargs)
 
 
 def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
@@ -774,7 +827,7 @@ elif view == "Parlay Generator":
                     api_key_value=api_key,
                     max_games=max_scan,
                 )
-                generated = generate_candidate_parlay(
+                generated = _generate_parlay_compat(
                     candidates,
                     target_legs=target,
                     mode=mode,
