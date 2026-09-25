@@ -1,4 +1,6 @@
-from datetime import date\nfrom unittest.mock import patch\n
+from datetime import date
+from unittest.mock import patch
+
 from sports_edge.models.tennis_research import TennisResearchModel
 
 ROWS = (
