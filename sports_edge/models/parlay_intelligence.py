@@ -100,6 +100,24 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
         if model.confidence < min_model_conf:
             failures.append(f"model confidence below {min_model_conf:.0%}")
 
+        # Extreme model-vs-market gaps are exactly where data identity,
+        # availability/news, or model misspecification can masquerade as edge.
+        # Sportsbooks remain secondary evidence, but these outliers require a
+        # fresh independent confirmation instead of auto-promotion.
+        raw_model_gap = None if price is None else 100.0 * (model.fair_probability - price)
+        fresh_secondary = leg.book_count >= 2 and leg.source_age_s <= 120
+        if raw_model_gap is not None and raw_model_gap >= 25.0:
+            if not fresh_secondary:
+                failures.append(
+                    "extreme model-market dislocation requires fresh secondary confirmation"
+                )
+            else:
+                book_probability = clamp(float(leg.consensus_probability))
+                if abs(model.fair_probability - book_probability) >= 0.20:
+                    failures.append(
+                        "model and fresh sportsbook confirmation conflict by at least 20 pp"
+                    )
+
     if mode == "longshot":
         if price is not None and not (0.05 <= price <= 0.35):
             failures.append("Kalshi price is outside the 5–35¢ longshot band")
