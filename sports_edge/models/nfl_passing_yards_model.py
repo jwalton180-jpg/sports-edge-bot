@@ -126,16 +126,51 @@ def project_nfl_passing_yards(
         return None
 
     rows = context.player_rows
-    if len(rows) < 2:
+    prior_rows = context.prior_player_rows
+    if len(rows) < 1:
         return None
 
     total_attempts = _sum(rows, "attempts")
     total_yards = _sum(rows, "passing_yards")
-    if total_attempts < 40 or total_yards <= 0:
+    prior_attempts = _sum(prior_rows, "attempts")
+    prior_yards = _sum(prior_rows, "passing_yards")
+
+    if total_attempts < 20 or total_yards <= 0:
+        return None
+    if len(rows) < 2 and prior_attempts < 120:
         return None
 
-    season_attempts_pg = total_attempts / len(rows)
-    season_ypa = total_yards / total_attempts
+    current_attempts_pg = total_attempts / len(rows)
+    current_ypa = total_yards / total_attempts
+
+    prior_attempts_pg = (
+        prior_attempts / len(prior_rows)
+        if prior_rows and prior_attempts > 0
+        else None
+    )
+    prior_ypa = (
+        prior_yards / prior_attempts
+        if prior_attempts > 0
+        else None
+    )
+
+    # Prior season is deliberately decayed. It stabilizes Weeks 1–3 without
+    # overpowering current-season role/form.
+    prior_equivalent_attempts = 0.32 * prior_attempts
+    blended_attempts = total_attempts + prior_equivalent_attempts
+    season_ypa = (
+        (total_yards + 0.32 * prior_yards) / blended_attempts
+        if blended_attempts > 0
+        else current_ypa
+    )
+    if prior_attempts_pg is not None:
+        current_games_weight = clamp(len(rows) / 5.0, 0.35, 0.85)
+        season_attempts_pg = (
+            current_games_weight * current_attempts_pg
+            + (1.0 - current_games_weight) * prior_attempts_pg
+        )
+    else:
+        season_attempts_pg = current_attempts_pg
 
     recent_attempts_pg = _weighted_recent_average(rows, "attempts", last_n=2)
     recent_yards = _weighted_recent_average(rows, "passing_yards", last_n=2)
@@ -195,12 +230,18 @@ def project_nfl_passing_yards(
         for row in rows
         if (value := _f(row, "passing_yards")) is not None
     ]
+    prior_weekly_yards = [
+        value
+        for row in prior_rows[-8:]
+        if (value := _f(row, "passing_yards")) is not None
+    ]
+    variance_rows = weekly_yards + prior_weekly_yards
     empirical_sd = (
-        pstdev(weekly_yards)
-        if len(weekly_yards) >= 2
+        pstdev(variance_rows)
+        if len(variance_rows) >= 3
         else YARDS_SD_PRIOR
     )
-    sample_weight = len(weekly_yards) / (len(weekly_yards) + 4.0)
+    sample_weight = len(variance_rows) / (len(variance_rows) + 6.0)
     sd = sqrt(
         sample_weight * (empirical_sd ** 2)
         + (1.0 - sample_weight) * (YARDS_SD_PRIOR ** 2)
@@ -215,23 +256,33 @@ def project_nfl_passing_yards(
     )
 
     opponent_sample = len(context.opponent_allowed_rows)
-    confidence = 0.37
-    confidence += 0.14 * clamp(len(rows) / 6.0, 0.0, 1.0)
-    confidence += 0.12 * clamp(total_attempts / 180.0, 0.0, 1.0)
+    confidence = 0.34
+    confidence += 0.12 * clamp(len(rows) / 5.0, 0.0, 1.0)
+    confidence += 0.10 * clamp(total_attempts / 170.0, 0.0, 1.0)
+    confidence += 0.07 * clamp(len(prior_rows) / 12.0, 0.0, 1.0)
     confidence += 0.08 * clamp(opponent_sample / 4.0, 0.0, 1.0)
     confidence += 0.05 if context.scheduled_qb_name else 0.0
     confidence += 0.04 if context.roster_week >= context.week - 1 else 0.0
-    confidence = clamp(confidence, 0.40, 0.76)
+    confidence = clamp(confidence, 0.38, 0.74)
+    if len(rows) == 1:
+        confidence = min(confidence, 0.49)
+    elif len(rows) == 2:
+        confidence = min(confidence, 0.58)
 
     factors = [
-        f"Prior games {len(rows)}; {total_yards:.0f} passing yards on {total_attempts:.0f} attempts",
-        f"Season YPA {season_ypa:.2f}; adjusted matchup YPA {adjusted_ypa:.2f}",
+        f"Current season: {len(rows)} prior game(s), {total_yards:.0f} passing yards on {total_attempts:.0f} attempts",
+        f"Stabilized YPA {season_ypa:.2f}; adjusted matchup YPA {adjusted_ypa:.2f}",
         f"Expected attempts {expected_attempts:.1f}",
         f"Opponent pass defense: {opp_ypa:.2f} yards/attempt allowed over {opponent_sample} prior game(s)",
         f"Projected passing yards {expected_yards:.1f} with modeled SD {sd:.1f}",
         f"Roster status {context.roster_status} (week {context.roster_week})",
     ]
     warnings: list[str] = []
+
+    if prior_ypa is not None and prior_attempts_pg is not None:
+        factors.append(
+            f"Decayed prior-season baseline: {prior_ypa:.2f} YPA, {prior_attempts_pg:.1f} attempts/game over {len(prior_rows)} game(s)"
+        )
 
     if recent_ypa is not None and recent_yards is not None:
         factors.append(
@@ -246,7 +297,10 @@ def project_nfl_passing_yards(
         warnings.append("schedule has no named QB; active roster and prior role used")
 
     if len(rows) < 3:
-        warnings.append("only two prior regular-season QB samples")
+        if prior_rows:
+            warnings.append("early-season current sample stabilized with decayed prior-season QB history")
+        else:
+            warnings.append("thin current-season QB sample with no prior-season stabilizer")
     if opponent_sample < 2:
         warnings.append("thin opponent pass-defense sample")
     warnings.append(
