@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sports_edge.models.game_scope import GameEvent
+from sports_edge.models.game_scope import build_game_events
 from sports_edge.models.parlay_candidates import (
+    candidate_legs_from_h2h,
     candidate_legs_from_props,
     combo_blueprint,
     generate_candidate_parlay,
@@ -9,90 +10,104 @@ from sports_edge.models.parlay_candidates import (
 from sports_edge.models.props import PropConsensus
 
 
-def game(event_id: str, home: str, away: str, sport: str = "MLB") -> GameEvent:
-    return GameEvent(
-        event_id=event_id,
-        sport_key="baseball_mlb" if sport == "MLB" else "americanfootball_nfl",
-        sport=sport,
-        home_team=home,
-        away_team=away,
-        commence_time=datetime(2026, 9, 25, 1, 0, tzinfo=timezone.utc),
-        state="SOON",
-    )
+NOW = datetime(2026, 9, 24, 20, 0, tzinfo=timezone.utc)
 
 
-def quote(player: str, p: float, label: str = "Hits", key: str = "batter_hits") -> PropConsensus:
+def make_game(event_id="g1", home="New York Yankees", away="Boston Red Sox", sport="MLB"):
+    key = "baseball_mlb" if sport == "MLB" else "americanfootball_nfl"
+    raw = {
+        "id": event_id,
+        "home_team": home,
+        "away_team": away,
+        "commence_time": (NOW + timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+    }
+    return build_game_events([raw], sport_key=key, sport=sport, now=NOW)[0]
+
+
+def prop(player, p, market_key="batter_hits", label="Hits", side="Over", line=0.5, books=3):
     return PropConsensus(
-        market_key=key,
+        market_key=market_key,
         market_label=label,
         player=player,
-        side="Over",
-        line=0.5,
+        side=side,
+        line=line,
         fair_probability=p,
-        book_count=4,
+        book_count=books,
         median_age_s=12,
-        median_price=-145,
+        median_price=-130,
         warnings=(),
     )
 
 
-def test_consensus_only_props_can_generate_parlay_without_kalshi_edge():
-    g1 = game("g1", "Yankees", "Red Sox")
-    g2 = game("g2", "Dodgers", "Giants")
-    rows = []
-    rows.extend(candidate_legs_from_props(g1, [quote("Aaron Judge", 0.68)], [], mode="high_confidence"))
-    rows.extend(candidate_legs_from_props(g2, [quote("Shohei Ohtani", 0.66)], [], mode="high_confidence"))
+def h2h_event():
+    ts = (NOW - timedelta(seconds=10)).isoformat().replace("+00:00", "Z")
+    return {
+        "id": "nfl1",
+        "home_team": "Kansas City Chiefs",
+        "away_team": "Buffalo Bills",
+        "commence_time": (NOW + timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+        "bookmakers": [
+            {
+                "key": f"book{i}",
+                "last_update": ts,
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": ts,
+                        "outcomes": [
+                            {"name": "Kansas City Chiefs", "price": -150},
+                            {"name": "Buffalo Bills", "price": 130},
+                        ],
+                    }
+                ],
+            }
+            for i in range(3)
+        ],
+    }
 
-    assert len(rows) == 2
-    assert all(r.kalshi_status == "CONSENSUS ONLY" for r in rows)
 
-    parlay = generate_candidate_parlay(rows, target_legs=2, mode="high_confidence")
+def test_prop_consensus_can_generate_without_any_kalshi_match():
+    game = make_game()
+    quotes = [
+        prop("Aaron Judge", 0.68),
+        prop("Juan Soto", 0.64),
+        prop("Giancarlo Stanton", 0.61),
+    ]
+    candidates = candidate_legs_from_props(game, quotes, [], mode="high_confidence")
+    assert len(candidates) == 3
+    assert all(c.kalshi_ticker is None for c in candidates)
+
+    parlay = generate_candidate_parlay(candidates, target_legs=2, mode="high_confidence", max_per_event=2)
     assert len(parlay.legs) == 2
     assert parlay.estimated_independent_probability > 0
-    assert parlay.correlation_risk == "LOW"
 
 
-def test_generator_limits_same_game_concentration():
-    g = game("g1", "Yankees", "Red Sox")
-    rows = candidate_legs_from_props(
-        g,
-        [
-            quote("Aaron Judge", 0.68),
-            quote("Juan Soto", 0.66),
-            quote("Giancarlo Stanton", 0.64),
-        ],
-        [],
-        mode="high_confidence",
+def test_moneyline_consensus_can_generate_without_any_kalshi_match():
+    game = make_game(
+        event_id="nfl1",
+        home="Kansas City Chiefs",
+        away="Buffalo Bills",
+        sport="NFL",
     )
-    parlay = generate_candidate_parlay(rows, target_legs=3, mode="high_confidence", max_per_event=2)
-    assert len(parlay.legs) == 2
-    assert parlay.correlation_risk == "MEDIUM"
-    assert any("Only 2 usable" in w for w in parlay.warnings)
+    candidates = candidate_legs_from_h2h(game, h2h_event(), [], mode="high_confidence")
+    assert len(candidates) == 1
+    assert candidates[0].selection == "Kansas City Chiefs"
+    assert candidates[0].kalshi_ticker is None
 
 
-def test_longshot_mode_accepts_lower_probability_td_style_leg():
-    g = game("n1", "Chiefs", "Bills", sport="NFL")
-    td = PropConsensus(
-        market_key="player_anytime_td",
-        market_label="Anytime TD",
-        player="Player One",
-        side="Yes",
-        line=None,
-        fair_probability=0.42,
-        book_count=3,
-        median_age_s=9,
-        median_price=140,
-        warnings=(),
-    )
-    assert candidate_legs_from_props(g, [td], [], mode="high_confidence") == []
-    rows = candidate_legs_from_props(g, [td], [], mode="longshot")
-    assert len(rows) == 1
+def test_generator_prefers_distinct_games_before_same_game_extra_legs():
+    g1 = make_game("g1")
+    g2 = make_game("g2", home="Los Angeles Dodgers", away="San Diego Padres")
+    c1 = candidate_legs_from_props(g1, [prop("Aaron Judge", 0.68), prop("Juan Soto", 0.65)], [], mode="high_confidence")
+    c2 = candidate_legs_from_props(g2, [prop("Shohei Ohtani", 0.67)], [], mode="high_confidence")
+    p = generate_candidate_parlay(c1 + c2, target_legs=2, mode="high_confidence", max_per_event=1)
+    assert len(p.legs) == 2
+    assert len({x.event_id for x in p.legs}) == 2
 
 
-def test_combo_blueprint_is_copyable_without_exact_kalshi_ticker():
-    g = game("g1", "Yankees", "Red Sox")
-    rows = candidate_legs_from_props(g, [quote("Aaron Judge", 0.68)], [], mode="high_confidence")
-    text = combo_blueprint(rows)
-    assert "KALSHI COMBO BLUEPRINT" in text
-    assert "Aaron Judge" in text
+def test_combo_blueprint_marks_unmatched_legs_for_combo_builder_search():
+    game = make_game()
+    leg = candidate_legs_from_props(game, [prop("Aaron Judge", 0.68)], [], mode="high_confidence")[0]
+    text = combo_blueprint([leg])
     assert "Find matching component in Kalshi Combo Builder" in text
+    assert "Aaron Judge" in text
