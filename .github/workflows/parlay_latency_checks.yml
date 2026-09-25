@@ -36,7 +36,12 @@ jobs:
           )
           t1=time.perf_counter()
           grouped=group_kalshi_sports(result.markets)
-          candidates=model_candidates_from_kalshi(grouped,sport_filter="MLB")
+          candidates=model_candidates_from_kalshi(
+              grouped,
+              sport_filter="MLB",
+              include_mlb_hits=True,
+              max_mlb_hit_players=18,
+          )
           hits=[c for c in candidates if c.market_key=="batter_hits"]
           t2=time.perf_counter()
           print("catalog_s",round(t1-t0,3))
