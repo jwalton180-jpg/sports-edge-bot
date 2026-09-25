@@ -84,6 +84,13 @@ st.markdown(
 .nav-hint{padding:.7rem .85rem;border:1px solid #24463a;border-radius:12px;background:rgba(14,31,26,.72);margin:.35rem 0 .7rem}
 .game-card{padding:.72rem .78rem;border:1px solid #24463a;border-radius:13px;background:rgba(12,28,23,.72);margin:.45rem 0}
 .game-title{font-weight:760;font-size:1.02rem}.live{color:#62e6a7;font-weight:800}.soon{color:#f1cf6d;font-weight:800}
+.market-card{padding:.85rem .9rem;border:1px solid #284a3e;border-radius:16px;background:linear-gradient(180deg,rgba(18,39,32,.94),rgba(8,21,17,.96));margin:.55rem 0;box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.market-card-top{display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start}
+.market-title{font-weight:760;font-size:1.03rem;line-height:1.25}.market-price{font-size:1.42rem;font-weight:850;white-space:nowrap;color:#e8fff5}
+.market-meta{font-size:.82rem;color:#93aaa0;margin-top:.35rem;line-height:1.45}
+.edge-pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#153d2f;border:1px solid #2b6c54;color:#72f0b3;font-size:.72rem;font-weight:750;margin-right:5px}
+.watch-pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#3b3417;border:1px solid #75672a;color:#f0d777;font-size:.72rem;font-weight:750;margin-right:5px}
+.score{font-weight:850;color:#72f0b3}
 div[data-testid="stExpander"]{border:1px solid #203c33;border-radius:12px;background:rgba(7,17,14,.55)}
 hr{border-color:#173127!important}
 @media (max-width:700px){
@@ -370,11 +377,12 @@ def signal_table(signals: list[LiveSignal]) -> pd.DataFrame:
 
 def build_game_line_signals(markets: list[dict], api_key: str | None, sport_filter: str):
     if not api_key:
-        return [], ["THE_ODDS_API_KEY is not configured"]
+        return [], {}, ["THE_ODDS_API_KEY is not configured"]
 
     active, active_err = get_active_sports(api_key)
     errors = [active_err] if active_err else []
     all_signals: list[LiveSignal] = []
+    intelligence: dict[tuple[str, str, str], object] = {}
 
     for label, key in sport_pairs(active):
         sport = "Tennis" if key.startswith("tennis_") else ("NFL" if "nfl" in key else "MLB")
@@ -396,7 +404,16 @@ def build_game_line_signals(markets: list[dict], api_key: str | None, sport_filt
             game_markets = scoped.get(game.event_id, [])
             if not game_markets:
                 continue
-            all_signals.extend(build_live_signals(game_markets, [event], sport=sport))
+            game_signals = build_live_signals(game_markets, [event], sport=sport)
+            all_signals.extend(game_signals)
+            for signal in game_signals:
+                result = h2h_intelligence(
+                    event,
+                    signal.selection,
+                    market_probability=signal.market_probability,
+                )
+                if result is not None:
+                    intelligence[(signal.ticker, signal.side, signal.selection)] = result
 
     dedup: dict[tuple[str, str, str], LiveSignal] = {}
     for signal in all_signals:
@@ -404,7 +421,18 @@ def build_game_line_signals(markets: list[dict], api_key: str | None, sport_filt
         old = dedup.get(key)
         if old is None or signal.confidence > old.confidence:
             dedup[key] = signal
-    return sorted(dedup.values(), key=lambda s: (s.status == "QUALIFIED", s.edge_points, s.confidence), reverse=True), [e for e in errors if e]
+
+    rows = list(dedup.values())
+    rows.sort(
+        key=lambda s: (
+            getattr(intelligence.get((s.ticker, s.side, s.selection)), "intelligence_score", 0.0),
+            s.status == "QUALIFIED",
+            s.edge_points,
+            s.confidence,
+        ),
+        reverse=True,
+    )
+    return rows, intelligence, [e for e in errors if e]
 
 
 PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
@@ -748,14 +776,15 @@ elif view == "Player Props":
             payload, err, latency = get_event_odds(api_key, game.sport_key, game.event_id, ",".join(keys))
             quotes = prop_consensus(payload, market_keys=keys) if payload else []
             prop_signals = build_prop_signals(scoped.get(game.event_id, []), game, quotes)
+            book_edges = prop_book_offer_edges(payload, keys) if payload else []
             cache_key = f"{game.event_id}|{category}"
             st.session_state.prop_signal_cache[cache_key] = prop_signals
-            st.session_state[f"props_{cache_key}"] = (quotes, err, latency)
+            st.session_state[f"props_{cache_key}"] = (quotes, book_edges, err, latency)
 
         cache_key = f"{game.event_id}|{category}"
         loaded = st.session_state.get(f"props_{cache_key}")
         if loaded:
-            quotes, err, latency = loaded
+            quotes, book_edges, err, latency = loaded
             if err:
                 st.warning(err)
             elif quotes:
@@ -775,6 +804,32 @@ elif view == "Player Props":
                 st.dataframe(pd.DataFrame(prop_rows), use_container_width=True, hide_index=True)
                 st.caption(f"Event-specific sportsbook snapshot · {latency:.0f} ms" if latency else "Event-specific sportsbook snapshot")
 
+                positive_book_edges = [
+                    row for row in book_edges
+                    if row.edge_points >= 1.5 and row.evidence_quality >= 0.60
+                ][:20]
+                st.markdown("### Underpriced sportsbook offers")
+                if positive_book_edges:
+                    offers_df = pd.DataFrame(
+                        [
+                            {
+                                "Book": row.bookmaker_title,
+                                "Selection": row.selection,
+                                "Odds": int(round(row.american_price)),
+                                "Break-even": f"{row.break_even_probability:.1%}",
+                                "Other-books fair": f"{row.leave_one_out_fair_probability:.1%}",
+                                "Edge": f"{row.edge_points:+.1f} pp",
+                                "Comparison books": row.comparison_books,
+                                "Quality": f"{row.evidence_quality:.0%}",
+                            }
+                            for row in positive_book_edges
+                        ]
+                    )
+                    st.dataframe(offers_df, use_container_width=True, hide_index=True)
+                    st.caption("Each offer is compared only with the other fresh books at the same player/line; the target book is excluded from its own fair-value estimate.")
+                else:
+                    st.info("No current sportsbook offer clears the leave-one-book-out edge/quality gate for this prop family.")
+
                 prop_signals = st.session_state.prop_signal_cache.get(cache_key, [])
                 qualified_props = [s for s in prop_signals if s.status == "QUALIFIED"]
                 watches = [s for s in prop_signals if s.status == "WATCH"]
@@ -787,28 +842,78 @@ elif view == "Player Props":
                 st.info("No props returned for this game/category.")
 
 elif view == "Edge Board":
-    st.header("Game Edge Board")
+    st.header("Edge Board")
     st.markdown(
-        '<div class="section-note">Only actual current game contracts can qualify here. Futures and unrelated markets are not part of this board.</div>',
+        '<div class="section-note">Ranked by Sports Edge Intelligence: executable Kalshi gap + source quality + freshness + cross-book agreement. '
+        'Only real current games are eligible; futures are excluded.</div>',
         unsafe_allow_html=True,
     )
-    with st.spinner("Loading current game prices…"):
-        signals, signal_errors = build_game_line_signals(markets, api_key, sport_filter)
+    with st.spinner("Comparing Kalshi against major/reference sportsbook prices…"):
+        signals, intelligence_map, signal_errors = build_game_line_signals(markets, api_key, sport_filter)
 
-    qualified = [s for s in signals if s.status == "QUALIFIED"]
-    watches = [s for s in signals if s.status == "WATCH"]
-    show = qualified + watches
+    show = [s for s in signals if s.status in ("QUALIFIED", "WATCH")]
     if signal_errors and not signals:
         st.warning(" | ".join(signal_errors[:2]))
+
     if show:
-        st.dataframe(signal_table(show[:50]), use_container_width=True, hide_index=True)
-        for s in show[:8]:
-            with st.expander(f"{s.status} · {s.event_title} · {s.selection} · {s.edge_points:+.1f} pp"):
-                st.write(f"**Kalshi:** {s.side} {s.market_probability:.1%} · **Consensus fair:** {s.fair_probability:.1%}")
-                st.write(f"**Market:** {s.market}")
+        ranked = []
+        for s in show:
+            intel = intelligence_map.get((s.ticker, s.side, s.selection))
+            score = getattr(intel, "intelligence_score", 0.0)
+            ranked.append((score, s, intel))
+        ranked.sort(key=lambda row: (row[0], row[1].edge_points), reverse=True)
+
+        for score, s, intel in ranked[:14]:
+            pill = "edge-pill" if s.status == "QUALIFIED" else "watch-pill"
+            tier = getattr(intel, "tier", s.status)
+            books = getattr(intel, "book_count", s.book_count)
+            refs = getattr(intel, "reference_book_count", 0)
+            age = getattr(intel, "median_age_s", s.source_age_s)
+            disagreement = getattr(intel, "disagreement_pp", None)
+            st.markdown(
+                f"""
+                <div class="market-card">
+                  <div class="market-card-top">
+                    <div>
+                      <span class="{pill}">{s.status}</span>
+                      <span class="edge-pill">TIER {tier}</span>
+                      <div class="market-title">{s.selection}</div>
+                    </div>
+                    <div class="market-price">{s.market_probability:.0%}</div>
+                  </div>
+                  <div class="market-meta">
+                    {s.event_title} · {s.sport}<br/>
+                    <span class="score">Sports Edge {score:.0f}/100</span> · Fair {s.fair_probability:.1%} · Edge {s.edge_points:+.1f} pp<br/>
+                    {books} fresh books · {refs} reference source(s) · age {age:.0f}s
+                    {f' · disagreement {disagreement:.1f} pp' if disagreement is not None else ''}
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            with st.expander("Why this signal / copy ticket"):
+                st.write(f"**Kalshi:** {s.side} {s.market_probability:.1%}")
+                st.write(f"**Independent fair:** {s.fair_probability:.1%}")
+                st.write(f"**Price edge:** {s.edge_points:+.1f} percentage points")
+                if intel is not None:
+                    for reason in intel.reasons:
+                        st.caption("• " + reason)
+                    if intel.warnings:
+                        st.warning(" · ".join(intel.warnings))
+                    source_rows = [
+                        {
+                            "Book": b.bookmaker_title,
+                            "No-vig": f"{b.probability:.1%}",
+                            "Age": f"{b.age_s:.0f}s",
+                            "Reference": "YES" if b.is_reference else "",
+                        }
+                        for b in intel.books
+                    ]
+                    if source_rows:
+                        st.dataframe(pd.DataFrame(source_rows), use_container_width=True, hide_index=True)
                 st.code(kalshi_copy_ticket([s]), language=None)
     else:
-        st.info("No current game contract passes the qualification gates right now.")
+        st.info("No current game contract clears the live edge/watch gates. Sports Edge will not manufacture a pick.")
 
 elif view == "Parlay Generator":
     st.header("Parlay Generator")
