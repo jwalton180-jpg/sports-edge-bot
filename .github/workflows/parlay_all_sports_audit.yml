@@ -1,0 +1,77 @@
+name: Parlay all-sports contract audit
+on:
+  push:
+    branches: [parlay-all-sports-models-20260925]
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect public player-stat schemas and live Kalshi prop contracts
+        run: |
+          python - <<'PY'
+          import csv, io, requests
+          from collections import Counter, defaultdict
+
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          SOURCES = {
+              "NFL": "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2026.csv",
+              "NBA": "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_nba_player_boxscores/player_box_2026.csv",
+              "WNBA": "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/wnba_stats_player_boxscores/player_boxscores_2026.csv",
+          }
+          for sport,url in SOURCES.items():
+              r=requests.get(url,timeout=30,headers={"User-Agent":"SportsEdgeReadOnly/1.0"})
+              print("SOURCE",sport,"status",r.status_code,"bytes",len(r.content))
+              r.raise_for_status()
+              reader=csv.DictReader(io.StringIO(r.text))
+              print("HEADER",sport,reader.fieldnames)
+              for i,row in enumerate(reader):
+                  keep={k:row.get(k) for k in reader.fieldnames[:20]}
+                  print("ROW",sport,keep)
+                  if i>=1: break
+
+          for sport in ("MLB","NFL","NBA","WNBA","Tennis"):
+              result=fetch_supported_sport_catalog(
+                  sports=(sport,),
+                  page_limit_per_series=50,
+                  page_size=1000,
+                  max_workers=4,
+                  request_interval_s=0.20,
+              )
+              grouped=group_kalshi_sports(result.markets)
+              rows=grouped.get(sport,[])
+              counts=Counter(r.family for r in rows)
+              print("\nSPORT",sport,"complete",result.cursor_exhausted,"markets",len(rows))
+              print("FAMILIES",sport,dict(counts))
+              samples=defaultdict(list)
+              for row in rows:
+                  if len(samples[row.family])>=3:
+                      continue
+                  m=row.market
+                  samples[row.family].append({
+                      "ticker":m.get("ticker"),
+                      "event_ticker":m.get("event_ticker"),
+                      "series_ticker":m.get("series_ticker"),
+                      "title":m.get("title"),
+                      "yes_sub_title":m.get("yes_sub_title"),
+                      "no_sub_title":m.get("no_sub_title"),
+                      "strike_type":m.get("strike_type"),
+                      "floor_strike":m.get("floor_strike"),
+                      "cap_strike":m.get("cap_strike"),
+                      "functional_strike":m.get("functional_strike"),
+                      "yes_bid_dollars":m.get("yes_bid_dollars"),
+                      "yes_ask_dollars":m.get("yes_ask_dollars"),
+                      "no_bid_dollars":m.get("no_bid_dollars"),
+                      "no_ask_dollars":m.get("no_ask_dollars"),
+                  })
+              for family,vals in samples.items():
+                  print("SAMPLES",sport,family,vals)
+          PY
