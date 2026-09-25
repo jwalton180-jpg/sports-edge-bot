@@ -46,6 +46,10 @@ def _text(market: dict) -> str:
                 "ticker",
                 "event_ticker",
                 "series_ticker",
+                "series_title",
+                "series_category",
+                "series_tags",
+                "sports_edge_sport",
                 "category",
             )
         )
@@ -161,6 +165,19 @@ def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
         return None
 
     series = _series(market)
+    discovered_sport = str(market.get("sports_edge_sport") or "").strip()
+    if discovered_sport in SUPPORTED_SPORTS:
+        if discovered_sport == "MLB":
+            return "MLB", _baseball_family(series)
+        if discovered_sport == "NBA":
+            return "NBA", _basketball_family(series, "NBA")
+        if discovered_sport == "WNBA":
+            return "WNBA", _basketball_family(series, "WNBA")
+        if discovered_sport == "NFL":
+            return "NFL", _football_family(series)
+        if discovered_sport == "Tennis":
+            return "Tennis", _tennis_family(series)
+
     if series.startswith("KXMLB"):
         return "MLB", _baseball_family(series)
     if series.startswith("KXNBA"):
