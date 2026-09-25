@@ -186,7 +186,7 @@ class TennisResearchModel:
 
         p = self._elo_probability(a.elo, b.elo)
         factors = [
-            f"Elo ${player_a} ${a.elo:.0f} vs ${player_b} ${b.elo:.0f}",
+            f"Elo {player_a} {a.elo:.0f} vs {player_b} {b.elo:.0f}",
         ]
 
         surface_key = str(surface or "").strip().lower()
@@ -194,7 +194,7 @@ class TennisResearchModel:
             surface_p = self._elo_probability(a.surface_elo[surface_key], b.surface_elo[surface_key])
             p = 0.62 * p + 0.38 * surface_p
             factors.append(
-                f"${surface_key.title()} Elo ${a.surface_elo[surface_key]:.0f} vs ${b.surface_elo[surface_key]:.0f}"
+                f"{surface_key.title()} Elo {a.surface_elo[surface_key]:.0f} vs {b.surface_elo[surface_key]:.0f}"
             )
 
         level_code = {"atp tour": "A", "wta tour": "A", "challenger": "C", "itf": "F"}.get(level.lower())
@@ -202,7 +202,7 @@ class TennisResearchModel:
             level_p = self._elo_probability(a.level_elo[level_code], b.level_elo[level_code])
             p = 0.78 * p + 0.22 * level_p
             factors.append(
-                f"${level}-level Elo ${a.level_elo[level_code]:.0f} vs ${b.level_elo[level_code]:.0f}"
+                f"{level}-level Elo {a.level_elo[level_code]:.0f} vs {b.level_elo[level_code]:.0f}"
             )
 
         form_a = self._mean(a.recent_results)
