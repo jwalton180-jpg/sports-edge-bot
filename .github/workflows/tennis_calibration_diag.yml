@@ -83,21 +83,31 @@ jobs:
                   w.minutes.append(minutes)
                   l.minutes.append(minutes)
 
-          def metrics(rows):
+          def metrics(rows, selector="current"):
               if not rows:
                   return {}
+              def choose(row):
+                  y,p,pe,lev=row
+                  if selector == "elo":
+                      return pe
+                  if selector == "blend50":
+                      return 0.5*p + 0.5*pe
+                  if selector == "lower_elo":
+                      return p if lev == "Tour" else pe
+                  if selector == "lower_shrunk_elo":
+                      if lev == "Tour":
+                          return p
+                      factor = 0.85 if lev == "Challenger" else 0.75
+                      return 0.5 + factor*(pe-0.5)
+                  return p
               ys=[y for y,p,pe,lev in rows]
-              ps=[p for y,p,pe,lev in rows]
-              es=[pe for y,p,pe,lev in rows]
-              brier=sum((p-y)**2 for y,p,pe,lev in rows)/len(rows)
-              brier_elo=sum((pe-y)**2 for y,p,pe,lev in rows)/len(rows)
-              logloss=-sum(y*log(max(p,1e-9))+(1-y)*log(max(1-p,1e-9)) for y,p,pe,lev in rows)/len(rows)
-              acc=sum((p>=0.5)==bool(y) for y,p,pe,lev in rows)/len(rows)
+              ps=[choose(row) for row in rows]
+              brier=sum((pp-y)**2 for pp,(y,p,pe,lev) in zip(ps,rows))/len(rows)
+              logloss=-sum(y*log(max(pp,1e-9))+(1-y)*log(max(1-pp,1e-9)) for pp,(y,p,pe,lev) in zip(ps,rows))/len(rows)
+              acc=sum((pp>=0.5)==bool(y) for pp,(y,p,pe,lev) in zip(ps,rows))/len(rows)
               return {
                   "n":len(rows),
                   "brier":round(brier,5),
-                  "brier_elo":round(brier_elo,5),
-                  "delta_vs_elo":round(brier-brier_elo,5),
                   "logloss":round(logloss,5),
                   "accuracy":round(acc,4),
                   "mean_p":round(mean(ps),4),
@@ -140,10 +150,15 @@ jobs:
 
                   update(model,row)
 
-              print("GENDER",gender,metrics(preds))
+              print("GENDER",gender,"current",metrics(preds,"current"))
+              print("GENDER",gender,"elo",metrics(preds,"elo"))
+              print("GENDER",gender,"blend50",metrics(preds,"blend50"))
+              print("GENDER",gender,"lower_elo",metrics(preds,"lower_elo"))
+              print("GENDER",gender,"lower_shrunk_elo",metrics(preds,"lower_shrunk_elo"))
               for lev in ("Tour","Challenger","ITF"):
                   subset=[x for x in preds if x[3]==lev]
-                  print("LEVEL",gender,lev,metrics(subset))
+                  for selector in ("current","elo","blend50","lower_shrunk_elo"):
+                      print("LEVEL",gender,lev,selector,metrics(subset,selector))
 
               # calibration bins
               bins=[]
@@ -158,8 +173,10 @@ jobs:
               print("EXTREME",gender,metrics(extreme))
               all_rows.extend(preds)
 
-          print("ALL",metrics(all_rows))
+          for selector in ("current","elo","blend50","lower_elo","lower_shrunk_elo"):
+              print("ALL",selector,metrics(all_rows,selector))
           for lev in ("Tour","Challenger","ITF"):
               subset=[x for x in all_rows if x[3]==lev]
-              print("ALL_LEVEL",lev,metrics(subset))
+              for selector in ("current","elo","blend50","lower_shrunk_elo"):
+                  print("ALL_LEVEL",lev,selector,metrics(subset,selector))
           PY
