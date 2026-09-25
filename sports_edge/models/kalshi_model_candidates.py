@@ -74,7 +74,11 @@ def _event_choices(rows: Iterable[KalshiSportMarket]) -> list[tuple[str, str, fl
     return choices
 
 
-@lru_cache(maxsize=64)\ndef _tennis_model(gender: str, as_of: date) -> TennisResearchModel:\n    """Build a leakage-safe snapshot strictly before the event date."""\n    return TennisResearchModel(gender, current_year=as_of.year, as_of=as_of)\n
+@lru_cache(maxsize=64)
+def _tennis_model(gender: str, as_of: date) -> TennisResearchModel:
+    """Build a leakage-safe snapshot strictly before the event date."""
+    return TennisResearchModel(gender, current_year=as_of.year, as_of=as_of)
+
 
 def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
     choices = _event_choices(rows)
