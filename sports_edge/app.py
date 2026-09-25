@@ -22,8 +22,46 @@ from sports_edge.models.parlay_candidates import (
     candidate_legs_from_props,
     combo_blueprint,
     generate_candidate_parlay,
-    research_fallback_candidates,
 )
+
+try:
+    from sports_edge.models.parlay_candidates import research_fallback_candidates as _research_fallback_candidates
+except ImportError:
+    def _research_fallback_candidates(
+        candidates,
+        *,
+        min_books: int = 3,
+        max_source_age_s: float = 120.0,
+        min_consensus_probability: float = 0.52,
+    ):
+        rows = [
+            row for row in candidates
+            if int(getattr(row, "book_count", 0)) >= min_books
+            and float(getattr(row, "source_age_s", 999999.0)) <= max_source_age_s
+            and float(
+                getattr(
+                    row,
+                    "consensus_probability",
+                    getattr(row, "fair_probability", 0.0),
+                )
+            ) >= min_consensus_probability
+        ]
+        return sorted(
+            rows,
+            key=lambda r: (
+                getattr(r, "evidence_class", "") == "EDGE-QUALIFIED",
+                int(getattr(r, "book_count", 0)),
+                -float(getattr(r, "source_age_s", 999999.0)),
+                float(
+                    getattr(
+                        r,
+                        "consensus_probability",
+                        getattr(r, "fair_probability", 0.0),
+                    )
+                ),
+            ),
+            reverse=True,
+        )
 from sports_edge.models.prop_edges import build_prop_signals
 from sports_edge.models.props import PROP_GROUPS, prop_consensus
 
@@ -61,7 +99,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-24-tennis-research-fallback-1")
+st.caption("Build: 2026-09-24-import-resilience-1")
 
 
 def _secret(name: str) -> str | None:
@@ -850,7 +888,7 @@ elif view == "Parlay Generator":
                     # Do not leave the user with a blank generator when no exact
                     # Kalshi dislocation exists. Show a clearly labelled research
                     # slate based on fresh, multi-book consensus quality instead.
-                    fallback_candidates = research_fallback_candidates(candidates)
+                    fallback_candidates = _research_fallback_candidates(candidates)
                     if fallback_candidates:
                         generated = _generate_parlay_compat(
                             fallback_candidates,
