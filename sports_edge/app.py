@@ -1120,6 +1120,12 @@ elif view == "Parlay Generator":
                     if preset == "MLB Hits"
                     else None
                 ),
+                include_mlb_home_runs=(preset == "MLB Home Runs"),
+                max_mlb_hr_players=(
+                    max(12, min(24, target * 3))
+                    if preset == "MLB Home Runs"
+                    else None
+                ),
             )
 
             supported_model_presets = {
@@ -1128,11 +1134,17 @@ elif view == "Parlay Generator":
                 "Tennis Moneyline",
                 "NFL Game Markets",
                 "MLB Hits",
+                "MLB Home Runs",
             }
             if preset == "MLB Hits":
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "MLB" and row.market_key == "batter_hits"
+                ]
+            elif preset == "MLB Home Runs":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "MLB" and row.market_key == "batter_home_runs"
                 ]
             elif preset == "Tennis Moneyline":
                 model_candidates = [
@@ -1288,7 +1300,7 @@ elif view == "Parlay Generator":
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "MLB Hits"}:
+            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "MLB Hits", "MLB Home Runs"}:
                 st.warning(
                     "This player-prop family does not yet have a production sport-specific model. "
                     "Sports Edge is intentionally refusing book-only prop picks."
@@ -1354,7 +1366,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits uses hitter rate/recent form/probable-starter context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits and Home Runs use hitter/recent/probable-starter context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
