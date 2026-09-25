@@ -14,6 +14,7 @@ from sports_edge.models.live_board import market_side_probability
 from sports_edge.models.mlb_hits_model import project_mlb_hits
 from sports_edge.models.mlb_hr_model import project_mlb_home_runs
 from sports_edge.models.mlb_strikeouts_model import project_mlb_pitcher_strikeouts
+from sports_edge.models.nfl_passing_yards_model import project_nfl_passing_yards
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_research import TennisResearchModel, tennis_level_from_series
 
@@ -628,6 +629,137 @@ def _mlb_k_candidates(
     return out
 
 
+def _nfl_passing_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
+    market = row.market
+    title = str(market.get("title") or "")
+    player_name = title.split(":", 1)[0].strip()
+    if not player_name:
+        return []
+
+    floor = market.get("floor_strike")
+    try:
+        milestone = int(float(floor) + 0.5)
+    except (TypeError, ValueError):
+        match = re.search(
+            r":\s*(\d+)\+\s*(?:passing\s*)?yards?",
+            title,
+            re.I,
+        )
+        if not match:
+            return []
+        milestone = int(match.group(1))
+
+    projection = project_nfl_passing_yards(
+        player_name=player_name,
+        milestone_yards=milestone,
+        event_date=_parse_date(market),
+    )
+    if projection is None or not projection.evidence.usable:
+        return []
+
+    yes_price = market_side_probability(market, "YES")
+    no_price = market_side_probability(market, "NO")
+    base = projection.evidence
+    no_evidence = replace(
+        base,
+        fair_probability=1.0 - base.fair_probability,
+        factors=tuple([
+            f"Complement of {projection.player_name} {milestone}+ passing-yard model probability",
+            *base.factors,
+        ]),
+    )
+
+    out: list[ParlayCandidateLeg] = []
+    for side, price, evidence, selection_side in (
+        ("YES", yes_price, base, "Over"),
+        ("NO", no_price, no_evidence, "Under"),
+    ):
+        if price is None:
+            continue
+        selection = (
+            f"{projection.player_name} {selection_side} "
+            f"{projection.line:g} Passing Yards"
+        )
+        out.append(
+            ParlayCandidateLeg(
+                sport="NFL",
+                event_id=_event_key(market),
+                event_title=projection.game_title,
+                market_key="player_pass_yds",
+                market_label="Passing Yards",
+                selection=selection,
+                consensus_probability=evidence.fair_probability,
+                book_count=0,
+                source_age_s=0.0,
+                median_odds=None,
+                kalshi_ticker=str(market.get("ticker") or ""),
+                kalshi_side=side,
+                kalshi_price=price,
+                kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                kalshi_status="MODEL",
+                evidence_class="MODEL",
+                model_probability=evidence.fair_probability,
+                model_confidence=evidence.confidence,
+                model_name=evidence.model_name,
+                model_sample_size=evidence.sample_size,
+                model_reasons=evidence.factors,
+                model_warnings=evidence.warnings,
+            )
+        )
+    return out
+
+
+def _nfl_passing_candidates(
+    rows: list[KalshiSportMarket],
+    *,
+    max_players: int | None = None,
+    max_workers: int = 4,
+) -> list[ParlayCandidateLeg]:
+    player_groups: dict[tuple[str, str], list[KalshiSportMarket]] = {}
+    for row in rows:
+        market = row.market
+        title = str(market.get("title") or "")
+        player_name = title.split(":", 1)[0].strip()
+        if not player_name:
+            continue
+        key = (_event_key(market), normalize(player_name))
+        player_groups.setdefault(key, []).append(row)
+
+    ranked_groups = sorted(
+        player_groups.values(),
+        key=lambda group: max((_market_volume(r.market) for r in group), default=0.0),
+        reverse=True,
+    )
+    if max_players is not None and max_players > 0:
+        ranked_groups = ranked_groups[:max_players]
+
+    by_event: dict[str, list[list[KalshiSportMarket]]] = {}
+    for group in ranked_groups:
+        event_id = _event_key(group[0].market)
+        by_event.setdefault(event_id, []).append(group)
+
+    if not by_event:
+        return []
+
+    def build_event(groups: list[list[KalshiSportMarket]]) -> list[ParlayCandidateLeg]:
+        event_rows: list[ParlayCandidateLeg] = []
+        for group in groups:
+            for row in group:
+                event_rows.extend(_nfl_passing_candidate_for_market(row))
+        return event_rows
+
+    out: list[ParlayCandidateLeg] = []
+    worker_count = max(1, min(max_workers, len(by_event)))
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        futures = [pool.submit(build_event, groups) for groups in by_event.values()]
+        for future in as_completed(futures):
+            try:
+                out.extend(future.result())
+            except Exception:
+                continue
+    return out
+
+
 def model_candidates_from_kalshi(
     grouped: dict[str, list[KalshiSportMarket]],
     *,
@@ -638,6 +770,8 @@ def model_candidates_from_kalshi(
     max_mlb_hr_players: int | None = None,
     include_mlb_strikeouts: bool = False,
     max_mlb_k_pitchers: int | None = None,
+    include_nfl_passing_yards: bool = False,
+    max_nfl_passing_players: int | None = None,
 ) -> list[ParlayCandidateLeg]:
     sports = (
         ("MLB", "NBA", "WNBA", "NFL", "Tennis")
@@ -687,6 +821,15 @@ def model_candidates_from_kalshi(
                 _mlb_k_candidates(
                     k_rows,
                     max_pitchers=max_mlb_k_pitchers,
+                )
+            )
+
+        if sport == "NFL" and include_nfl_passing_yards:
+            passing_rows = [row for row in rows if row.family == "Passing Yards"]
+            all_rows.extend(
+                _nfl_passing_candidates(
+                    passing_rows,
+                    max_players=max_nfl_passing_players,
                 )
             )
 
