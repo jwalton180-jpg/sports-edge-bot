@@ -89,7 +89,7 @@ def test_moneyline_consensus_can_generate_without_any_kalshi_match():
         away="Buffalo Bills",
         sport="NFL",
     )
-    candidates = candidate_legs_from_h2h(game, h2h_event(), [], mode="high_confidence")
+    candidates = candidate_legs_from_h2h(game, h2h_event(), [], mode="high_confidence", now=NOW)
     assert len(candidates) == 1
     assert candidates[0].selection == "Kansas City Chiefs"
     assert candidates[0].kalshi_ticker is None
