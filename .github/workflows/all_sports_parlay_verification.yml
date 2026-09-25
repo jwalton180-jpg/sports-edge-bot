@@ -1,0 +1,112 @@
+name: All-sports parlay verification
+on:
+  push:
+    branches: [parlay-all-sports-models-20260925]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt pytest
+      - name: Full tests
+        run: pytest -q
+      - name: Compile
+        run: python -m compileall -q sports_edge app.py launch_on_demand.py
+      - name: Critical imports
+        run: |
+          python - <<'PY'
+          from sports_edge.models.kalshi_model_candidates import (
+              model_candidates_for_preset,
+              preset_contract_count,
+          )
+          from sports_edge.models.player_prop_models import player_prop_evidence
+          from sports_edge.models.parlay_intelligence import build_intelligent_parlay
+          import sports_edge.app
+          print("all-sports-parlay-imports-ok")
+          PY
+      - name: Live preset audit
+        run: |
+          python - <<'PY'
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import (
+              model_candidates_for_preset,
+              preset_contract_count,
+          )
+          from sports_edge.models.parlay_intelligence import assess_leg
+
+          presets = {
+              "MLB": ["Best Available","MLB Hits","MLB Home Runs","MLB Strikeouts"],
+              "NFL": ["Best Available","NFL Game Markets","NFL Passing","NFL Rushing","NFL Receiving","NFL Touchdowns"],
+              "NBA": ["Best Available","NBA Points","NBA Rebounds","NBA Assists","NBA Threes","NBA PRA"],
+              "WNBA": ["Best Available","WNBA Points","WNBA Rebounds","WNBA Assists","WNBA Threes","WNBA PRA"],
+              "Tennis": ["Best Available","Tennis Moneyline"],
+          }
+
+          all_grouped = {}
+          for sport in presets:
+              result = fetch_supported_sport_catalog(
+                  sports=(sport,),
+                  page_limit_per_series=50,
+                  page_size=1000,
+                  max_workers=4,
+                  request_interval_s=0.20,
+              )
+              assert result.cursor_exhausted, (sport, result.error)
+              grouped = group_kalshi_sports(result.markets)
+              all_grouped[sport] = grouped
+              print("SPORT", sport, "markets", len(grouped.get(sport, [])))
+              for preset in presets[sport]:
+                  contracts = preset_contract_count(grouped, sport_filter=sport, preset=preset)
+                  candidates = model_candidates_for_preset(grouped, sport_filter=sport, preset=preset)
+                  best = [assess_leg(x, "best") for x in candidates]
+                  long = [assess_leg(x, "longshot") for x in candidates]
+                  print(
+                      "PRESET", sport, preset,
+                      "contracts", contracts,
+                      "candidates", len(candidates),
+                      "events", len({x.event_id for x in candidates}),
+                      "best", sum(x.qualified for x in best),
+                      "longshot", sum(x.qualified for x in long),
+                  )
+
+          # Current live families that must be genuinely model-backed.
+          required = [
+              ("MLB","MLB Hits"),
+              ("MLB","MLB Home Runs"),
+              ("MLB","MLB Strikeouts"),
+              ("NFL","NFL Passing"),
+              ("NFL","NFL Rushing"),
+              ("NFL","NFL Receiving"),
+              ("NFL","NFL Touchdowns"),
+              ("Tennis","Tennis Moneyline"),
+          ]
+          for sport,preset in required:
+              grouped=all_grouped[sport]
+              contracts=preset_contract_count(grouped,sport_filter=sport,preset=preset)
+              candidates=model_candidates_for_preset(grouped,sport_filter=sport,preset=preset)
+              assert contracts > 0, (sport,preset,"no live contracts")
+              assert candidates > [], (sport,preset,"no model candidates")
+          PY
+      - name: Streamlit smoke
+        shell: bash
+        run: |
+          streamlit run app.py --server.headless=true --server.port=8501 >/tmp/streamlit.log 2>&1 &
+          PID=$!
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health >/tmp/health.txt 2>/dev/null; then
+              cat /tmp/health.txt
+              kill $PID || true
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/streamlit.log
+          kill $PID || true
+          exit 1
