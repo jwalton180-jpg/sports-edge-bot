@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import csv
 import io
+from dataclasses import replace
 from datetime import date
 from functools import lru_cache
 
 import requests
 
+from sports_edge.data.public_player_data import nba_player_rows
 from sports_edge.models.game_scope import normalize
 from sports_edge.models.model_evidence import ModelEvidence, team_record_model
 
@@ -637,6 +639,101 @@ def basketball_team_model(
         return None
 
 
+def nba_prior_season_team_model(
+    team_a: str,
+    team_b: str,
+) -> ModelEvidence | None:
+    """Low-confidence season-open fallback from the completed 2025-26 season.
+
+    This is independent team-performance evidence, not sportsbook consensus.
+    It is used only when the current 2026-27 NBA schedule has too little
+    completed-game evidence for the normal current-season model.
+    """
+    try:
+        rows = nba_player_rows()
+        aliases: dict[int, set[str]] = {}
+        for row in rows:
+            try:
+                tid = int(row.get("team_id"))
+            except (TypeError, ValueError):
+                continue
+            meta = {
+                "displayName": row.get("team_display_name"),
+                "shortDisplayName": row.get("team_short_display_name"),
+                "name": row.get("team_name"),
+                "abbreviation": row.get("team_abbreviation"),
+                "location": row.get("team_location"),
+            }
+            aliases.setdefault(tid, set()).update(_metadata_aliases(meta))
+
+        aid = _resolve_team_id(team_a, aliases)
+        bid = _resolve_team_id(team_b, aliases)
+        if aid is None or bid is None or aid == bid:
+            return None
+
+        stats = {
+            aid: {"wins": 0, "losses": 0, "pf": 0.0, "pa": 0.0},
+            bid: {"wins": 0, "losses": 0, "pf": 0.0, "pa": 0.0},
+        }
+        seen: set[tuple[str, int]] = set()
+        for row in rows:
+            try:
+                tid = int(row.get("team_id"))
+            except (TypeError, ValueError):
+                continue
+            if tid not in stats:
+                continue
+            # Keep the regular-season baseline clean when the source labels it.
+            season_type = str(row.get("season_type") or "").strip()
+            if season_type and season_type != "2":
+                continue
+            game_id = str(row.get("game_id") or "")
+            key = (game_id, tid)
+            if not game_id or key in seen:
+                continue
+            seen.add(key)
+
+            pf = _safe_float(row.get("team_score"))
+            pa = _safe_float(row.get("opponent_team_score"))
+            if pf is None or pa is None:
+                continue
+            won_raw = str(row.get("team_winner") or "").strip().lower()
+            won = won_raw in {"1", "true", "t", "yes"} or pf > pa
+            stats[tid]["wins"] += int(won)
+            stats[tid]["losses"] += int(not won)
+            stats[tid]["pf"] += pf
+            stats[tid]["pa"] += pa
+
+        a, b = stats[aid], stats[bid]
+        ga = int(a["wins"] + a["losses"])
+        gb = int(b["wins"] + b["losses"])
+        if min(ga, gb) < 20:
+            return None
+
+        base = team_record_model(
+            sport="NBA",
+            team_a=team_a,
+            team_b=team_b,
+            win_pct_a=_pct(int(a["wins"]), int(a["losses"])),
+            win_pct_b=_pct(int(b["wins"]), int(b["losses"])),
+            games_a=ga,
+            games_b=gb,
+            home_a=None,
+            differential_per_game_a=(a["pf"] - a["pa"]) / ga,
+            differential_per_game_b=(b["pf"] - b["pa"]) / gb,
+        )
+        return replace(
+            base,
+            model_name="NBA prior-season team-strength baseline",
+            confidence=min(base.confidence, 0.52),
+            warnings=tuple(base.warnings) + (
+                "2025-26 baseline; current 2026-27 season sample not established",
+            ),
+        )
+    except (requests.RequestException, TypeError, ValueError, KeyError):
+        return None
+
+
 def team_game_model(
     sport: str,
     team_a: str,
@@ -651,5 +748,8 @@ def team_game_model(
     if sport == "WNBA":
         return wnba_team_model(team_a, team_b, event_date=event_date)
     if sport == "NBA":
-        return basketball_team_model(sport, team_a, team_b, event_date=event_date)
+        current = basketball_team_model(sport, team_a, team_b, event_date=event_date)
+        if current is not None:
+            return current
+        return nba_prior_season_team_model(team_a, team_b)
     return None
