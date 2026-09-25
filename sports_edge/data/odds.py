@@ -22,12 +22,26 @@ class OddsClient:
             params["all"] = "true"
         return self.http.get_json(f"{BASE}/sports", params=params)
 
-    def odds(self, sport_key: str, markets: str = "h2h", regions: str = "us"):
+    def odds(
+        self,
+        sport_key: str,
+        markets: str = "h2h",
+        regions: str = "us",
+        bookmakers: str | None = None,
+    ):
         if not self.api_key:
             raise RuntimeError("THE_ODDS_API_KEY is not configured")
+        params = {
+            "regions": regions,
+            "markets": markets,
+            "oddsFormat": "american",
+            "apiKey": self.api_key,
+        }
+        if bookmakers:
+            params["bookmakers"] = bookmakers
         return self.http.get_json(
             f"{BASE}/sports/{sport_key}/odds",
-            params={"regions": regions, "markets": markets, "oddsFormat": "american", "apiKey": self.api_key},
+            params=params,
         )
 
     def events(self, sport_key: str):
