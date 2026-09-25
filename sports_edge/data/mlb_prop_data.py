@@ -191,6 +191,77 @@ def date_range_stat(
     return dict((splits[0].get("stat") or {})) if splits else None
 
 
+@lru_cache(maxsize=256)
+def team_season_stat(
+    team_id: int,
+    group: str,
+    season: int,
+) -> dict | None:
+    response = requests.get(
+        f"{BASE}/teams/{int(team_id)}/stats",
+        params={
+            "stats": "season",
+            "group": group,
+            "season": int(season),
+        },
+        headers=_HEADERS,
+        timeout=12,
+    )
+    response.raise_for_status()
+    stats = response.json().get("stats", []) or []
+    if not stats:
+        return None
+    splits = stats[0].get("splits", []) or []
+    if not splits:
+        return None
+    return dict(splits[0].get("stat") or {})
+
+
+def game_context_for_pitcher(player: dict, game: dict) -> dict | None:
+    try:
+        team_id = int((player.get("currentTeam") or {}).get("id"))
+        player_id = int(player.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+    teams = game.get("teams") or {}
+    home = teams.get("home") or {}
+    away = teams.get("away") or {}
+    home_team = home.get("team") or {}
+    away_team = away.get("team") or {}
+
+    try:
+        home_id = int(home_team.get("id"))
+        away_id = int(away_team.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+    if team_id == home_id:
+        own, opp = home, away
+    elif team_id == away_id:
+        own, opp = away, home
+    else:
+        return None
+
+    probable = own.get("probablePitcher") or {}
+    try:
+        probable_id = int(probable.get("id"))
+    except (TypeError, ValueError):
+        probable_id = None
+
+    return {
+        "own_team_id": team_id,
+        "own_team_name": str((own.get("team") or {}).get("name") or ""),
+        "opponent_team_id": int((opp.get("team") or {}).get("id") or 0),
+        "opponent_team_name": str((opp.get("team") or {}).get("name") or ""),
+        "probable_pitcher_id": probable_id,
+        "probable_pitcher_name": str(probable.get("fullName") or ""),
+        "is_probable_starter": probable_id == player_id if probable_id is not None else False,
+        "game_pk": game.get("gamePk"),
+        "game_status": str((game.get("status") or {}).get("abstractGameState") or ""),
+    }
+
+
 def game_context_for_hitter(player: dict, game: dict) -> dict | None:
     try:
         team_id = int((player.get("currentTeam") or {}).get("id"))
