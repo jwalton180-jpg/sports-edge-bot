@@ -1,0 +1,72 @@
+name: P0 dynamic Kalshi catalog checks
+
+on:
+  push:
+    branches: [p0-dynamic-kalshi-catalog-20260925]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: pip install -r requirements.txt pytest
+
+      - name: Unit and regression tests
+        run: pytest -q
+
+      - name: Compile
+        run: python -m compileall -q sports_edge app.py launch_on_demand.py
+
+      - name: Import smoke
+        run: |
+          python - <<'PY'
+          import sports_edge.data.kalshi_catalog
+          import sports_edge.models.kalshi_sports
+          import sports_edge.models.intelligence
+          import sports_edge.models.props
+          print("imports-ok")
+          PY
+
+      - name: Live Kalshi catalog completeness probe
+        run: |
+          python - <<'PY'
+          from sports_edge.data.kalshi_catalog import fetch_open_market_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports, catalog_diagnostics
+
+          result = fetch_open_market_catalog(page_limit=250, page_size=200)
+          print("pages", result.pages)
+          print("cursor_exhausted", result.cursor_exhausted)
+          print("error", result.error)
+          print("open_markets", len(result.markets))
+          diag = catalog_diagnostics(result.markets)
+          print("classified", diag.classified_markets)
+          print("counts", diag.counts_by_sport)
+          print("unclassified_supported", diag.unclassified_supported_prefixes[:20])
+
+          assert result.markets, "Kalshi returned no open markets"
+          assert result.cursor_exhausted, result.error or "cursor did not exhaust"
+          assert diag.classified_markets > 0, "No supported sport markets classified"
+          PY
+
+      - name: Streamlit server smoke
+        run: |
+          streamlit run app.py --server.headless=true --server.port=8501 >/tmp/streamlit.log 2>&1 &
+          PID=$!
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health >/tmp/health.txt 2>/dev/null; then
+              cat /tmp/health.txt
+              kill $PID || true
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/streamlit.log
+          kill $PID || true
+          exit 1
