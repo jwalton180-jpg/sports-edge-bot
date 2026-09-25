@@ -1114,6 +1114,12 @@ elif view == "Parlay Generator":
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
                 sport_filter=sport_filter,
+                include_mlb_hits=(preset == "MLB Hits"),
+                max_mlb_hit_players=(
+                    max(12, min(24, target * 3))
+                    if preset == "MLB Hits"
+                    else None
+                ),
             )
 
             supported_model_presets = {
