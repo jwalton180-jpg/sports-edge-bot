@@ -28,7 +28,10 @@ jobs:
       - name: Decode verified packaged baseline
         shell: bash
         run: |
-          cat .bootstrap/part*.b64 | tr -d '\n\r' | base64 --decode > /tmp/sports_edge_baseline.zip
+          : > /tmp/sports_edge_baseline.zip
+          for f in .bootstrap/part*.b64; do
+            tr -d '\n\r' < "$f" | base64 --decode >> /tmp/sports_edge_baseline.zip
+          done
           unzip -t /tmp/sports_edge_baseline.zip
           rm -rf /tmp/sports_edge_baseline
           mkdir -p /tmp/sports_edge_baseline
