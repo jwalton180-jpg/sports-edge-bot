@@ -54,6 +54,7 @@ catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diag
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_intelligence import build_intelligent_parlay
+from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
@@ -144,7 +145,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-tennis-depth-1")
+st.caption("Build: 2026-09-25-model-first-all-sports-1")
 
 
 def _secret(name: str) -> str | None:
@@ -1041,20 +1042,19 @@ elif view == "Edge Board":
 elif view == "Parlay Generator":
     st.header("Sports Edge Parlay Intelligence")
     st.markdown(
-        '<div class="section-note"><b>Evidence-first.</b> Kalshi price alone can never qualify a leg. '
-        'Every generated leg must have an exact Kalshi match, fresh independent sportsbook fair value, '
-        'positive price edge and sufficient book depth. Longshot means <i>mispriced low-priced outcome</i>, not simply cheap.</div>',
+        '<div class="section-note"><b>Model-first.</b> Kalshi defines what is tradable, but Kalshi price and sportsbook consensus do not define the pick. '
+        'Each qualifying leg needs a sport-specific model probability first. Sportsbooks are secondary calibration when an exact match exists.</div>',
         unsafe_allow_html=True,
     )
 
     builder_label = st.selectbox(
         "Builder",
         ["Best Available", "Priced Longshot (5+ legs)"],
-        key="intel_builder_v2",
+        key="intel_builder_v3",
     )
     mode = "longshot" if builder_label.startswith("Priced Longshot") else "best"
     preset_options = parlay_presets_for_sport(sport_filter)
-    preset = st.selectbox("Analysis type", preset_options, key=f"intel_preset_{sport_filter}")
+    preset = st.selectbox("Analysis type", preset_options, key=f"intel_preset_v3_{sport_filter}")
 
     min_legs = 5 if mode == "longshot" else 2
     default_legs = 6 if mode == "longshot" else 4
@@ -1064,43 +1064,71 @@ elif view == "Parlay Generator":
         min_value=min_legs,
         max_value=max_legs,
         value=default_legs,
-        key=f"intel_target_{mode}",
+        key=f"intel_target_v3_{mode}",
     )
+
     if sport_filter == "Tennis":
         scan_min, scan_max, scan_default = 8, 40, 24
     else:
         scan_min, scan_max, scan_default = 4, 16, 8
 
     scan_games_n = st.slider(
-        "Matches/games to analyze",
+        "Sportsbook cross-check games",
         min_value=scan_min,
         max_value=scan_max,
         value=scan_default,
-        help="Tennis scans prioritize exact Kalshi-linked matches first. Sports Edge still refuses stale or unverified legs.",
-        key=f"intel_games_{sport_filter}",
+        help="This only controls optional sportsbook enrichment. The model candidate universe comes directly from Kalshi and public sport data.",
+        key=f"intel_games_v3_{sport_filter}",
     )
 
     if mode == "longshot":
         st.info(
-            "Priced Longshot gate: Kalshi 5–35¢, independent edge at least +4pp, expected ROI on contract cost at least +15%, "
-            "value multiple at least 1.15x, at least 3 fresh books, exact Kalshi match. No forced filler legs."
+            "Priced Longshot: Kalshi 5–35¢, model-first edge at least +4pp, expected ROI on cost at least +15%, "
+            "value multiple at least 1.15x, exact Kalshi contract, and adequate sport-model confidence. "
+            "Sportsbook confirmation is optional—not required."
         )
     else:
         st.info(
-            "Best Available gate: independent fair at least 45%, edge at least +3pp, value multiple at least 1.05x, "
-            "at least 3 fresh books, exact Kalshi match. It is not simply the highest Kalshi probability."
+            "Best Available: model-first fair at least 45%, edge at least +3pp, value multiple at least 1.05x, "
+            "exact Kalshi contract, and adequate sport-model confidence. It is not a favorite detector."
         )
 
-    if st.button("Analyze markets & build ticket", type="primary", use_container_width=True):
-        if not api_key:
-            st.error("THE_ODDS_API_KEY is required for independent pricing. Sports Edge will not build an intelligence parlay from Kalshi price alone.")
-        else:
-            with st.spinner("Building independent fair values, matching exact Kalshi contracts, and scoring EV…"):
+    if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
+        with st.spinner("Scoring current Kalshi markets with sport-specific models…"):
+            model_candidates = model_candidates_from_kalshi(
+                kalshi_grouped,
+                sport_filter=sport_filter,
+            )
+
+            # Preset controls which model families are allowed. Current direct
+            # model coverage is match/game winner. Player-prop presets fail
+            # closed until their own public feature models are available.
+            game_presets = {
+                "Best Available",
+                "Mixed Sports",
+                "Tennis Moneyline",
+                "NFL Game Markets",
+            }
+            if preset not in game_presets:
+                model_candidates = []
+
+            active_err = None
+            universe_errors: list[str] = []
+            scan_errors: list[str] = []
+            calls = 0
+            book_candidates: list[ParlayCandidateLeg] = []
+            linked_games = 0
+            games_discovered = 0
+
+            # Sportsbooks are optional secondary calibration only.
+            if api_key and model_candidates:
                 active, active_err = get_active_sports(api_key)
                 lazy_games, _, universe_errors = build_game_universe(api_key, active, sport_filter)
+                games_discovered = len(lazy_games)
                 lazy_scoped = game_scoped_markets(markets, lazy_games)
+                linked_games = sum(1 for game in lazy_games if lazy_scoped.get(game.event_id))
                 candidate_mode = "longshot" if mode == "longshot" else "high_confidence"
-                candidates, scan_errors, calls = scan_parlay_candidates(
+                book_candidates, scan_errors, calls = scan_parlay_candidates(
                     preset=preset,
                     mode=candidate_mode,
                     sport_filter_value=sport_filter,
@@ -1109,37 +1137,39 @@ elif view == "Parlay Generator":
                     api_key_value=api_key,
                     max_games=scan_games_n,
                 )
-                result = build_intelligent_parlay(
-                    candidates,
-                    mode=mode,
-                    target_legs=target,
-                    max_per_event=1,
-                    diversify_sports=(sport_filter == "All"),
-                )
-                linked_games = sum(1 for game in lazy_games if lazy_scoped.get(game.event_id))
-                exact_candidates = sum(1 for row in candidates if row.kalshi_ticker)
-                edge_candidates = sum(1 for row in candidates if row.evidence_class == "EDGE-QUALIFIED")
-                st.session_state["intel_parlay_v2"] = {
-                    "result": result,
-                    "preset": preset,
-                    "mode": mode,
-                    "sport": sport_filter,
-                    "candidate_count": len(candidates),
-                    "games_discovered": len(lazy_games),
-                    "linked_games": linked_games,
-                    "exact_candidates": exact_candidates,
-                    "edge_candidates": edge_candidates,
-                    "calls": calls,
-                    "errors": [e for e in ([active_err] + universe_errors + scan_errors) if e],
-                }
 
-    state = st.session_state.get("intel_parlay_v2")
+            candidates = attach_sportsbook_context(model_candidates, book_candidates)
+            result = build_intelligent_parlay(
+                candidates,
+                mode=mode,
+                target_legs=target,
+                max_per_event=1,
+                diversify_sports=(sport_filter == "All"),
+            )
+
+            model_covered = sum(1 for row in candidates if row.model_probability is not None)
+            book_confirmed = sum(1 for row in candidates if row.book_count > 0)
+            st.session_state["intel_parlay_v3"] = {
+                "result": result,
+                "preset": preset,
+                "mode": mode,
+                "sport": sport_filter,
+                "model_candidates": len(model_candidates),
+                "model_covered": model_covered,
+                "book_confirmed": book_confirmed,
+                "games_discovered": games_discovered,
+                "linked_games": linked_games,
+                "calls": calls,
+                "errors": [e for e in ([active_err] + universe_errors + scan_errors) if e],
+            }
+
+    state = st.session_state.get("intel_parlay_v3")
     if state and state.get("mode") == mode and state.get("preset") == preset and state.get("sport") == sport_filter:
         result = state["result"]
         if result.legs:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Qualified legs", len(result.legs))
-            c2.metric("Independent fair", f"{result.fair_joint_probability:.2%}")
+            c2.metric("Model fair", f"{result.fair_joint_probability:.2%}")
             c3.metric("Kalshi price product", f"{result.market_joint_probability:.2%}")
             c4.metric("Ticket value", f"{result.ticket_value_multiple:.2f}x")
 
@@ -1150,6 +1180,8 @@ elif view == "Parlay Generator":
                         "Sport": row.leg.sport,
                         "Game": row.leg.event_title,
                         "Selection": row.leg.selection,
+                        "Model": row.leg.model_name or "—",
+                        "Model conf": f"{row.leg.model_confidence:.0%}",
                         "Fair": f"{row.fair_probability:.1%}",
                         "Kalshi": f"{row.kalshi_probability:.1%}",
                         "Edge": f"{row.edge_points:+.1f} pp",
@@ -1157,7 +1189,6 @@ elif view == "Parlay Generator":
                         "ROI on cost": f"{row.expected_roi_on_cost:+.0%}",
                         "Value": f"{row.value_multiple:.2f}x",
                         "Books": row.leg.book_count,
-                        "Age": f"{row.leg.source_age_s:.0f}s",
                     }
                     for row in result.legs
                 ]
@@ -1165,10 +1196,12 @@ elif view == "Parlay Generator":
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
             for idx, row in enumerate(result.legs, 1):
-                with st.expander(f"{idx}. {row.leg.selection} — why it qualified"):
+                with st.expander(f"{idx}. {row.leg.selection} — model analysis"):
                     st.write(f"**Event:** {row.leg.event_title}")
+                    st.write(f"**Sport model:** {row.leg.model_name or '—'}")
+                    st.write(f"**Model confidence:** {row.leg.model_confidence:.0%} · sample {row.leg.model_sample_size}")
                     st.write(f"**Kalshi:** {row.leg.kalshi_side} · {row.kalshi_probability:.1%} · {row.leg.kalshi_ticker}")
-                    st.write(f"**Independent fair:** {row.fair_probability:.1%}")
+                    st.write(f"**Model-first fair:** {row.fair_probability:.1%}")
                     st.write(f"**Price edge:** {row.edge_points:+.1f} percentage points")
                     st.write(f"**Expected value:** USD {row.ev_per_contract:+.2f} per USD 1 payout contract")
                     st.write(f"**Expected ROI on cost:** {row.expected_roi_on_cost:+.0%}")
@@ -1181,28 +1214,33 @@ elif view == "Parlay Generator":
             if result.warnings:
                 st.warning(" · ".join(result.warnings))
             st.caption(
-                f"Sportsbook matches discovered: {state.get('games_discovered', 0)} · "
-                f"Kalshi-linked: {state.get('linked_games', 0)} · "
-                f"exact priced candidates: {state.get('exact_candidates', 0)} · "
-                f"edge-qualified candidates: {state.get('edge_candidates', 0)} · "
-                f"about {state['calls']} sportsbook request(s). "
-                f"Correlation risk: {result.correlation_risk}. Joint probabilities are independence benchmarks, not guarantees."
+                f"Kalshi/model candidates: {state.get('model_candidates', 0)} · "
+                f"model-covered: {state.get('model_covered', 0)} · "
+                f"sportsbook-confirmed: {state.get('book_confirmed', 0)} · "
+                f"optional sportsbook calls: {state.get('calls', 0)} · "
+                f"correlation risk: {result.correlation_risk}. "
+                "Joint probabilities are independence benchmarks, not guarantees."
             )
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            st.warning(
-                "No ticket met the independent pricing and EV gates. Sports Edge will not fill a parlay with favorites or cheap contracts just to reach the target leg count."
-            )
+            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets"}:
+                st.warning(
+                    "This player-prop family does not yet have a production sport-specific model. "
+                    "Sports Edge is intentionally refusing book-only prop picks."
+                )
+            else:
+                st.warning(
+                    "No current leg cleared the model-first probability, confidence, and EV gates. "
+                    "Sports Edge will not manufacture a ticket from Kalshi favorites or sportsbook consensus."
+                )
             st.caption(
-                f"Sportsbook matches discovered: {state.get('games_discovered', 0)} · "
-                f"Kalshi-linked: {state.get('linked_games', 0)} · "
-                f"exact priced candidates: {state.get('exact_candidates', 0)} · "
-                f"edge-qualified candidates: {state.get('edge_candidates', 0)}. "
-                "Try a larger Tennis scan if needed—not weaker evidence."
+                f"Kalshi/model candidates: {state.get('model_candidates', 0)} · "
+                f"model-covered: {state.get('model_covered', 0)} · "
+                f"sportsbook-confirmed: {state.get('book_confirmed', 0)}."
             )
         if state.get("errors"):
-            with st.expander("Scan diagnostics"):
+            with st.expander("Secondary data diagnostics"):
                 for error in state["errors"][:12]:
                     st.caption("• " + str(error))
 
@@ -1252,7 +1290,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** tennis Elo/form, MLB probability baselines, and NFL distribution baselines are restored; NBA/WNBA market coverage is enabled while model overlays remain evidence-gated.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
