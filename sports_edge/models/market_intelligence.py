@@ -316,7 +316,7 @@ def _quality(
     major_factor = min(1.0, major_count / 3.0)
     ref_factor = 1.0 if reference_count else 0.45
     dispersion_factor = clamp(1.0 - dispersion_pp / 12.0)
-    freshness_factor = clamp(1.0 - source_age_s / 180.0)
+    freshness_factor = clamp(1.0 - source_age_s / 120.0)
     vig_factor = 1.0 if vig_removed else 0.55
     return clamp(
         0.30 * count_factor
@@ -440,7 +440,7 @@ def game_price_edges(
     market_key: str = "h2h",
     now: datetime | None = None,
     min_books: int = 3,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
 ) -> list[PriceEdge]:
     """Find cross-book price edges for a two-way game market."""
 
@@ -540,7 +540,7 @@ def prop_price_edges(
     market_keys: Iterable[str],
     now: datetime | None = None,
     min_books: int = 3,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
 ) -> list[PriceEdge]:
     """Find underpriced current player-prop prices across actual sportsbooks.
 
