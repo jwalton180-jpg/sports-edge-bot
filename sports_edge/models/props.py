@@ -23,6 +23,28 @@ PROP_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
         "Receiving": ("player_receptions", "player_reception_yds", "player_reception_tds"),
         "Touchdowns": ("player_anytime_td", "player_tds", "player_1st_td"),
     },
+    "NBA": {
+        "Points": ("player_points", "player_points_alternate"),
+        "Rebounds": ("player_rebounds", "player_rebounds_alternate"),
+        "Assists": ("player_assists", "player_assists_alternate"),
+        "Threes": ("player_threes", "player_threes_alternate"),
+        "PRA": ("player_points_rebounds_assists", "player_points_rebounds_assists_alternate"),
+        "Steals": ("player_steals", "player_steals_alternate"),
+        "Blocks": ("player_blocks", "player_blocks_alternate"),
+        "Double Double": ("player_double_double",),
+        "Triple Double": ("player_triple_double",),
+    },
+    "WNBA": {
+        "Points": ("player_points", "player_points_alternate"),
+        "Rebounds": ("player_rebounds", "player_rebounds_alternate"),
+        "Assists": ("player_assists", "player_assists_alternate"),
+        "Threes": ("player_threes", "player_threes_alternate"),
+        "PRA": ("player_points_rebounds_assists", "player_points_rebounds_assists_alternate"),
+        "Steals": ("player_steals", "player_steals_alternate"),
+        "Blocks": ("player_blocks", "player_blocks_alternate"),
+        "Double Double": ("player_double_double",),
+        "Triple Double": ("player_triple_double",),
+    },
 }
 
 
@@ -50,6 +72,22 @@ MARKET_LABELS = {
     "player_anytime_td": "Anytime TD",
     "player_tds": "Touchdowns",
     "player_1st_td": "First TD",
+    "player_points": "Points",
+    "player_points_alternate": "Points",
+    "player_rebounds": "Rebounds",
+    "player_rebounds_alternate": "Rebounds",
+    "player_assists": "Assists",
+    "player_assists_alternate": "Assists",
+    "player_threes": "Threes",
+    "player_threes_alternate": "Threes",
+    "player_points_rebounds_assists": "Points + Rebounds + Assists",
+    "player_points_rebounds_assists_alternate": "Points + Rebounds + Assists",
+    "player_steals": "Steals",
+    "player_steals_alternate": "Steals",
+    "player_blocks": "Blocks",
+    "player_blocks_alternate": "Blocks",
+    "player_double_double": "Double Double",
+    "player_triple_double": "Triple Double",
 }
 
 
@@ -105,7 +143,7 @@ def prop_consensus(
     *,
     market_keys: tuple[str, ...] | list[str],
     now: datetime | None = None,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
     min_books: int = 2,
 ) -> list[PropConsensus]:
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
