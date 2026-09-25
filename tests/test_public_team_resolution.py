@@ -1,7 +1,10 @@
 from sports_edge.data.public_team_data import (
+    _basketball_team_index,
     _metadata_aliases,
     _mlb_match_team_id,
+    _nfl_team_code,
     _resolve_competitors,
+    _resolve_team_id,
 )
 
 
@@ -75,3 +78,49 @@ def test_mlb_ambiguous_location_fails_closed():
         121: {"new york", "mets", "new york mets", "nym"},
     }
     assert _mlb_match_team_id("New York", aliases) is None
+
+
+
+def test_compact_city_nickname_initial_aliases_support_kalshi_labels():
+    aliases = _metadata_aliases(
+        {
+            "displayName": "Chicago Cubs",
+            "location": "Chicago",
+            "name": "Cubs",
+            "abbreviation": "CHC",
+        }
+    )
+    assert "chicago c" in aliases
+
+
+def test_nfl_kalshi_compact_team_labels_map_to_nflverse_codes():
+    assert _nfl_team_code("Kansas City") == "KC"
+    assert _nfl_team_code("Los Angeles C") == "LAC"
+    assert _nfl_team_code("Los Angeles R") == "LAR"
+    assert _nfl_team_code("New York J") == "NYJ"
+    assert _nfl_team_code("New York G") == "NYG"
+
+
+def test_basketball_index_resolves_city_and_compact_same_city_labels():
+    games = [
+        {
+            "homeTeam": {
+                "teamId": 1,
+                "teamCity": "Los Angeles",
+                "teamName": "Lakers",
+                "teamTricode": "LAL",
+                "teamSlug": "lakers",
+            },
+            "awayTeam": {
+                "teamId": 2,
+                "teamCity": "Los Angeles",
+                "teamName": "Clippers",
+                "teamTricode": "LAC",
+                "teamSlug": "clippers",
+            },
+        }
+    ]
+    index = _basketball_team_index(games)
+    assert _resolve_team_id("Los Angeles L", index) == 1
+    assert _resolve_team_id("Los Angeles C", index) == 2
+    assert _resolve_team_id("Los Angeles", index) is None
