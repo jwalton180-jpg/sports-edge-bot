@@ -14,7 +14,14 @@ from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
-from sports_edge.models.parlay import PRESETS, build_parlay_research, kalshi_copy_ticket
+from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
+from sports_edge.models.parlay_candidates import (
+    ParlayCandidateLeg,
+    candidate_legs_from_h2h,
+    candidate_legs_from_props,
+    combo_blueprint,
+    generate_candidate_parlay,
+)
 from sports_edge.models.prop_edges import build_prop_signals
 from sports_edge.models.props import PROP_GROUPS, prop_consensus
 
@@ -345,6 +352,129 @@ def build_game_line_signals(markets: list[dict], api_key: str | None, sport_filt
     return sorted(dedup.values(), key=lambda s: (s.status == "QUALIFIED", s.edge_points, s.confidence), reverse=True), [e for e in errors if e]
 
 
+PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
+    "MLB Hits": [("MLB", ("batter_hits",))],
+    "MLB Home Runs": [("MLB", ("batter_home_runs",))],
+    "MLB Strikeouts": [("MLB", ("pitcher_strikeouts",))],
+    "NFL Passing": [("NFL", ("player_pass_yds", "player_pass_tds"))],
+    "NFL Rushing": [("NFL", ("player_rush_yds",))],
+    "NFL Receiving": [("NFL", ("player_receptions", "player_reception_yds"))],
+    "NFL Touchdowns": [("NFL", ("player_anytime_td",))],
+    "Best Available": [("MLB", ("batter_hits",)), ("NFL", ("player_anytime_td",))],
+    "Mixed Sports": [("MLB", ("batter_hits",)), ("NFL", ("player_anytime_td",))],
+}
+
+
+def parlay_candidate_table(legs: list[ParlayCandidateLeg] | tuple[ParlayCandidateLeg, ...]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Source": "KALSHI-READY" if x.kalshi_ticker else "CONSENSUS",
+                "Sport": x.sport,
+                "Game": x.event_title,
+                "Selection": x.selection,
+                "Fair": f"{x.fair_probability:.1%}",
+                "Books": x.book_count,
+                "Age": f"{x.source_age_s:.0f}s",
+                "Kalshi": f"{x.kalshi_price:.1%}" if x.kalshi_price is not None else "—",
+                "Edge": f"{x.kalshi_edge_points:+.1f} pp" if x.kalshi_edge_points is not None else "—",
+            }
+            for x in legs
+        ]
+    )
+
+
+def _round_robin_games(games_in: list[GameEvent], sports: list[str], limit: int) -> list[GameEvent]:
+    buckets = {sport: [g for g in games_in if g.sport == sport] for sport in sports}
+    out: list[GameEvent] = []
+    while len(out) < limit and any(buckets.values()):
+        for sport in sports:
+            bucket = buckets.get(sport, [])
+            if bucket and len(out) < limit:
+                out.append(bucket.pop(0))
+    return out
+
+
+def scan_parlay_candidates(
+    *,
+    preset: str,
+    mode: str,
+    games_in: list[GameEvent],
+    scoped_markets: dict[str, list[dict]],
+    api_key_value: str,
+    max_games: int,
+) -> tuple[list[ParlayCandidateLeg], list[str], int]:
+    candidates: list[ParlayCandidateLeg] = []
+    errors: list[str] = []
+    calls = 0
+
+    # Game moneylines are useful for Best Available / Mixed / NFL Game Markets
+    # and cost one current-odds market per sport, not one event-prop request.
+    if preset in ("Best Available", "Mixed Sports", "NFL Game Markets"):
+        wanted_sports = ["NFL"] if preset == "NFL Game Markets" else ["MLB", "NFL"]
+        active, active_err = get_active_sports(api_key_value)
+        if active_err:
+            errors.append(active_err)
+        for label, sport_key in sport_pairs(active):
+            sport_name = "Tennis" if sport_key.startswith("tennis_") else ("NFL" if "nfl" in sport_key else "MLB")
+            if sport_name not in wanted_sports:
+                continue
+            events, err, _ = get_featured_odds(api_key_value, sport_key)
+            calls += 1
+            if err:
+                errors.append(f"{label}: {err}")
+                continue
+            event_map = {str(e.get("id")): e for e in events if e.get("id")}
+            game_map = {g.event_id: g for g in games_in if g.sport == sport_name}
+            for event_id, game in game_map.items():
+                event_payload = event_map.get(event_id)
+                if not event_payload:
+                    continue
+                exact = build_live_signals(scoped_markets.get(event_id, []), [event_payload], sport=sport_name)
+                candidates.extend(candidate_legs_from_h2h(game, event_payload, exact, mode=mode))
+
+    plan = PARLAY_PROP_PLAN.get(preset, [])
+    if plan:
+        sports = list(dict.fromkeys(s for s, _ in plan))
+        scan_games = _round_robin_games(games_in, sports, max_games)
+        keys_by_sport = {sport: keys for sport, keys in plan}
+        for game in scan_games:
+            keys = keys_by_sport.get(game.sport)
+            if not keys:
+                continue
+            payload, err, _ = get_event_odds(
+                api_key_value,
+                game.sport_key,
+                game.event_id,
+                ",".join(keys),
+            )
+            calls += 1
+            if err:
+                errors.append(f"{game.away_team} @ {game.home_team}: {err}")
+                continue
+            quotes = prop_consensus(payload, market_keys=keys) if payload else []
+            exact = build_prop_signals(scoped_markets.get(game.event_id, []), game, quotes)
+            candidates.extend(candidate_legs_from_props(game, quotes, exact, mode=mode))
+
+    # Deduplicate exact same event/selection.
+    dedup: dict[tuple[str, str], ParlayCandidateLeg] = {}
+    for row in candidates:
+        key = (row.event_id, row.selection.lower())
+        old = dedup.get(key)
+        if old is None or (
+            row.kalshi_ticker is not None,
+            row.fair_probability,
+            row.book_count,
+        ) > (
+            old.kalshi_ticker is not None,
+            old.fair_probability,
+            old.book_count,
+        ):
+            dedup[key] = row
+
+    return list(dedup.values()), errors, calls
+
+
 if "view" not in st.session_state:
     st.session_state.view = "Games"
 if "prop_signal_cache" not in st.session_state:
@@ -523,7 +653,8 @@ elif view == "Edge Board":
 elif view == "Parlay Generator":
     st.header("Parlay Generator")
     st.markdown(
-        '<div class="section-note">Generate from actual game-scoped qualified legs only. Load player-prop categories first if you want MLB hits/HR/K or NFL passing/rushing/receiving/TD legs included.</div>',
+        '<div class="section-note">This generator actively scans current real games when you tap Generate. '
+        'It no longer depends on you loading Player Props first. Kalshi exact matches are preferred, but sportsbook-consensus candidates can still form a research parlay.</div>',
         unsafe_allow_html=True,
     )
 
@@ -531,38 +662,90 @@ elif view == "Parlay Generator":
     preset = st.selectbox("Parlay type", PRESETS)
     mode = "longshot" if mode_label.startswith("Longshot") else "high_confidence"
 
-    game_signals: list[LiveSignal] = []
-    if preset in ("Best Available", "Mixed Sports", "NFL Game Markets"):
-        with st.spinner("Loading qualified game-line legs…"):
-            game_signals, _ = build_game_line_signals(markets, api_key, sport_filter)
-
-    loaded_prop_signals: list[LiveSignal] = []
-    for values in st.session_state.prop_signal_cache.values():
-        loaded_prop_signals.extend(values)
-
-    pool = game_signals + loaded_prop_signals
     min_legs = 5 if mode == "longshot" else 2
     default_legs = 6 if mode == "longshot" else 4
     max_legs = 10 if mode == "longshot" else 8
-    target = st.slider("Target legs", min_value=min_legs, max_value=max_legs, value=default_legs)
+    target = st.slider("Target legs", min_value=min_legs, max_value=max_legs, value=default_legs, key="parlay_target")
+    max_scan = st.slider(
+        "Games to scan",
+        min_value=1,
+        max_value=6,
+        value=min(4, max(1, len([g for g in games if g.sport in ("MLB", "NFL")]))),
+        help="Keeps event-specific prop API usage bounded on the free plan.",
+        key="parlay_scan_games",
+    )
 
-    parlay = build_parlay_research(pool, mode=mode, preset=preset, leg_count=target)
-    p1, p2 = st.columns(2)
-    p1.metric("Qualified legs", len(parlay.legs))
-    p2.metric("Correlation risk", parlay.correlation_risk)
-    p3, p4 = st.columns(2)
-    p3.metric("Independence fair", f"{parlay.independent_fair_probability:.2%}" if parlay.legs else "—")
-    p4.metric("Value multiple", f"{parlay.value_multiple:.2f}×" if parlay.legs else "—")
-
-    if parlay.legs:
-        st.dataframe(signal_table(list(parlay.legs)), use_container_width=True, hide_index=True)
-        st.markdown("### Copy to Kalshi")
-        st.code(kalshi_copy_ticket(parlay.legs), language=None)
+    if preset in PARLAY_PROP_PLAN:
+        per_game_markets = max(len(keys) for _, keys in PARLAY_PROP_PLAN[preset])
+        st.caption(
+            f"Quota-aware scan: up to {max_scan} game(s) · roughly {max_scan * per_game_markets} prop market-credit unit(s), "
+            "plus current moneyline calls for Best Available/Mixed when used."
+        )
     else:
-        st.info("No parlay generated. Load the prop category you want under Player Props, or wait for enough game-line legs to qualify.")
+        st.caption("This preset uses current game-line consensus and exact game-scoped Kalshi markets.")
 
-    if parlay.warnings:
-        st.warning(" · ".join(parlay.warnings))
+    if st.button("Generate parlay now", type="primary", use_container_width=True):
+        if not api_key:
+            st.session_state.generated_parlay_v2 = None
+            st.session_state.generated_parlay_errors = ["THE_ODDS_API_KEY is not configured"]
+            st.session_state.generated_parlay_calls = 0
+        else:
+            with st.spinner("Scanning current games and building candidate legs…"):
+                candidates, scan_errors, calls = scan_parlay_candidates(
+                    preset=preset,
+                    mode=mode,
+                    games_in=[g for g in games if sport_filter == "All" or g.sport == sport_filter],
+                    scoped_markets=scoped,
+                    api_key_value=api_key,
+                    max_games=max_scan,
+                )
+                generated = generate_candidate_parlay(
+                    candidates,
+                    target_legs=target,
+                    mode=mode,
+                    max_per_event=2,
+                )
+                st.session_state.generated_parlay_v2 = generated
+                st.session_state.generated_parlay_errors = scan_errors
+                st.session_state.generated_parlay_calls = calls
+                st.session_state.generated_parlay_preset = preset
+                st.session_state.generated_parlay_mode = mode_label
+
+    generated = st.session_state.get("generated_parlay_v2")
+    scan_errors = st.session_state.get("generated_parlay_errors", [])
+    calls = st.session_state.get("generated_parlay_calls", 0)
+
+    if generated is not None:
+        exact_count = sum(1 for x in generated.legs if x.kalshi_ticker)
+        c1, c2 = st.columns(2)
+        c1.metric("Generated legs", len(generated.legs))
+        c2.metric("Kalshi-ready", exact_count)
+        c3, c4 = st.columns(2)
+        c3.metric(
+            "Estimated independent fair",
+            f"{generated.estimated_independent_probability:.2%}" if generated.legs else "—",
+        )
+        c4.metric("Correlation risk", generated.correlation_risk)
+
+        if generated.legs:
+            st.dataframe(parlay_candidate_table(generated.legs), use_container_width=True, hide_index=True)
+            st.markdown("### Kalshi Combo blueprint")
+            st.caption(
+                "KALSHI-READY means Sports Edge found an exact current Kalshi component. CONSENSUS means the leg is a current sportsbook-consensus candidate; "
+                "look for the same component in Kalshi's Combo Builder if it is eligible. Recheck the live RFQ price before entering."
+            )
+            st.code(combo_blueprint(generated.legs), language=None)
+        else:
+            st.info("The scan ran successfully but found no current legs meeting this builder's minimum consensus/freshness gates.")
+
+        if generated.warnings:
+            st.warning(" · ".join(generated.warnings))
+        st.caption(f"Current scan requests used by this generation: {calls}")
+
+    if scan_errors:
+        with st.expander("Scan notes / unavailable markets"):
+            for err in scan_errors[:12]:
+                st.caption(err)
 
 elif view == "Live Feed":
     st.header("Live Feed")
