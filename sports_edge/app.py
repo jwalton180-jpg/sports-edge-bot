@@ -19,6 +19,12 @@ from sports_edge.models.intelligence import (
     h2h_intelligence,
     prop_book_offer_edges,
 )
+from sports_edge.models.kalshi_sports import (
+    choose_kalshi_ticket,
+    group_kalshi_sports,
+    prop_families as kalshi_prop_families,
+    side_candidates as kalshi_side_candidates,
+)
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_candidates import (
@@ -111,7 +117,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-24-premium-intelligence-1")
+st.caption("Build: 2026-09-24-kalshi-first-1")
 
 
 def _secret(name: str) -> str | None:
@@ -134,7 +140,7 @@ def _safe_error(exc: Exception) -> str:
     return msg[:300]
 
 
-@st.cache_data(ttl=8, show_spinner=False)
+@st.cache_data(ttl=20, show_spinner=False)
 def get_kalshi_markets(max_pages: int = 5):
     client = KalshiPublicClient()
     found: dict[str, dict] = {}
@@ -373,6 +379,87 @@ def signal_table(signals: list[LiveSignal]) -> pd.DataFrame:
             for s in signals
         ]
     )
+
+
+def _kalshi_rows_for_sport(grouped, sport_filter_value: str):
+    if sport_filter_value == "All":
+        rows = []
+        for sport_name in ("MLB", "NFL", "Tennis"):
+            rows.extend(grouped.get(sport_name, []))
+        return rows
+    return list(grouped.get(sport_filter_value, []))
+
+
+def kalshi_market_table(rows) -> pd.DataFrame:
+    data = []
+    for row in rows:
+        market = row.market
+        yes_p = market_side_probability(market, "YES")
+        no_p = market_side_probability(market, "NO")
+        try:
+            volume = float(market.get("volume_fp", market.get("volume", 0)) or 0)
+        except (TypeError, ValueError):
+            volume = 0.0
+        data.append(
+            {
+                "Sport": row.sport,
+                "Family": row.family,
+                "Event": market.get("event_title") or market.get("title") or market.get("event_ticker") or "",
+                "YES": f"{yes_p:.0%}" if yes_p is not None else "—",
+                "NO": f"{no_p:.0%}" if no_p is not None else "—",
+                "Volume": int(volume),
+                "Ticker": market.get("ticker") or "",
+            }
+        )
+    return pd.DataFrame(data)
+
+
+def kalshi_event_table(rows) -> pd.DataFrame:
+    events = {}
+    for row in rows:
+        market = row.market
+        key = str(market.get("event_ticker") or market.get("ticker") or "")
+        if not key:
+            continue
+        rec = events.setdefault(
+            key,
+            {
+                "Sport": row.sport,
+                "Event": market.get("event_title") or market.get("title") or key,
+                "Families": set(),
+                "Markets": 0,
+                "Volume": 0.0,
+            },
+        )
+        rec["Families"].add(row.family)
+        rec["Markets"] += 1
+        try:
+            rec["Volume"] += float(market.get("volume_fp", market.get("volume", 0)) or 0)
+        except (TypeError, ValueError):
+            pass
+    return pd.DataFrame(
+        [
+            {
+                "Sport": rec["Sport"],
+                "Event": rec["Event"],
+                "Markets": rec["Markets"],
+                "Families": ", ".join(sorted(rec["Families"])),
+                "Volume": int(rec["Volume"]),
+            }
+            for rec in sorted(events.values(), key=lambda x: x["Volume"], reverse=True)
+        ]
+    )
+
+
+def kalshi_ticket_text(legs) -> str:
+    lines = ["SPORTS EDGE — KALSHI TICKET", "Recheck the live price in Kalshi before entry.", ""]
+    for idx, leg in enumerate(legs, 1):
+        lines.append(
+            f"{idx}. {leg.ticker} | {leg.side} | {leg.selection} | {round(leg.price * 100)}¢ | {leg.family}"
+        )
+    if not legs:
+        lines.append("No current legs fit this ticket profile.")
+    return "\n".join(lines)
 
 
 def build_game_line_signals(markets: list[dict], api_key: str | None, sport_filter: str):
@@ -704,167 +791,79 @@ if st.button("↻ Refresh live data", use_container_width=True):
 
 api_key = _secret("THE_ODDS_API_KEY")
 markets, kerr, klat = get_kalshi_markets()
-active_sports, active_err = get_active_sports(api_key) if api_key else ([], None)
-games, raw_events, game_errors = build_game_universe(api_key, active_sports)
-scoped = game_scoped_markets(markets, games)
+kalshi_grouped = group_kalshi_sports(markets)
+kalshi_rows = _kalshi_rows_for_sport(kalshi_grouped, sport_filter)
 
-visible_games = [g for g in games if sport_filter == "All" or g.sport == sport_filter]
+# Sportsbook schedules are no longer part of the default render path. They are
+# loaded only for explicit intelligence scans/enrichment.
+games: list[GameEvent] = []
+raw_events: dict[str, dict] = {}
+game_errors: list[str] = []
+scoped: dict[str, list[dict]] = {}
+visible_games: list[GameEvent] = []
 
 if view == "Games":
-    st.header("Today / Live / Upcoming Games")
+    st.header("Kalshi Sports")
     st.markdown(
-        '<div class="nav-hint"><b>This is the Sports Edge universe now.</b> Only real scheduled/live matchups appear here. '
-        'Championship futures, awards, entertainment, and “before 2030” markets are excluded from the main workflow.</div>',
+        '<div class="nav-hint"><b>Kalshi-first universe.</b> These are current Kalshi MLB, NFL and tennis events. '
+        'Futures/championship markets are removed before they reach the app.</div>',
         unsafe_allow_html=True,
     )
-
-    if not api_key:
-        st.warning("Add THE_ODDS_API_KEY in Streamlit Secrets to load the current game universe.")
-    elif game_errors and not games:
-        st.warning("Game feed unavailable: " + " | ".join(game_errors[:2]))
-    elif not visible_games:
-        st.info("No current games found for this filter.")
+    if not kalshi_rows:
+        st.info("No current Kalshi markets were classified for this sport.")
     else:
-        live_count = sum(g.state == "LIVE" for g in visible_games)
-        soon_count = sum(g.state == "SOON" for g in visible_games)
-        game_contract_count = sum(len(scoped.get(g.event_id, [])) for g in visible_games)
+        event_df = kalshi_event_table(kalshi_rows)
         c1, c2 = st.columns(2)
-        c1.metric("Games", len(visible_games))
-        c2.metric("Live", live_count)
-        c3, c4 = st.columns(2)
-        c3.metric("Starting ≤6h", soon_count)
-        c4.metric("Kalshi game contracts", game_contract_count)
-        st.dataframe(game_rows(visible_games, scoped), use_container_width=True, hide_index=True)
-
+        c1.metric("Kalshi events", len(event_df))
+        c2.metric("Kalshi markets", len(kalshi_rows))
+        st.dataframe(event_df, use_container_width=True, hide_index=True)
     if kerr:
         st.warning(f"Kalshi warning: {kerr}")
 
 elif view == "Game Lines":
-    st.header("Game Lines")
-    st.markdown('<div class="section-note">Pick an actual game, then load ML / spread / total. Full line loading is on-demand to protect your free API quota.</div>', unsafe_allow_html=True)
-
-    if not visible_games:
-        st.info("No games available for this filter.")
-    else:
-        labels = {game_label(g): g for g in visible_games}
-        selected_label = st.selectbox("Game", list(labels))
-        game = labels[selected_label]
-        game_markets = scoped.get(game.event_id, [])
-
-        st.markdown(f"### {game.away_team} @ {game.home_team}")
-        st.caption(f"{game.state} · {relative_time(game)} · Kalshi contracts tied to this game: {len(game_markets)}")
-
-        if game_markets:
-            with st.expander("Kalshi contracts for this game", expanded=True):
-                st.dataframe(kalshi_game_rows(game_markets), use_container_width=True, hide_index=True)
-        else:
-            st.info("No Kalshi contracts were found with this exact game identity.")
-
-        market_keys = "h2h,spreads,totals" if game.sport in ("NFL", "MLB") else "h2h"
-        if st.button("Load current ML / spread / total", use_container_width=True):
-            payload, err, latency = get_event_odds(api_key, game.sport_key, game.event_id, market_keys)
-            st.session_state[f"lines_{game.event_id}"] = (payload, err, latency)
-
-        loaded = st.session_state.get(f"lines_{game.event_id}")
-        if loaded:
-            payload, err, latency = loaded
-            if err:
-                st.warning(err)
-            else:
-                df = featured_line_rows(payload)
-                if not df.empty:
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                    st.caption(f"Current sportsbook snapshot · {latency:.0f} ms" if latency else "Current sportsbook snapshot")
-                else:
-                    st.info("No featured lines returned for this game.")
-
-elif view == "Player Props":
-    st.header("Player Props")
+    st.header("Kalshi Markets")
     st.markdown(
-        '<div class="section-note">Current event-specific props only. Select one real MLB/NFL game and a prop family; futures are never queried here.</div>',
+        '<div class="section-note">Direct from current Kalshi sport markets. Sportsbook data is enrichment, not the source of this list.</div>',
         unsafe_allow_html=True,
     )
-
-    prop_games = [g for g in visible_games if g.sport in PROP_GROUPS]
-    if not prop_games:
-        st.info("No MLB/NFL games are available for this filter.")
+    line_families = {
+        "Moneyline", "Spread", "Game Total", "Match Winner",
+        "First 3 Innings", "First 5 Innings", "First 7 Innings",
+        "First Half", "Second Half", "First Quarter", "Second Quarter",
+        "Third Quarter", "Fourth Quarter", "Games Total", "Games Spread",
+    }
+    line_rows = [row for row in kalshi_rows if row.family in line_families]
+    if not line_rows:
+        st.info("No current Kalshi game-line markets found for this sport.")
     else:
-        labels = {game_label(g): g for g in prop_games}
-        selected_label = st.selectbox("Game", list(labels), key="prop_game")
-        game = labels[selected_label]
-        groups = PROP_GROUPS[game.sport]
-        category = st.selectbox("Prop category", list(groups), key="prop_category")
-        keys = groups[category]
+        family_options = ["All"] + sorted({row.family for row in line_rows})
+        family = st.selectbox("Market type", family_options, key=f"kalshi_lines_{sport_filter}")
+        show_rows = line_rows if family == "All" else [row for row in line_rows if row.family == family]
+        st.dataframe(kalshi_market_table(show_rows[:250]), use_container_width=True, hide_index=True)
 
-        st.caption(f"{game.away_team} @ {game.home_team} · {category} · {len(keys)} API market key(s)")
-        if st.button("Load current player props", use_container_width=True):
-            payload, err, latency = get_event_odds(api_key, game.sport_key, game.event_id, ",".join(keys))
-            quotes = prop_consensus(payload, market_keys=keys) if payload else []
-            prop_signals = build_prop_signals(scoped.get(game.event_id, []), game, quotes)
-            book_edges = prop_book_offer_edges(payload, keys) if payload else []
-            cache_key = f"{game.event_id}|{category}"
-            st.session_state.prop_signal_cache[cache_key] = prop_signals
-            st.session_state[f"props_{cache_key}"] = (quotes, book_edges, err, latency)
+elif view == "Player Props":
+    st.header("Kalshi Props")
+    st.markdown(
+        '<div class="section-note">Direct Kalshi prop markets first. MLB/NFL player props and tennis set/game props appear here even when sportsbook enrichment is unavailable.</div>',
+        unsafe_allow_html=True,
+    )
+    sports_to_show = ("MLB", "NFL", "Tennis") if sport_filter == "All" else (sport_filter,)
+    prop_rows = []
+    for sport_name in sports_to_show:
+        allowed = kalshi_prop_families(sport_name)
+        prop_rows.extend([row for row in kalshi_grouped.get(sport_name, []) if row.family in allowed])
 
-        cache_key = f"{game.event_id}|{category}"
-        loaded = st.session_state.get(f"props_{cache_key}")
-        if loaded:
-            quotes, book_edges, err, latency = loaded
-            if err:
-                st.warning(err)
-            elif quotes:
-                prop_rows = [
-                    {
-                        "Player": q.player,
-                        "Prop": q.market_label,
-                        "Side": q.side,
-                        "Line": q.line if q.line is not None else "—",
-                        "Consensus": f"{q.fair_probability:.1%}",
-                        "Books": q.book_count,
-                        "Age": f"{q.median_age_s:.0f}s",
-                        "Median odds": int(round(q.median_price)),
-                    }
-                    for q in quotes[:120]
-                ]
-                st.dataframe(pd.DataFrame(prop_rows), use_container_width=True, hide_index=True)
-                st.caption(f"Event-specific sportsbook snapshot · {latency:.0f} ms" if latency else "Event-specific sportsbook snapshot")
-
-                positive_book_edges = [
-                    row for row in book_edges
-                    if row.edge_points >= 1.5 and row.evidence_quality >= 0.60
-                ][:20]
-                st.markdown("### Underpriced sportsbook offers")
-                if positive_book_edges:
-                    offers_df = pd.DataFrame(
-                        [
-                            {
-                                "Book": row.bookmaker_title,
-                                "Selection": row.selection,
-                                "Odds": int(round(row.american_price)),
-                                "Break-even": f"{row.break_even_probability:.1%}",
-                                "Other-books fair": f"{row.leave_one_out_fair_probability:.1%}",
-                                "Edge": f"{row.edge_points:+.1f} pp",
-                                "Comparison books": row.comparison_books,
-                                "Quality": f"{row.evidence_quality:.0%}",
-                            }
-                            for row in positive_book_edges
-                        ]
-                    )
-                    st.dataframe(offers_df, use_container_width=True, hide_index=True)
-                    st.caption("Each offer is compared only with the other fresh books at the same player/line; the target book is excluded from its own fair-value estimate.")
-                else:
-                    st.info("No current sportsbook offer clears the leave-one-book-out edge/quality gate for this prop family.")
-
-                prop_signals = st.session_state.prop_signal_cache.get(cache_key, [])
-                qualified_props = [s for s in prop_signals if s.status == "QUALIFIED"]
-                watches = [s for s in prop_signals if s.status == "WATCH"]
-                st.markdown("### Exact Kalshi matches")
-                if qualified_props or watches:
-                    st.dataframe(signal_table((qualified_props + watches)[:30]), use_container_width=True, hide_index=True)
-                else:
-                    st.info("No exact player + prop + milestone Kalshi contract matched this sportsbook snapshot. Sports Edge does not force approximate matches.")
-            else:
-                st.info("No props returned for this game/category.")
+    if not prop_rows:
+        st.info("No current Kalshi prop markets found for this sport.")
+    else:
+        family_options = ["All"] + sorted({row.family for row in prop_rows})
+        family = st.selectbox("Prop type", family_options, key=f"kalshi_props_{sport_filter}")
+        show_rows = prop_rows if family == "All" else [row for row in prop_rows if row.family == family]
+        st.dataframe(kalshi_market_table(show_rows[:300]), use_container_width=True, hide_index=True)
+        st.caption(
+            "These are actual Kalshi contracts. Sports Edge will enrich exact markets with sportsbook/model evidence separately; "
+            "missing external data no longer hides the Kalshi prop itself."
+        )
 
 elif view == "Edge Board":
     st.header("Edge Board")
@@ -873,8 +872,11 @@ elif view == "Edge Board":
         'Only real current games are eligible; futures are excluded.</div>',
         unsafe_allow_html=True,
     )
-    with st.spinner("Comparing Kalshi against major/reference sportsbook prices…"):
-        signals, intelligence_map, signal_errors = build_game_line_signals(markets, api_key, sport_filter)
+    if st.button("Run intelligence scan", type="primary", use_container_width=True):
+        with st.spinner("Enriching current Kalshi markets with sportsbook/model evidence…"):
+            signals, intelligence_map, signal_errors = build_game_line_signals(markets, api_key, sport_filter)
+            st.session_state["edge_scan_v2"] = (signals, intelligence_map, signal_errors)
+    signals, intelligence_map, signal_errors = st.session_state.get("edge_scan_v2", ([], {}, []))
 
     show = [s for s in signals if s.status in ("QUALIFIED", "WATCH")]
     if signal_errors and not signals:
@@ -941,178 +943,81 @@ elif view == "Edge Board":
         st.info("No current game contract clears the live edge/watch gates. Sports Edge will not manufacture a pick.")
 
 elif view == "Parlay Generator":
-    st.header("Parlay Generator")
+    st.header("Kalshi Parlay Generator")
     st.markdown(
-        '<div class="section-note">Sport selection now controls the scan. Tennis scans tennis. '
-        'Edge Research only uses independently priced Kalshi dislocations; Consensus Explorer is a market baseline and is not presented as model edge.</div>',
+        '<div class="section-note">Tickets are built directly from current Kalshi markets for the selected sport. '
+        'Best Available and Longshot now use different price profiles by design.</div>',
         unsafe_allow_html=True,
     )
 
     builder_label = st.selectbox(
         "Builder",
-        ["Edge Research Builder", "Consensus Explorer", "Longshot Explorer (5+ legs)"],
+        ["Best Available", "Longshot (5+ legs)"],
+        key="kalshi_builder_v1",
     )
-    if builder_label.startswith("Edge"):
-        mode = "edge"
-        require_edge = True
-    elif builder_label.startswith("Longshot"):
-        mode = "longshot"
-        require_edge = False
-    else:
-        mode = "high_confidence"
-        require_edge = False
-
-    preset_options = parlay_presets_for_sport(sport_filter)
-    preset = st.selectbox(
-        "Parlay type",
-        preset_options,
-        index=0,
-        key=f"parlay_type_{sport_filter}",
-    )
-
+    mode = "longshot" if builder_label.startswith("Longshot") else "best"
     min_legs = 5 if mode == "longshot" else 2
     default_legs = 6 if mode == "longshot" else 4
     max_legs = 10 if mode == "longshot" else 8
-    target = st.slider("Target legs", min_value=min_legs, max_value=max_legs, value=default_legs, key="parlay_target")
+    target = st.slider("Target legs", min_value=min_legs, max_value=max_legs, value=default_legs, key="kalshi_target_v1")
 
-    eligible_games = [g for g in games if sport_filter == "All" or g.sport == sport_filter]
-    max_scan = st.slider(
-        "Games to scan",
-        min_value=1,
-        max_value=8,
-        value=min(6, max(1, len(eligible_games))),
-        help="Bounds current event/prop API use on the free plan.",
-        key="parlay_scan_games",
-    )
+    available_rows = list(kalshi_rows)
+    family_options = ["All Markets"] + sorted({row.family for row in available_rows})
+    family = st.selectbox("Market family", family_options, key=f"kalshi_parlay_family_{sport_filter}")
+    if family != "All Markets":
+        available_rows = [row for row in available_rows if row.family == family]
 
-    if require_edge:
-        st.info(
-            "Edge Research Builder will only use legs where Sports Edge found an exact current Kalshi component "
-            "and a ≥3 percentage-point advantage versus fresh independent no-vig sportsbook consensus. It may return no parlay."
+    candidates = kalshi_side_candidates(available_rows)
+    if st.button("Generate Kalshi ticket", type="primary", use_container_width=True):
+        ticket = choose_kalshi_ticket(
+            candidates,
+            mode=mode,
+            target_legs=target,
+            max_per_event=1,
         )
-    else:
-        st.warning(
-            "Consensus Explorer/Longshot Explorer uses current sportsbook consensus as a baseline. "
-            "Those legs are not a proprietary Sports Edge model edge unless the Evidence column says EDGE-QUALIFIED."
-        )
+        st.session_state["kalshi_ticket_v1"] = ticket
+        st.session_state["kalshi_ticket_mode_v1"] = mode
 
-    if sport_filter == "Tennis":
-        st.caption("Tennis mode currently uses current match moneyline consensus + exact Kalshi price dislocations. Surface/serve-return/ITF model research is not yet promoted into production picks.")
+    ticket = st.session_state.get("kalshi_ticket_v1", [])
+    ticket_mode = st.session_state.get("kalshi_ticket_mode_v1")
+    if ticket_mode and ticket_mode != mode:
+        ticket = []
 
-    if st.button("Generate parlay now", type="primary", use_container_width=True):
-        if not api_key:
-            st.session_state.generated_parlay_v3 = None
-            st.session_state.generated_parlay_errors = ["THE_ODDS_API_KEY is not configured"]
-            st.session_state.generated_parlay_calls = 0
-        else:
-            with st.spinner("Scanning the selected sport(s) and evaluating current evidence…"):
-                candidates, scan_errors, calls = scan_parlay_candidates(
-                    preset=preset,
-                    mode=mode,
-                    sport_filter_value=sport_filter,
-                    games_in=eligible_games,
-                    scoped_markets=scoped,
-                    api_key_value=api_key,
-                    max_games=max_scan,
-                )
-                strict_generated = _generate_parlay_compat(
-                    candidates,
-                    target_legs=target,
-                    mode=mode,
-                    max_per_event=1 if preset in ("Mixed Sports", "Tennis Moneyline") else 2,
-                    require_edge=require_edge,
-                    diversify_sports=(preset == "Mixed Sports"),
-                )
-
-                fallback_used = False
-                generated = strict_generated
-                fallback_candidates = []
-
-                if require_edge and not strict_generated.legs:
-                    # Do not leave the user with a blank generator when no exact
-                    # Kalshi dislocation exists. Show a clearly labelled research
-                    # slate based on fresh, multi-book consensus quality instead.
-                    fallback_candidates = _research_fallback_candidates(candidates)
-                    if fallback_candidates:
-                        generated = _generate_parlay_compat(
-                            fallback_candidates,
-                            target_legs=target,
-                            mode="high_confidence",
-                            max_per_event=1 if preset in ("Mixed Sports", "Tennis Moneyline") else 2,
-                            require_edge=False,
-                            diversify_sports=(preset == "Mixed Sports"),
-                        )
-                        fallback_used = bool(generated.legs)
-
-                st.session_state.generated_parlay_v3 = generated
-                st.session_state.generated_parlay_strict_v3 = strict_generated
-                st.session_state.generated_parlay_fallback_v3 = fallback_used
-                st.session_state.generated_parlay_candidate_count_v3 = len(candidates)
-                st.session_state.generated_parlay_fallback_count_v3 = len(fallback_candidates)
-                st.session_state.generated_parlay_errors = scan_errors
-                st.session_state.generated_parlay_calls = calls
-                st.session_state.generated_parlay_preset = preset
-                st.session_state.generated_parlay_builder = builder_label
-                st.session_state.generated_parlay_sport = sport_filter
-
-    generated = st.session_state.get("generated_parlay_v3")
-    strict_generated = st.session_state.get("generated_parlay_strict_v3")
-    fallback_used = st.session_state.get("generated_parlay_fallback_v3", False)
-    candidate_count = st.session_state.get("generated_parlay_candidate_count_v3", 0)
-    fallback_count = st.session_state.get("generated_parlay_fallback_count_v3", 0)
-    scan_errors = st.session_state.get("generated_parlay_errors", [])
-    calls = st.session_state.get("generated_parlay_calls", 0)
-
-    if generated is not None:
-        edge_count = sum(1 for x in generated.legs if x.evidence_class == "EDGE-QUALIFIED")
-        strict_edge_count = (
-            len(strict_generated.legs)
-            if strict_generated is not None and require_edge
-            else edge_count
-        )
+    if ticket:
+        implied = 1.0
+        for leg in ticket:
+            implied *= leg.price
         c1, c2 = st.columns(2)
-        c1.metric("Generated legs", len(generated.legs))
-        c2.metric("Edge-qualified", strict_edge_count)
-        c3, c4 = st.columns(2)
-        c3.metric("Research candidates", candidate_count)
-        c4.metric("Correlation risk", generated.correlation_risk)
-
-        if fallback_used:
+        c1.metric("Legs", len(ticket))
+        c2.metric("Market-price product", f"{implied:.3%}")
+        rows = pd.DataFrame(
+            [
+                {
+                    "Sport": leg.sport,
+                    "Family": leg.family,
+                    "Event": leg.event_title,
+                    "Side": leg.side,
+                    "Selection": leg.selection,
+                    "Kalshi": f"{leg.price:.0%}",
+                    "Volume": int(leg.volume),
+                    "Ticker": leg.ticker,
+                }
+                for leg in ticket
+            ]
+        )
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        if mode == "longshot":
             st.warning(
-                "No exact Kalshi ≥3pp edge passed the strict gate. Showing a research-ranked slate "
-                "from fresh 3+ book consensus instead. These legs are NOT edge-qualified picks."
+                "Longshot deliberately uses 7–35¢ Kalshi sides. This creates a different, higher-upside ticket; "
+                "the low prices are not themselves evidence of positive expected value."
             )
-            st.caption(
-                f"Fallback pool: {fallback_count} candidate(s) with ≥3 fresh books, ≤120s source age, "
-                "and ≥52% no-vig consensus probability."
-            )
-
-        if generated.legs:
-            st.dataframe(parlay_candidate_table(generated.legs), use_container_width=True, hide_index=True)
-            st.markdown("### Kalshi Combo blueprint")
-            st.caption(
-                "EDGE-QUALIFIED = exact current Kalshi component with a validated price gap versus fresh independent consensus. "
-                "KALSHI MATCH = exact component found but edge gate did not pass. CONSENSUS BASELINE = research-ranked market evidence only; "
-                "it is not being represented as a proprietary model edge."
-            )
-            st.code(combo_blueprint(generated.legs), language=None)
         else:
-            if require_edge:
-                st.info(
-                    f"No strict edge or research-fallback legs were available from {candidate_count} current candidate(s). "
-                    "Open Scan notes below to see missing/stale market sources."
-                )
-            else:
-                st.info("The scan ran, but no current consensus candidates passed source-count/freshness gates.")
-
-        if generated.warnings:
-            st.warning(" · ".join(generated.warnings))
-        st.caption(f"Current scan requests used by this generation: {calls}")
-
-    if scan_errors:
-        with st.expander("Scan notes / unavailable markets"):
-            for err in scan_errors[:12]:
-                st.caption(err)
+            st.caption("Best Available uses a 40–82¢ Kalshi price band and favors liquid current markets.")
+        st.markdown("### Copy ticket")
+        st.code(kalshi_ticket_text(ticket), language=None)
+    else:
+        band = "7–35¢" if mode == "longshot" else "40–82¢"
+        st.info(f"No generated ticket yet, or not enough current Kalshi legs in the {band} profile for this filter.")
 
 elif view == "Live Feed":
     st.header("Live Feed")
