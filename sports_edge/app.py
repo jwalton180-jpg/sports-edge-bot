@@ -664,15 +664,41 @@ def scan_parlay_candidates(
 
 
 if "view" not in st.session_state:
-    st.session_state.view = "Games"
+    st.session_state.view = "Edge Board"
 if "prop_signal_cache" not in st.session_state:
     st.session_state.prop_signal_cache = {}
 
-views = ["Games", "Game Lines", "Player Props", "Edge Board", "Parlay Generator", "Live Feed", "Model Trust"]
-view = st.selectbox("Go to", views, index=views.index(st.session_state.view), key="main_view")
+nav_map = {
+    "For You": "Edge Board",
+    "Games": "Games",
+    "Markets": "Game Lines",
+    "Props": "Player Props",
+    "Parlays": "Parlay Generator",
+    "Live": "Live Feed",
+}
+reverse_nav = {value: key for key, value in nav_map.items()}
+current_nav = reverse_nav.get(st.session_state.view, "For You")
+nav_labels = list(nav_map)
+
+selected_nav = st.segmented_control(
+    "Navigation",
+    nav_labels,
+    default=current_nav,
+    key="main_nav_v2",
+    label_visibility="collapsed",
+)
+view = nav_map.get(selected_nav or current_nav, "Edge Board")
 st.session_state.view = view
 
-if st.button("↻ Refresh", use_container_width=True):
+sport_filter = st.segmented_control(
+    "Sport",
+    ["All", "MLB", "NFL", "Tennis"],
+    default="All",
+    key="sport_filter_v2",
+    label_visibility="collapsed",
+) or "All"
+
+if st.button("↻ Refresh live data", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
 
@@ -682,7 +708,6 @@ active_sports, active_err = get_active_sports(api_key) if api_key else ([], None
 games, raw_events, game_errors = build_game_universe(api_key, active_sports)
 scoped = game_scoped_markets(markets, games)
 
-sport_filter = st.selectbox("Sport", ["All", "MLB", "NFL", "Tennis"], key="sport_filter")
 visible_games = [g for g in games if sport_filter == "All" or g.sport == sport_filter]
 
 if view == "Games":
@@ -1127,22 +1152,19 @@ elif view == "Live Feed":
     else:
         st.info(merr or "No MLB live events right now.")
 
-elif view == "Model Trust":
-    st.header("Model Trust")
-    t1, t2 = st.columns(2)
-    t1.metric("Futures in main workflow", "0")
-    t2.metric("Real orders", "DISABLED")
-    t3, t4 = st.columns(2)
-    t3.metric("Game identity", "BOTH TEAMS")
-    t4.metric("Approximate prop matches", "REJECTED")
-    st.write("**Game universe:** live/upcoming events from current sports feeds.")
-    st.write("**Game-line edges:** exact event identity + current Kalshi price + fresh sportsbook no-vig consensus.")
-    st.write("**Player-prop edges:** exact game + full player name + prop family + compatible milestone/line before qualification.")
-    st.write("**Parlays:** only qualified game-scoped legs; same-event duplicates are blocked until correlation models are validated.")
-    st.warning("No signal or parlay is guaranteed. If identity, freshness, or contract semantics are uncertain, Sports Edge shows nothing.")
+
+with st.expander("System status / Model Trust"):
+    st.write("**Futures:** excluded from the main workflow.")
+    st.write("**Orders:** disabled; Sports Edge is read-only.")
+    st.write("**Game identity:** both participants must match before cross-source pricing is used.")
+    st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
+    st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
+    st.write("**Sport models:** tennis Elo/form, MLB probability baselines, and NFL distribution baselines are restored; they are only promoted when the required live/historical inputs are available.")
+    st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
+    st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
 st.divider()
 st.caption(
-    f"Game-first on-demand mode · Kalshi request time {f'{klat:.0f} ms' if klat else '—'} · "
+    f"Premium intelligence branch · Kalshi request time {f'{klat:.0f} ms' if klat else '—'} · "
     f"Deployment {deployment_mode().replace('_', ' ').title()}"
 )
