@@ -89,7 +89,7 @@ def candidate_legs_from_h2h(
     if not quotes:
         return []
 
-    min_probability = 0.05 if mode == "edge" else (0.56 if mode == "high_confidence" else 0.20)
+    min_probability = 0.05 if mode in ("edge", "longshot") else (0.56 if mode == "high_confidence" else 0.20)
     rows: list[ParlayCandidateLeg] = []
     for selection, quote in quotes.items():
         if quote.warnings or quote.fair_probability < min_probability:
@@ -145,7 +145,7 @@ def candidate_legs_from_props(
     *,
     mode: str = "high_confidence",
 ) -> list[ParlayCandidateLeg]:
-    min_probability = 0.05 if mode == "edge" else (0.56 if mode == "high_confidence" else 0.20)
+    min_probability = 0.05 if mode in ("edge", "longshot") else (0.56 if mode == "high_confidence" else 0.20)
     rows: list[ParlayCandidateLeg] = []
 
     for quote in quotes:
