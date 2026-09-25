@@ -140,7 +140,7 @@ def h2h_intelligence(
     market_probability: float | None = None,
     model_probability: float | None = None,
     now: datetime | None = None,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
 ) -> IntelligenceResult | None:
     """Source-weighted h2h intelligence with explicit evidence accounting."""
 
@@ -266,7 +266,7 @@ def prop_book_offer_edges(
     market_keys: tuple[str, ...] | list[str],
     *,
     now: datetime | None = None,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
     min_other_books: int = 2,
 ) -> list[BookOfferEdge]:
     """Find underpriced prop offers using leave-one-book-out fair value.
