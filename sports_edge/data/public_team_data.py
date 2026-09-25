@@ -18,17 +18,106 @@ ESPN_SLUGS = {
 }
 
 
+_GENERIC_LOCATION_TOKENS = {
+    "city", "united", "state", "university", "club", "team",
+}
+
+
 def _aliases(name: str) -> set[str]:
+    """Conservative generic aliases for cross-provider team identity.
+
+    Single generic location tokens (e.g. "city") are never emitted. Full
+    multi-token locations such as "kansas city" remain valid.
+    """
     n = normalize(name)
     if not n:
         return set()
     parts = n.split()
     out = {n}
+
     if len(parts) >= 2:
-        out.add(parts[-1])
+        last = parts[-1]
+        if len(last) >= 3 and last not in _GENERIC_LOCATION_TOKENS:
+            out.add(last)
     if len(parts) >= 3:
         out.add(" ".join(parts[-2:]))
-    return {x for x in out if len(x) >= 3}
+
+    return {
+        x for x in out
+        if len(x) >= 3 and x not in _GENERIC_LOCATION_TOKENS
+    }
+
+
+def _metadata_aliases(team: dict) -> set[str]:
+    """Build aliases from structured provider team metadata."""
+    values = {
+        str(team.get("displayName") or ""),
+        str(team.get("shortDisplayName") or ""),
+        str(team.get("name") or ""),
+        str(team.get("abbreviation") or ""),
+        str(team.get("location") or ""),
+        str(team.get("nickname") or ""),
+        str(team.get("clubName") or ""),
+        str(team.get("teamName") or ""),
+        str(team.get("shortName") or ""),
+    }
+    aliases: set[str] = set()
+    for value in values:
+        aliases.update(_aliases(value))
+
+    # Explicit location+nickname aliases are useful when feeds split them.
+    location = normalize(str(team.get("location") or ""))
+    nickname = normalize(str(team.get("name") or team.get("nickname") or ""))
+    if location:
+        aliases.add(location)
+    if location and nickname:
+        aliases.add(f"{location} {nickname}")
+
+    return {x for x in aliases if x and x not in _GENERIC_LOCATION_TOKENS}
+
+
+def _identity_score(query: str, team: dict) -> int:
+    """Score a query against structured metadata without fuzzy guessing."""
+    q = normalize(query)
+    if not q:
+        return 0
+    aliases = _metadata_aliases(team)
+    if q in aliases:
+        # Exact full/location/nickname/abbreviation match.
+        return 100
+
+    q_aliases = _aliases(query)
+    overlap = q_aliases & aliases
+    if not overlap:
+        return 0
+
+    # Longer multi-word overlap is materially stronger than nickname-only.
+    return max(60 + min(30, len(alias)) for alias in overlap)
+
+
+def _resolve_competitors(
+    team_a: str,
+    team_b: str,
+    competitors: list[dict],
+) -> tuple[dict, dict] | None:
+    """Resolve both teams jointly; ambiguity or same-team resolution fails closed."""
+    scored_a = [(comp, _identity_score(team_a, comp.get("team") or {})) for comp in competitors]
+    scored_b = [(comp, _identity_score(team_b, comp.get("team") or {})) for comp in competitors]
+
+    scored_a = [(c, s) for c, s in scored_a if s > 0]
+    scored_b = [(c, s) for c, s in scored_b if s > 0]
+    if not scored_a or not scored_b:
+        return None
+
+    max_a = max(s for _, s in scored_a)
+    max_b = max(s for _, s in scored_b)
+    best_a = [c for c, s in scored_a if s == max_a]
+    best_b = [c for c, s in scored_b if s == max_b]
+    if len(best_a) != 1 or len(best_b) != 1:
+        return None
+    if best_a[0] is best_b[0]:
+        return None
+    return best_a[0], best_b[0]
 
 
 def _same_team(a: str, b: str) -> bool:
@@ -98,17 +187,10 @@ def espn_team_model(
         if len(competitors) < 2:
             continue
 
-        by_name = {}
-        for comp in competitors:
-            team = comp.get("team") or {}
-            display = str(team.get("displayName") or team.get("name") or "").strip()
-            if display:
-                by_name[display] = comp
-
-        match_a = next((comp for name, comp in by_name.items() if _same_team(team_a, name)), None)
-        match_b = next((comp for name, comp in by_name.items() if _same_team(team_b, name)), None)
-        if match_a is None or match_b is None:
+        resolved = _resolve_competitors(team_a, team_b, competitors)
+        if resolved is None:
             continue
+        match_a, match_b = resolved
 
         ra = _overall_record(match_a)
         rb = _overall_record(match_b)
@@ -190,22 +272,26 @@ def _mlb_team_names(season: int) -> dict[int, set[str]]:
             tid = int(team.get("id"))
         except (TypeError, ValueError):
             continue
-        names = {
-            str(team.get("name") or ""),
-            str(team.get("teamName") or ""),
-            str(team.get("locationName") or ""),
-            str(team.get("shortName") or ""),
-            str(team.get("clubName") or ""),
+        metadata = {
+            "displayName": team.get("name"),
+            "shortDisplayName": team.get("shortName"),
+            "name": team.get("teamName"),
+            "abbreviation": team.get("abbreviation"),
+            "location": team.get("locationName"),
+            "clubName": team.get("clubName"),
+            "teamName": team.get("teamName"),
+            "shortName": team.get("shortName"),
         }
-        aliases: set[str] = set()
-        for name in names:
-            aliases.update(_aliases(name))
-        out[tid] = aliases
+        out[tid] = _metadata_aliases(metadata)
     return out
 
 
 def _mlb_match_team_id(name: str, aliases: dict[int, set[str]]) -> int | None:
+    q = normalize(name)
     wanted = _aliases(name)
+    exact = [tid for tid, values in aliases.items() if q and q in values]
+    if len(exact) == 1:
+        return exact[0]
     hits = [tid for tid, values in aliases.items() if wanted & values]
     return hits[0] if len(hits) == 1 else None
 
