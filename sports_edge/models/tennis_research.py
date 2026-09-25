@@ -36,12 +36,15 @@ class PlayerState:
 
 
 class TennisResearchModel:
+    NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
+
     def __init__(self, gender: str, *, current_year: int | None = None):
         self.gender = gender
         year = current_year or datetime.now(timezone.utc).year
         self.start_year = max(2000, year - 1)
         self.end_year = year
         self.players: dict[str, PlayerState] = defaultdict(PlayerState)
+        self.alias_index: dict[str, set[str]] = {}
         self._fit()
 
     @staticmethod
@@ -67,6 +70,47 @@ class TennisResearchModel:
     @staticmethod
     def _name(value: str | None) -> str:
         return normalize(value)
+
+    @classmethod
+    def _alias_forms(cls, value: str | None) -> tuple[str, ...]:
+        """Conservative player-name aliases; ambiguous aliases never resolve."""
+        normalized = normalize(value)
+        if not normalized:
+            return ()
+        tokens = normalized.split()
+        if tokens and tokens[-1] in cls.NAME_SUFFIXES:
+            tokens = tokens[:-1]
+        if not tokens:
+            return ()
+
+        forms = {" ".join(tokens)}
+        if len(tokens) == 2:
+            forms.add(f"{tokens[1]} {tokens[0]}")
+        elif len(tokens) >= 3:
+            # Public feeds often omit middle names/initials. Use only the
+            # first+last reduction and its reverse; resolution must be unique.
+            forms.add(f"{tokens[0]} {tokens[-1]}")
+            forms.add(f"{tokens[-1]} {tokens[0]}")
+        return tuple(sorted(forms))
+
+    def _rebuild_alias_index(self) -> None:
+        index: dict[str, set[str]] = {}
+        for canonical in self.players:
+            for alias in self._alias_forms(canonical):
+                index.setdefault(alias, set()).add(canonical)
+        self.alias_index = index
+
+    def _resolve_name(self, value: str | None) -> str | None:
+        exact = self._name(value)
+        if not exact:
+            return None
+        if exact in self.players:
+            return exact
+
+        hits: set[str] = set()
+        for alias in self._alias_forms(value):
+            hits.update(self.alias_index.get(alias, set()))
+        return next(iter(hits)) if len(hits) == 1 else None
 
     def _fit(self) -> None:
         rows = list(load_recent_tennis_rows(self.gender, self.start_year, self.end_year))
@@ -116,6 +160,8 @@ class TennisResearchModel:
                 w.minutes.append(minutes)
                 l.minutes.append(minutes)
 
+        self._rebuild_alias_index()
+
     @staticmethod
     def _elo_probability(a: float, b: float) -> float:
         return 1.0 / (1.0 + 10 ** ((b - a) / 400.0))
@@ -144,9 +190,11 @@ class TennisResearchModel:
         level: str = "tour",
         as_of: date | None = None,
     ) -> ModelEvidence | None:
-        akey = self._name(player_a)
-        bkey = self._name(player_b)
-        if not akey or not bkey:
+        a_input = self._name(player_a)
+        b_input = self._name(player_b)
+        akey = self._resolve_name(player_a)
+        bkey = self._resolve_name(player_b)
+        if not akey or not bkey or akey == bkey:
             return None
         a = self.players.get(akey)
         b = self.players.get(bkey)
@@ -157,6 +205,10 @@ class TennisResearchModel:
         factors = [
             f"Elo {player_a} {a.elo:.0f} vs {player_b} {b.elo:.0f}",
         ]
+        if a_input != akey:
+            factors.append(f"Unique historical-name alias resolved for {player_a}")
+        if b_input != bkey:
+            factors.append(f"Unique historical-name alias resolved for {player_b}")
 
         form_a = self._mean(a.recent_results)
         form_b = self._mean(b.recent_results)
