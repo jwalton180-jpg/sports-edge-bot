@@ -1,0 +1,189 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from math import prod
+from typing import Iterable
+
+from sports_edge.models.game_scope import GameEvent
+from sports_edge.models.live_board import LiveSignal
+from sports_edge.models.props import PropConsensus
+
+
+@dataclass(frozen=True)
+class ParlayCandidateLeg:
+    sport: str
+    event_id: str
+    event_title: str
+    market_key: str
+    market_label: str
+    selection: str
+    fair_probability: float
+    book_count: int
+    source_age_s: float
+    median_odds: float
+    kalshi_ticker: str | None
+    kalshi_side: str | None
+    kalshi_price: float | None
+    kalshi_edge_points: float | None
+    kalshi_status: str
+
+
+@dataclass(frozen=True)
+class GeneratedParlay:
+    legs: tuple[ParlayCandidateLeg, ...]
+    estimated_independent_probability: float
+    correlation_risk: str
+    warnings: tuple[str, ...]
+
+
+def _selection_text(q: PropConsensus) -> str:
+    line = "" if q.line is None else f" {q.line:g}"
+    return f"{q.player} {q.side}{line} {q.market_label}".strip()
+
+
+def _find_kalshi_match(
+    game: GameEvent,
+    quote: PropConsensus,
+    exact_signals: Iterable[LiveSignal],
+) -> LiveSignal | None:
+    player = quote.player.lower()
+    label = quote.market_label.lower()
+    candidates = [
+        s
+        for s in exact_signals
+        if s.event_id == game.event_id
+        and player in s.selection.lower()
+        and label in s.selection.lower()
+    ]
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda s: (s.status == "QUALIFIED", s.edge_points, s.confidence),
+        reverse=True,
+    )[0]
+
+
+def candidate_legs_from_props(
+    game: GameEvent,
+    quotes: list[PropConsensus],
+    exact_signals: list[LiveSignal],
+    *,
+    mode: str = "high_confidence",
+) -> list[ParlayCandidateLeg]:
+    min_probability = 0.56 if mode == "high_confidence" else 0.36
+    rows: list[ParlayCandidateLeg] = []
+
+    for quote in quotes:
+        # Use one actionable side per offered player/line. Unders/No are valid,
+        # but we avoid duplicate opposite sides by taking the stronger side later.
+        if quote.warnings:
+            continue
+        if quote.book_count < 2 or quote.fair_probability < min_probability:
+            continue
+
+        match = _find_kalshi_match(game, quote, exact_signals)
+        rows.append(
+            ParlayCandidateLeg(
+                sport=game.sport,
+                event_id=game.event_id,
+                event_title=f"{game.away_team} @ {game.home_team}",
+                market_key=quote.market_key,
+                market_label=quote.market_label,
+                selection=_selection_text(quote),
+                fair_probability=quote.fair_probability,
+                book_count=quote.book_count,
+                source_age_s=quote.median_age_s,
+                median_odds=quote.median_price,
+                kalshi_ticker=match.ticker if match else None,
+                kalshi_side=match.side if match else None,
+                kalshi_price=match.market_probability if match else None,
+                kalshi_edge_points=match.edge_points if match else None,
+                kalshi_status=match.status if match else "CONSENSUS ONLY",
+            )
+        )
+
+    # Keep only the stronger side for each event/player/market/line identity.
+    best: dict[tuple[str, str, str], ParlayCandidateLeg] = {}
+    for row in rows:
+        # selection begins with the full player name and includes side/line; use
+        # event + market + player-ish prefix to keep opposite sides from doubling.
+        player_key = row.selection.split(" Over", 1)[0].split(" Under", 1)[0].split(" Yes", 1)[0].split(" No", 1)[0]
+        key = (row.event_id, row.market_key, player_key.lower())
+        old = best.get(key)
+        if old is None or row.fair_probability > old.fair_probability:
+            best[key] = row
+
+    return sorted(
+        best.values(),
+        key=lambda r: (
+            r.kalshi_status == "QUALIFIED",
+            r.kalshi_ticker is not None,
+            r.fair_probability,
+            r.book_count,
+            -r.source_age_s,
+        ),
+        reverse=True,
+    )
+
+
+def generate_candidate_parlay(
+    candidates: list[ParlayCandidateLeg],
+    *,
+    target_legs: int,
+    mode: str = "high_confidence",
+    max_per_event: int = 2,
+) -> GeneratedParlay:
+    selected: list[ParlayCandidateLeg] = []
+    per_event: dict[str, int] = {}
+    seen_player_market: set[tuple[str, str, str]] = set()
+
+    for row in candidates:
+        player = row.selection.split(" Over", 1)[0].split(" Under", 1)[0].split(" Yes", 1)[0].split(" No", 1)[0]
+        identity = (row.event_id, player.lower(), row.market_label.lower())
+        if identity in seen_player_market:
+            continue
+        if per_event.get(row.event_id, 0) >= max_per_event:
+            continue
+        selected.append(row)
+        seen_player_market.add(identity)
+        per_event[row.event_id] = per_event.get(row.event_id, 0) + 1
+        if len(selected) >= target_legs:
+            break
+
+    warnings: list[str] = []
+    if len(selected) < target_legs:
+        warnings.append(f"Only {len(selected)} usable current leg(s) found for a {target_legs}-leg target")
+
+    repeated_events = sum(v > 1 for v in per_event.values())
+    correlation_risk = "LOW"
+    if repeated_events:
+        correlation_risk = "MEDIUM"
+        warnings.append("Some legs share a game; joint probability assumes independence and may overstate the true probability")
+    if len(selected) >= 5:
+        correlation_risk = "MEDIUM"
+        warnings.append("Long parlays magnify pricing/model error")
+
+    independent = prod(x.fair_probability for x in selected) if selected else 0.0
+    return GeneratedParlay(
+        legs=tuple(selected),
+        estimated_independent_probability=independent,
+        correlation_risk=correlation_risk,
+        warnings=tuple(dict.fromkeys(warnings)),
+    )
+
+
+def combo_blueprint(legs: Iterable[ParlayCandidateLeg]) -> str:
+    lines = ["SPORTS EDGE — KALSHI COMBO BLUEPRINT", "Recheck eligibility and live RFQ price in Kalshi before entry.", ""]
+    any_leg = False
+    for i, leg in enumerate(legs, 1):
+        any_leg = True
+        ready = (
+            f"{leg.kalshi_ticker} | {leg.kalshi_side} | reference {round((leg.kalshi_price or 0) * 100)}¢"
+            if leg.kalshi_ticker
+            else "Find matching component in Kalshi Combo Builder"
+        )
+        lines.append(f"{i}. {leg.event_title} | {leg.selection} | fair {leg.fair_probability:.1%} | {ready}")
+    if not any_leg:
+        lines.append("No current legs.")
+    return "\n".join(lines)
