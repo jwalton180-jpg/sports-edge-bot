@@ -145,7 +145,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-mlb-prop-models-2")
+st.caption("Build: 2026-09-25-nfl-passing-model-1")
 
 
 def _secret(name: str) -> str | None:
@@ -984,6 +984,8 @@ elif view == "Player Props":
             model_family_key = "batter_home_runs"
         elif sport_filter == "MLB" and family == "Strikeouts":
             model_family_key = "pitcher_strikeouts"
+        elif sport_filter == "NFL" and family == "Passing Yards":
+            model_family_key = "player_pass_yds"
 
         if model_family_key:
             st.success("Independent Sports Edge model available for this prop family.")
@@ -1003,6 +1005,8 @@ elif view == "Player Props":
                         max_mlb_hr_players=24 if model_family_key == "batter_home_runs" else None,
                         include_mlb_strikeouts=(model_family_key == "pitcher_strikeouts"),
                         max_mlb_k_pitchers=16 if model_family_key == "pitcher_strikeouts" else None,
+                        include_nfl_passing_yards=(model_family_key == "player_pass_yds"),
+                        max_nfl_passing_players=16 if model_family_key == "player_pass_yds" else None,
                     )
                     prop_model_candidates = [
                         row for row in prop_model_candidates
@@ -1219,6 +1223,12 @@ elif view == "Parlay Generator":
                     if preset == "MLB Strikeouts"
                     else None
                 ),
+                include_nfl_passing_yards=(preset == "NFL Passing"),
+                max_nfl_passing_players=(
+                    max(8, min(16, target * 2))
+                    if preset == "NFL Passing"
+                    else None
+                ),
             )
 
             supported_model_presets = {
@@ -1229,6 +1239,7 @@ elif view == "Parlay Generator":
                 "MLB Hits",
                 "MLB Home Runs",
                 "MLB Strikeouts",
+                "NFL Passing",
             }
             if preset == "MLB Hits":
                 model_candidates = [
@@ -1244,6 +1255,11 @@ elif view == "Parlay Generator":
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "MLB" and row.market_key == "pitcher_strikeouts"
+                ]
+            elif preset == "NFL Passing":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "NFL" and row.market_key == "player_pass_yds"
                 ]
             elif preset == "Tennis Moneyline":
                 model_candidates = [
@@ -1399,7 +1415,7 @@ elif view == "Parlay Generator":
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"}:
+            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "NFL Passing", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"}:
                 st.warning(
                     "This player-prop family does not yet have a production sport-specific model. "
                     "Sports Edge is intentionally refusing book-only prop picks."
@@ -1465,7 +1481,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; NFL Passing Yards uses attempts, YPA, recent CPOE, active-roster and opponent pass-defense context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
