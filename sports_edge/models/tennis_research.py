@@ -21,6 +21,9 @@ class PlayerState:
     serve_points_won: deque = None
     return_points_won: deque = None
     minutes: deque = None
+    surface_elo: dict = None
+    level_elo: dict = None
+    recent_levels: deque = None
 
     def __post_init__(self):
         if self.recent_results is None:
@@ -33,6 +36,12 @@ class PlayerState:
             self.return_points_won = deque(maxlen=20)
         if self.minutes is None:
             self.minutes = deque(maxlen=20)
+        if self.surface_elo is None:
+            self.surface_elo = {}
+        if self.level_elo is None:
+            self.level_elo = {}
+        if self.recent_levels is None:
+            self.recent_levels = deque(maxlen=12)
 
 
 class TennisResearchModel:
@@ -82,10 +91,31 @@ class TennisResearchModel:
 
             expected = 1.0 / (1.0 + 10 ** ((l.elo - w.elo) / 400.0))
             level = str(row.get("tourney_level") or "").upper()
+            surface = str(row.get("surface") or "").strip().lower()
             k = 28.0 if level in {"G", "M", "A"} else (24.0 if level in {"C", "D"} else 20.0)
             delta = k * (1.0 - expected)
             w.elo += delta
             l.elo -= delta
+
+            # Maintain chronological context ratings separately from overall Elo.
+            # Sparse contexts start from the player's pre-match overall rating,
+            # then update only on matches in that context.
+            if surface:
+                ws = w.surface_elo.get(surface, w.elo - delta)
+                ls = l.surface_elo.get(surface, l.elo + delta)
+                surface_expected = 1.0 / (1.0 + 10 ** ((ls - ws) / 400.0))
+                surface_delta = 22.0 * (1.0 - surface_expected)
+                w.surface_elo[surface] = ws + surface_delta
+                l.surface_elo[surface] = ls - surface_delta
+            if level:
+                wl = w.level_elo.get(level, w.elo - delta)
+                ll = l.level_elo.get(level, l.elo + delta)
+                level_expected = 1.0 / (1.0 + 10 ** ((ll - wl) / 400.0))
+                level_delta = 20.0 * (1.0 - level_expected)
+                w.level_elo[level] = wl + level_delta
+                l.level_elo[level] = ll - level_delta
+                w.recent_levels.append(level)
+                l.recent_levels.append(level)
             w.matches += 1
             l.matches += 1
             w.recent_results.append(1.0)
@@ -142,6 +172,7 @@ class TennisResearchModel:
         player_b: str,
         *,
         level: str = "tour",
+        surface: str | None = None,
         as_of: date | None = None,
     ) -> ModelEvidence | None:
         akey = self._name(player_a)
@@ -155,8 +186,24 @@ class TennisResearchModel:
 
         p = self._elo_probability(a.elo, b.elo)
         factors = [
-            f"Elo {player_a} {a.elo:.0f} vs {player_b} {b.elo:.0f}",
+            f"Elo ${player_a} ${a.elo:.0f} vs ${player_b} ${b.elo:.0f}",
         ]
+
+        surface_key = str(surface or "").strip().lower()
+        if surface_key and surface_key in a.surface_elo and surface_key in b.surface_elo:
+            surface_p = self._elo_probability(a.surface_elo[surface_key], b.surface_elo[surface_key])
+            p = 0.62 * p + 0.38 * surface_p
+            factors.append(
+                f"${surface_key.title()} Elo ${a.surface_elo[surface_key]:.0f} vs ${b.surface_elo[surface_key]:.0f}"
+            )
+
+        level_code = {"atp tour": "A", "wta tour": "A", "challenger": "C", "itf": "F"}.get(level.lower())
+        if level_code and level_code in a.level_elo and level_code in b.level_elo:
+            level_p = self._elo_probability(a.level_elo[level_code], b.level_elo[level_code])
+            p = 0.78 * p + 0.22 * level_p
+            factors.append(
+                f"${level}-level Elo ${a.level_elo[level_code]:.0f} vs ${b.level_elo[level_code]:.0f}"
+            )
 
         form_a = self._mean(a.recent_results)
         form_b = self._mean(b.recent_results)
