@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import inspect
 import os
@@ -20,6 +21,7 @@ from sports_edge.models.intelligence import (
     prop_book_offer_edges,
 )
 from sports_edge.models.kalshi_sports import (
+    TENNIS_SERIES,
     choose_kalshi_ticket,
     group_kalshi_sports,
     prop_families as kalshi_prop_families,
@@ -140,6 +142,33 @@ def _safe_error(exc: Exception) -> str:
     return msg[:300]
 
 
+def _fetch_kalshi_series(series_ticker: str, max_pages: int = 5):
+    client = KalshiPublicClient()
+    found: dict[str, dict] = {}
+    latencies: list[float] = []
+    cursor = None
+    for _ in range(max_pages):
+        r = client.markets(
+            status="open",
+            series_ticker=series_ticker,
+            limit=200,
+            cursor=cursor,
+        )
+        latencies.append(r.latency_ms)
+        payload = r.data if isinstance(r.data, dict) else {}
+        for market in payload.get("markets", []) or []:
+            ticker = str(market.get("ticker") or "")
+            if not ticker:
+                continue
+            row = dict(market)
+            row.setdefault("series_ticker", series_ticker)
+            found[ticker] = row
+        cursor = payload.get("cursor")
+        if not cursor:
+            break
+    return found, latencies
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def get_kalshi_markets(max_pages: int = 5):
     client = KalshiPublicClient()
@@ -186,7 +215,24 @@ def get_kalshi_markets(max_pages: int = 5):
             errors.append(_safe_error(exc))
             break
 
-    return list(found.values()), (" | ".join(errors[:2]) if errors else None), (sum(latencies) if latencies else None)
+    # Guarantee complete direct tennis coverage. Generic market pagination is
+    # ordered across the whole exchange and can easily miss ATP/WTA/ITF series.
+    # Query each current tennis series directly and merge/dedupe by market ticker.
+    with ThreadPoolExecutor(max_workers=min(6, len(TENNIS_SERIES))) as pool:
+        futures = {
+            pool.submit(_fetch_kalshi_series, series): series
+            for series in TENNIS_SERIES
+        }
+        for future in as_completed(futures):
+            series = futures[future]
+            try:
+                tennis_found, tennis_latencies = future.result()
+                found.update(tennis_found)
+                latencies.extend(tennis_latencies)
+            except Exception as exc:
+                errors.append(f"{series}: {_safe_error(exc)}")
+
+    return list(found.values()), (" | ".join(errors[:3]) if errors else None), (max(latencies) if latencies else None)
 
 
 @st.cache_data(ttl=45, show_spinner=False)
@@ -832,9 +878,13 @@ elif view == "Game Lines":
         "First Half", "Second Half", "First Quarter", "Second Quarter",
         "Third Quarter", "Fourth Quarter", "Games Total", "Games Spread",
     }
-    line_rows = [row for row in kalshi_rows if row.family in line_families]
+    line_rows = (
+        list(kalshi_rows)
+        if sport_filter == "Tennis"
+        else [row for row in kalshi_rows if row.family in line_families]
+    )
     if not line_rows:
-        st.info("No current Kalshi game-line markets found for this sport.")
+        st.info("No current Kalshi markets found for this sport.")
     else:
         family_options = ["All"] + sorted({row.family for row in line_rows})
         family = st.selectbox("Market type", family_options, key=f"kalshi_lines_{sport_filter}")
