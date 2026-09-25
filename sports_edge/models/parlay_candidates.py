@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import prod
 from typing import Iterable
 
+from sports_edge.models.consensus import consensus_from_event
 from sports_edge.models.game_scope import GameEvent
 from sports_edge.models.live_board import LiveSignal
 from sports_edge.models.props import PropConsensus
@@ -20,7 +21,7 @@ class ParlayCandidateLeg:
     fair_probability: float
     book_count: int
     source_age_s: float
-    median_odds: float
+    median_odds: float | None
     kalshi_ticker: str | None
     kalshi_side: str | None
     kalshi_price: float | None
@@ -63,6 +64,67 @@ def _find_kalshi_match(
         reverse=True,
     )[0]
 
+
+
+
+def candidate_legs_from_h2h(
+    game: GameEvent,
+    event_payload: dict,
+    exact_signals: list[LiveSignal],
+    *,
+    mode: str = "high_confidence",
+) -> list[ParlayCandidateLeg]:
+    quotes = consensus_from_event(event_payload)
+    if not quotes:
+        return []
+
+    min_probability = 0.56 if mode == "high_confidence" else 0.36
+    rows: list[ParlayCandidateLeg] = []
+    for selection, quote in quotes.items():
+        if quote.warnings or quote.fair_probability < min_probability:
+            continue
+
+        matches = [
+            s for s in exact_signals
+            if s.event_id == game.event_id and s.selection.lower() == selection.lower()
+        ]
+        match = sorted(
+            matches,
+            key=lambda s: (s.status == "QUALIFIED", s.edge_points, s.confidence),
+            reverse=True,
+        )[0] if matches else None
+
+        rows.append(
+            ParlayCandidateLeg(
+                sport=game.sport,
+                event_id=game.event_id,
+                event_title=f"{game.away_team} @ {game.home_team}",
+                market_key="h2h",
+                market_label="Moneyline",
+                selection=selection,
+                fair_probability=quote.fair_probability,
+                book_count=quote.book_count,
+                source_age_s=quote.median_age_s,
+                median_odds=None,
+                kalshi_ticker=match.ticker if match else None,
+                kalshi_side=match.side if match else None,
+                kalshi_price=match.market_probability if match else None,
+                kalshi_edge_points=match.edge_points if match else None,
+                kalshi_status=match.status if match else "CONSENSUS ONLY",
+            )
+        )
+
+    # One moneyline side per game: take the stronger consensus side.
+    return sorted(
+        rows,
+        key=lambda r: (
+            r.kalshi_status == "QUALIFIED",
+            r.kalshi_ticker is not None,
+            r.fair_probability,
+            r.book_count,
+        ),
+        reverse=True,
+    )[:1]
 
 def candidate_legs_from_props(
     game: GameEvent,
