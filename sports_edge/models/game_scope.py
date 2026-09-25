@@ -66,6 +66,9 @@ def market_context(market: dict) -> str:
             "ticker",
             "event_ticker",
             "series_ticker",
+            "series_title",
+            "series_category",
+            "series_tags",
         )
     )
 
@@ -130,16 +133,40 @@ def game_scoped_markets(markets: list[dict], games: list[GameEvent]) -> dict[str
 
 
 FUTURE_TERMS = (
-    "championship",
-    "super bowl",
-    "world series",
     "before 20",
     "by 20",
     "season wins",
-    "win the division",
-    "win the conference",
+    "win total",
+    "win totals",
+    "division winner",
+    "conference winner",
+    "playoff qualifier",
+    "playoff qualification",
+    "playoff seed",
+    "season home runs",
+    "season record",
+    "season stats",
+    "best record",
+    "worst record",
+    "league leader",
+    "stat leader",
     "mvp",
+    "rookie of the year",
+    "player of the year",
+    "coach of the year",
+    "defensive player of the year",
+    "offensive player of the year",
     "award",
+    "draft pick",
+    "drafted",
+    "next team",
+    "next club",
+    "retirement",
+    "hall of fame",
+    "series winner",
+    "series exact",
+    "series total games",
+    "championship series score",
 )
 
 
