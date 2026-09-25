@@ -144,7 +144,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-intelligent-parlays-1")
+st.caption("Build: 2026-09-25-tennis-depth-1")
 
 
 def _secret(name: str) -> str | None:
@@ -701,6 +701,20 @@ def _round_robin_games(games_in: list[GameEvent], sports: list[str], limit: int)
     return out
 
 
+def _linked_scan_games(
+    games_in: list[GameEvent],
+    scoped_markets: dict[str, list[dict]],
+    sports: list[str],
+    limit: int,
+) -> list[GameEvent]:
+    """Spend scan budget only on games with exact Kalshi event linkage."""
+    linked = [
+        game for game in games_in
+        if game.sport in sports and scoped_markets.get(game.event_id)
+    ]
+    return _round_robin_games(linked, sports, limit)
+
+
 def scan_parlay_candidates(
     *,
     preset: str,
@@ -732,7 +746,7 @@ def scan_parlay_candidates(
     if h2h_sports:
         # Bound tennis/API cost by looking only at sport keys represented among
         # the selected games, then fetching h2h once per unique sport key.
-        scan_games = _round_robin_games(games_in, h2h_sports, max_games)
+        scan_games = _linked_scan_games(games_in, scoped_markets, h2h_sports, max_games)
         by_sport_key: dict[str, list[GameEvent]] = {}
         for game in scan_games:
             by_sport_key.setdefault(game.sport_key, []).append(game)
@@ -769,7 +783,7 @@ def scan_parlay_candidates(
 
     if plan:
         sports = list(dict.fromkeys(s for s, _ in plan))
-        scan_games = _round_robin_games(games_in, sports, max_games)
+        scan_games = _linked_scan_games(games_in, scoped_markets, sports, max_games)
         keys_by_sport = {sport: keys for sport, keys in plan}
         for game in scan_games:
             keys = keys_by_sport.get(game.sport)
@@ -1052,12 +1066,17 @@ elif view == "Parlay Generator":
         value=default_legs,
         key=f"intel_target_{mode}",
     )
+    if sport_filter == "Tennis":
+        scan_min, scan_max, scan_default = 8, 40, 24
+    else:
+        scan_min, scan_max, scan_default = 4, 16, 8
+
     scan_games_n = st.slider(
-        "Games to analyze",
-        min_value=4,
-        max_value=12,
-        value=8,
-        help="Larger scans use more sportsbook API calls. Sports Edge still refuses stale or unverified legs.",
+        "Matches/games to analyze",
+        min_value=scan_min,
+        max_value=scan_max,
+        value=scan_default,
+        help="Tennis scans prioritize exact Kalshi-linked matches first. Sports Edge still refuses stale or unverified legs.",
         key=f"intel_games_{sport_filter}",
     )
 
@@ -1097,12 +1116,19 @@ elif view == "Parlay Generator":
                     max_per_event=1,
                     diversify_sports=(sport_filter == "All"),
                 )
+                linked_games = sum(1 for game in lazy_games if lazy_scoped.get(game.event_id))
+                exact_candidates = sum(1 for row in candidates if row.kalshi_ticker)
+                edge_candidates = sum(1 for row in candidates if row.evidence_class == "EDGE-QUALIFIED")
                 st.session_state["intel_parlay_v2"] = {
                     "result": result,
                     "preset": preset,
                     "mode": mode,
                     "sport": sport_filter,
                     "candidate_count": len(candidates),
+                    "games_discovered": len(lazy_games),
+                    "linked_games": linked_games,
+                    "exact_candidates": exact_candidates,
+                    "edge_candidates": edge_candidates,
                     "calls": calls,
                     "errors": [e for e in ([active_err] + universe_errors + scan_errors) if e],
                 }
@@ -1155,7 +1181,11 @@ elif view == "Parlay Generator":
             if result.warnings:
                 st.warning(" · ".join(result.warnings))
             st.caption(
-                f"Analyzed {state['candidate_count']} independently priced candidate(s) using about {state['calls']} sportsbook request(s). "
+                f"Sportsbook matches discovered: {state.get('games_discovered', 0)} · "
+                f"Kalshi-linked: {state.get('linked_games', 0)} · "
+                f"exact priced candidates: {state.get('exact_candidates', 0)} · "
+                f"edge-qualified candidates: {state.get('edge_candidates', 0)} · "
+                f"about {state['calls']} sportsbook request(s). "
                 f"Correlation risk: {result.correlation_risk}. Joint probabilities are independence benchmarks, not guarantees."
             )
             st.markdown("### Kalshi combo blueprint")
@@ -1165,8 +1195,11 @@ elif view == "Parlay Generator":
                 "No ticket met the independent pricing and EV gates. Sports Edge will not fill a parlay with favorites or cheap contracts just to reach the target leg count."
             )
             st.caption(
-                f"Scanned {state['candidate_count']} candidate(s) using about {state['calls']} sportsbook request(s). "
-                "Try a broader analysis type or more games—not weaker evidence."
+                f"Sportsbook matches discovered: {state.get('games_discovered', 0)} · "
+                f"Kalshi-linked: {state.get('linked_games', 0)} · "
+                f"exact priced candidates: {state.get('exact_candidates', 0)} · "
+                f"edge-qualified candidates: {state.get('edge_candidates', 0)}. "
+                "Try a larger Tennis scan if needed—not weaker evidence."
             )
         if state.get("errors"):
             with st.expander("Scan diagnostics"):
