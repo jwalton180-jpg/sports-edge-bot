@@ -164,8 +164,8 @@ def test_tennis_moneyline_candidates_remain_tennis():
                         "key": "h2h",
                         "last_update": ts,
                         "outcomes": [
-                            {"name": "Player Alpha", "price": -135},
-                            {"name": "Player Beta", "price": 115},
+                            {"name": "Player Alpha", "price": -175},
+                            {"name": "Player Beta", "price": 150},
                         ],
                     }
                 ],
