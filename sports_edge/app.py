@@ -1192,8 +1192,9 @@ elif view == "Parlay Generator":
         )
     else:
         st.info(
-            "Best Available: model-first fair at least 45%, edge at least +3pp, value multiple at least 1.05x, "
-            "exact Kalshi contract, and adequate sport-model confidence. It is not a favorite detector."
+            "Best Available: every leg must have positive independent-model value. Standard evidence still requires +3pp / 1.05x; "
+            "deep, high-confidence model evidence may qualify smaller +1–2pp positive edges with stricter fair-probability floors. "
+            "Exact Kalshi contract and adequate sport-model confidence remain mandatory. It is not a favorite detector."
         )
 
     if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
