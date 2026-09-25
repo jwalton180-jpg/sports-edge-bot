@@ -665,7 +665,7 @@ def scan_parlay_candidates(
         h2h_sports = ["Tennis"]
     elif preset in ("Best Available", "Mixed Sports"):
         if sport_filter_value == "All":
-            h2h_sports = ["MLB", "NFL", "Tennis"]
+            h2h_sports = ["MLB", "NBA", "WNBA", "NFL", "Tennis"]
         else:
             h2h_sports = [sport_filter_value]
     else:
