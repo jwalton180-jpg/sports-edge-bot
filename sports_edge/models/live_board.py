@@ -65,7 +65,7 @@ def build_live_signals(
     *,
     sport: str,
     now: datetime | None = None,
-    max_source_age_s: float = 180.0,
+    max_source_age_s: float = 120.0,
     min_edge_points: float = 3.0,
     min_confidence: float = 0.55,
     min_data_quality: float = 0.70,
@@ -155,7 +155,7 @@ def build_underdog_signals(
     *,
     sport: str = "Tennis",
     now: datetime | None = None,
-    max_source_age_s: float = 180.0,
+    max_source_age_s: float = 120.0,
 ) -> list[LiveSignal]:
     base = build_live_signals(
         markets,
