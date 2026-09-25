@@ -167,9 +167,35 @@ FUTURE_TERMS = (
     "series exact",
     "series total games",
     "championship series score",
+    "tournament winner",
+    "win tournament",
+    "stage qualifiers",
+    "stage of tournament",
+    "round of elimination",
+    "qualify for atp finals",
+    "qualify for wta finals",
+    "ranked player",
+    "player to compete",
+    "player to return",
+    "most wins",
+    "highest win total",
+    "exact wins",
+    "all star selections",
+    "draft top",
 )
 
 
 def looks_like_future(market: dict) -> bool:
     text = normalize(market_context(market))
-    return any(term in text for term in FUTURE_TERMS)
+    if any(term in text for term in FUTURE_TERMS):
+        return True
+    patterns = (
+        r"\b(?:american|national) league (?:east|west|central) winner\b",
+        r"\b(?:american|national) football conference (?:east|west|north|south) winner\b",
+        r"\bwill .+ win .+ tournament\b",
+        r"\bwill .+ qualify for (?:atp|wta) finals\b",
+        r"\bwill .+ reach (?:round|stage)\b",
+        r"\bwill .+ retire\b",
+        r"\bwill .+ be drafted\b",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
