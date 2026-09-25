@@ -74,10 +74,7 @@ def _event_choices(rows: Iterable[KalshiSportMarket]) -> list[tuple[str, str, fl
     return choices
 
 
-@lru_cache(maxsize=4)
-def _tennis_model(gender: str, year: int) -> TennisResearchModel:
-    return TennisResearchModel(gender, current_year=year)
-
+@lru_cache(maxsize=64)\ndef _tennis_model(gender: str, as_of: date) -> TennisResearchModel:\n    """Build a leakage-safe snapshot strictly before the event date."""\n    return TennisResearchModel(gender, current_year=as_of.year, as_of=as_of)\n
 
 def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
     choices = _event_choices(rows)
@@ -91,7 +88,7 @@ def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandid
 
     a_name, a_side, a_price, a_market = choices[0]
     b_name, b_side, b_price, b_market = choices[1]
-    model = _tennis_model(gender, event_date.year)
+    model = _tennis_model(gender, event_date)
     evidence_a = model.probability(a_name, b_name, level=level, as_of=event_date)
     if evidence_a is None or not evidence_a.usable:
         return []
