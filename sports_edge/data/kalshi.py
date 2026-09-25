@@ -26,6 +26,22 @@ class KalshiPublicClient:
         if series_ticker: params["series_ticker"] = series_ticker
         return self.http.get_json(f"{self.base}/markets", params=params)
 
+    def series_list(
+        self,
+        category: str | None = None,
+        *,
+        include_volume: bool = True,
+        min_updated_ts: int | None = None,
+    ):
+        params = {}
+        if category:
+            params["category"] = category
+        if include_volume:
+            params["include_volume"] = "true"
+        if min_updated_ts is not None:
+            params["min_updated_ts"] = int(min_updated_ts)
+        return self.http.get_json(f"{self.base}/series", params=params or None)
+
     def market(self, ticker: str):
         return self.http.get_json(f"{self.base}/markets/{ticker}")
 
