@@ -121,7 +121,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-dynamic-catalog-p0")
+st.caption("Build: 2026-09-25-fast-sport-catalog-1")
 
 
 def _secret(name: str) -> str | None:
@@ -144,13 +144,17 @@ def _safe_error(exc: Exception) -> str:
     return msg[:300]
 
 
-@st.cache_data(ttl=45, show_spinner=False)
-def get_kalshi_markets():
+@st.cache_data(ttl=60, show_spinner=False)
+def get_kalshi_markets(sport_filter_value: str):
+    selected = None if sport_filter_value == "All" else (sport_filter_value,)
     result = fetch_supported_sport_catalog(
         page_limit_per_series=50,
         page_size=1000,
-        request_pause_s=0.02,
-        max_workers=8,
+        request_pause_s=0.0,
+        max_workers=6,
+        request_interval_s=0.15,
+        sports=selected,
+        overview_only=(sport_filter_value == "All"),
     )
     return (
         list(result.markets),
@@ -800,7 +804,7 @@ if st.button("↻ Refresh live data", use_container_width=True):
     st.rerun()
 
 api_key = _secret("THE_ODDS_API_KEY")
-markets, kerr, klat, kpages, kcursor_exhausted, kseries, kincomplete = get_kalshi_markets()
+markets, kerr, klat, kpages, kcursor_exhausted, kseries, kincomplete = get_kalshi_markets(sport_filter)
 kalshi_grouped = group_kalshi_sports(markets)
 catalog_health = catalog_diagnostics(markets)
 kalshi_rows = _kalshi_rows_for_sport(kalshi_grouped, sport_filter)
@@ -816,7 +820,7 @@ visible_games: list[GameEvent] = []
 if view == "Games":
     st.header("Kalshi Sports")
     st.markdown(
-        '<div class="nav-hint"><b>Kalshi-first universe.</b> Current MLB, NBA, WNBA, NFL and all Tennis markets are discovered from the full open Kalshi catalog. '
+        '<div class="nav-hint"><b>Kalshi-first universe.</b> All loads a fast game overview; selecting MLB, NBA, WNBA, NFL or Tennis loads that sport’s full current game/prop catalog. '
         'Futures/championship markets are removed before they reach the app.</div>',
         unsafe_allow_html=True,
     )
@@ -838,7 +842,7 @@ if view == "Games":
         c2.metric("Kalshi markets", len(kalshi_rows))
         st.dataframe(event_df, use_container_width=True, hide_index=True)
     st.caption(
-        f"Catalog: {len(markets)} actionable open markets · {kseries} active game/prop series · {kpages} market page(s) · "
+        f"Catalog: {len(markets)} open markets · {kseries} series requested · {kpages} market page(s) · "
         f"{'complete' if kcursor_exhausted else 'INCOMPLETE'} · "
         + " · ".join(f"{sport} {catalog_health.counts_by_sport.get(sport, 0)}" for sport in SUPPORTED_SPORTS)
     )
@@ -875,7 +879,9 @@ elif view == "Player Props":
         '<div class="section-note">Direct Kalshi prop markets first. MLB/NBA/WNBA/NFL player props and Tennis match/set/game/stat props appear here even when sportsbook enrichment is unavailable.</div>',
         unsafe_allow_html=True,
     )
-    sports_to_show = SUPPORTED_SPORTS if sport_filter == "All" else (sport_filter,)
+    if sport_filter == "All":
+        st.info("Select MLB, NBA, WNBA, NFL or Tennis above to load that sport’s full prop catalog.")
+    sports_to_show = () if sport_filter == "All" else (sport_filter,)
     prop_rows = []
     for sport_name in sports_to_show:
         allowed = kalshi_prop_families(sport_name)
