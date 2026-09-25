@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from math import prod
 from typing import Iterable
 
@@ -73,8 +74,9 @@ def candidate_legs_from_h2h(
     exact_signals: list[LiveSignal],
     *,
     mode: str = "high_confidence",
+    now: datetime | None = None,
 ) -> list[ParlayCandidateLeg]:
-    quotes = consensus_from_event(event_payload)
+    quotes = consensus_from_event(event_payload, now=now)
     if not quotes:
         return []
 
