@@ -60,7 +60,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-24-parlay-hotfix-1")
+st.caption("Build: 2026-09-24-tennis-research-fallback-1")
 
 
 def _secret(name: str) -> str | None:
@@ -195,7 +195,7 @@ def sport_pairs(active_sports: list[dict]) -> list[tuple[str, str]]:
         title = str(item.get("title") or key)
         if group.lower() == "tennis" or key.startswith("tennis_"):
             tennis.append((f"Tennis · {title}", key))
-    pairs.extend(tennis[:6])
+    pairs.extend(tennis[:16])
     return pairs
 
 
@@ -780,7 +780,12 @@ elif view == "Parlay Generator":
         require_edge = False
 
     preset_options = parlay_presets_for_sport(sport_filter)
-    preset = st.selectbox("Parlay type", preset_options)
+    preset = st.selectbox(
+        "Parlay type",
+        preset_options,
+        index=0,
+        key=f"parlay_type_{sport_filter}",
+    )
 
     min_legs = 5 if mode == "longshot" else 2
     default_legs = 6 if mode == "longshot" else 4
@@ -827,7 +832,7 @@ elif view == "Parlay Generator":
                     api_key_value=api_key,
                     max_games=max_scan,
                 )
-                generated = _generate_parlay_compat(
+                strict_generated = _generate_parlay_compat(
                     candidates,
                     target_legs=target,
                     mode=mode,
@@ -835,7 +840,37 @@ elif view == "Parlay Generator":
                     require_edge=require_edge,
                     diversify_sports=(preset == "Mixed Sports"),
                 )
+
+                fallback_used = False
+                generated = strict_generated
+                fallback_candidates = []
+
+                if require_edge and not strict_generated.legs:
+                    # Do not leave the user with a blank generator when no exact
+                    # Kalshi dislocation exists. Show a clearly labelled research
+                    # slate based on fresh, multi-book consensus quality instead.
+                    fallback_candidates = [
+                        row for row in candidates
+                        if row.book_count >= 3
+                        and row.source_age_s <= 120
+                        and row.consensus_probability >= 0.52
+                    ]
+                    if fallback_candidates:
+                        generated = _generate_parlay_compat(
+                            fallback_candidates,
+                            target_legs=target,
+                            mode="high_confidence",
+                            max_per_event=1 if preset in ("Mixed Sports", "Tennis Moneyline") else 2,
+                            require_edge=False,
+                            diversify_sports=(preset == "Mixed Sports"),
+                        )
+                        fallback_used = bool(generated.legs)
+
                 st.session_state.generated_parlay_v3 = generated
+                st.session_state.generated_parlay_strict_v3 = strict_generated
+                st.session_state.generated_parlay_fallback_v3 = fallback_used
+                st.session_state.generated_parlay_candidate_count_v3 = len(candidates)
+                st.session_state.generated_parlay_fallback_count_v3 = len(fallback_candidates)
                 st.session_state.generated_parlay_errors = scan_errors
                 st.session_state.generated_parlay_calls = calls
                 st.session_state.generated_parlay_preset = preset
@@ -843,33 +878,52 @@ elif view == "Parlay Generator":
                 st.session_state.generated_parlay_sport = sport_filter
 
     generated = st.session_state.get("generated_parlay_v3")
+    strict_generated = st.session_state.get("generated_parlay_strict_v3")
+    fallback_used = st.session_state.get("generated_parlay_fallback_v3", False)
+    candidate_count = st.session_state.get("generated_parlay_candidate_count_v3", 0)
+    fallback_count = st.session_state.get("generated_parlay_fallback_count_v3", 0)
     scan_errors = st.session_state.get("generated_parlay_errors", [])
     calls = st.session_state.get("generated_parlay_calls", 0)
 
     if generated is not None:
         edge_count = sum(1 for x in generated.legs if x.evidence_class == "EDGE-QUALIFIED")
+        strict_edge_count = (
+            len(strict_generated.legs)
+            if strict_generated is not None and require_edge
+            else edge_count
+        )
         c1, c2 = st.columns(2)
         c1.metric("Generated legs", len(generated.legs))
-        c2.metric("Edge-qualified", edge_count)
+        c2.metric("Edge-qualified", strict_edge_count)
         c3, c4 = st.columns(2)
-        c3.metric(
-            "Consensus independence baseline",
-            f"{generated.estimated_independent_probability:.2%}" if generated.legs else "—",
-        )
+        c3.metric("Research candidates", candidate_count)
         c4.metric("Correlation risk", generated.correlation_risk)
+
+        if fallback_used:
+            st.warning(
+                "No exact Kalshi ≥3pp edge passed the strict gate. Showing a research-ranked slate "
+                "from fresh 3+ book consensus instead. These legs are NOT edge-qualified picks."
+            )
+            st.caption(
+                f"Fallback pool: {fallback_count} candidate(s) with ≥3 fresh books, ≤120s source age, "
+                "and ≥52% no-vig consensus probability."
+            )
 
         if generated.legs:
             st.dataframe(parlay_candidate_table(generated.legs), use_container_width=True, hide_index=True)
             st.markdown("### Kalshi Combo blueprint")
             st.caption(
                 "EDGE-QUALIFIED = exact current Kalshi component with a validated price gap versus fresh independent consensus. "
-                "KALSHI MATCH = exact component found but edge gate did not pass. CONSENSUS BASELINE = no exact Kalshi component was matched; "
-                "this is market information, not a Sports Edge pick."
+                "KALSHI MATCH = exact component found but edge gate did not pass. CONSENSUS BASELINE = research-ranked market evidence only; "
+                "it is not being represented as a proprietary model edge."
             )
             st.code(combo_blueprint(generated.legs), language=None)
         else:
             if require_edge:
-                st.info("No current legs passed the strict edge-research gate for this sport/preset. Sports Edge will not substitute favorites just to fill a parlay.")
+                st.info(
+                    f"No strict edge or research-fallback legs were available from {candidate_count} current candidate(s). "
+                    "Open Scan notes below to see missing/stale market sources."
+                )
             else:
                 st.info("The scan ran, but no current consensus candidates passed source-count/freshness gates.")
 
