@@ -133,3 +133,22 @@ def test_challenger_itf_and_new_tennis_families_never_drop_out():
     assert classified[0] == ("Tennis", "Match Winner")
     assert classified[1] == ("Tennis", "Set Winner")
     assert classified[2] == ("Tennis", "Other Tennis")
+
+
+
+def test_short_horizon_tennis_tournament_future_is_excluded():
+    row = market(
+        "KXWTATOURNWIN-26SEP25-PLAYER",
+        "Will Player A win tournament?",
+        event="TFUT",
+    )
+    assert classify_kalshi_market(row) is None
+
+
+def test_table_tennis_never_enters_wta_tennis_catalog():
+    row = market(
+        "KXWTABLETENNISMATCH-26SEP25-AB",
+        "Women's Table Tennis Match",
+        event="TT1",
+    )
+    assert classify_kalshi_market(row) is None
