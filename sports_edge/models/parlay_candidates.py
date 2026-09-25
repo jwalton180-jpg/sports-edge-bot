@@ -92,7 +92,7 @@ def candidate_legs_from_h2h(
     min_probability = 0.05 if mode == "edge" else (0.56 if mode == "high_confidence" else 0.20)
     rows: list[ParlayCandidateLeg] = []
     for selection, quote in quotes.items():
-        if quote.warnings or quote.consensus_probability < min_probability:
+        if quote.warnings or quote.fair_probability < min_probability:
             continue
 
         matches = [
@@ -113,7 +113,7 @@ def candidate_legs_from_h2h(
                 market_key="h2h",
                 market_label="Moneyline",
                 selection=selection,
-                consensus_probability=quote.consensus_probability,
+                consensus_probability=quote.fair_probability,
                 book_count=quote.book_count,
                 source_age_s=quote.median_age_s,
                 median_odds=None,
@@ -153,7 +153,7 @@ def candidate_legs_from_props(
         # but we avoid duplicate opposite sides by taking the stronger side later.
         if quote.warnings:
             continue
-        if quote.book_count < 2 or quote.consensus_probability < min_probability:
+        if quote.book_count < 2 or quote.fair_probability < min_probability:
             continue
 
         match = _find_kalshi_match(game, quote, exact_signals)
@@ -165,7 +165,7 @@ def candidate_legs_from_props(
                 market_key=quote.market_key,
                 market_label=quote.market_label,
                 selection=_selection_text(quote),
-                consensus_probability=quote.consensus_probability,
+                consensus_probability=quote.fair_probability,
                 book_count=quote.book_count,
                 source_age_s=quote.median_age_s,
                 median_odds=quote.median_price,
