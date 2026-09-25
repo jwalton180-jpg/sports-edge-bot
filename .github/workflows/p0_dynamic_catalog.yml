@@ -34,35 +34,63 @@ jobs:
           print("imports-ok")
           PY
 
-      - name: Live Kalshi catalog completeness probe
+      - name: Live Kalshi production-path probe
         run: |
           python - <<'PY'
           from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
           from sports_edge.models.kalshi_sports import catalog_diagnostics, group_kalshi_sports
           from sports_edge.models.game_scope import looks_like_future
 
-          result = fetch_supported_sport_catalog(
+          # Mirror production: All uses the compact overview catalog.
+          overview = fetch_supported_sport_catalog(
               page_limit_per_series=50,
               page_size=1000,
-              request_pause_s=0.02,
-              max_workers=8,
+              max_workers=6,
+              request_interval_s=0.18,
+              overview_only=True,
           )
-          print("actionable_series", result.relevant_series)
-          print("pages", result.pages)
-          print("cursor_exhausted", result.cursor_exhausted)
-          print("error", result.error)
-          print("open_markets", len(result.markets))
-          diag = catalog_diagnostics(result.markets)
-          print("classified", diag.classified_markets)
-          print("counts", diag.counts_by_sport)
-          print("unclassified_supported", diag.unclassified_supported_prefixes[:20])
+          print("overview_series", overview.relevant_series)
+          print("overview_pages", overview.pages)
+          print("overview_complete", overview.cursor_exhausted)
+          print("overview_error", overview.error)
+          print("overview_markets", len(overview.markets))
+          assert overview.markets, "Kalshi overview returned no open markets"
+          assert overview.cursor_exhausted, overview.error or "overview incomplete"
 
-          assert result.markets, "Kalshi returned no open markets"
-          assert result.cursor_exhausted, result.error or "cursor did not exhaust"
-          assert diag.classified_markets > 0, "No supported sport markets classified"
-          assert diag.counts_by_sport["Tennis"] > 0, "No current Tennis markets classified"
-          grouped = group_kalshi_sports(result.markets)
-          assert not any(looks_like_future(row.market) for rows in grouped.values() for row in rows), "Future leaked into current catalog"
+          # Full Tennis is the highest-priority deep catalog and must be nonzero.
+          tennis = fetch_supported_sport_catalog(
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.18,
+              sports=("Tennis",),
+          )
+          tdiag = catalog_diagnostics(tennis.markets)
+          print("tennis_series", tennis.relevant_series)
+          print("tennis_pages", tennis.pages)
+          print("tennis_complete", tennis.cursor_exhausted)
+          print("tennis_error", tennis.error)
+          print("tennis_markets", len(tennis.markets))
+          print("tennis_counts", tdiag.counts_by_sport)
+          assert tennis.markets, "Kalshi Tennis returned no open markets"
+          assert tennis.cursor_exhausted, tennis.error or "Tennis incomplete"
+          assert tdiag.counts_by_sport["Tennis"] > 0, "No current Tennis markets classified"
+          grouped = group_kalshi_sports(tennis.markets)
+          assert not any(looks_like_future(row.market) for rows in grouped.values() for row in rows), "Future leaked into Tennis catalog"
+
+          # Lightweight live checks for the other supported sports match the
+          # fast overview behavior and avoid an artificial 200+ request burst.
+          for sport in ("MLB", "NBA", "WNBA", "NFL"):
+              result = fetch_supported_sport_catalog(
+                  page_limit_per_series=50,
+                  page_size=1000,
+                  max_workers=4,
+                  request_interval_s=0.18,
+                  sports=(sport,),
+                  overview_only=True,
+              )
+              print(sport, "series", result.relevant_series, "pages", result.pages, "markets", len(result.markets), "error", result.error)
+              assert result.cursor_exhausted, result.error or f"{sport} overview incomplete"
           PY
 
       - name: Streamlit server smoke
