@@ -37,10 +37,16 @@ jobs:
       - name: Live Kalshi catalog completeness probe
         run: |
           python - <<'PY'
-          from sports_edge.data.kalshi_catalog import fetch_open_market_catalog
-          from sports_edge.models.kalshi_sports import group_kalshi_sports, catalog_diagnostics
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import catalog_diagnostics
 
-          result = fetch_open_market_catalog(page_limit=250, page_size=200)
+          result = fetch_supported_sport_catalog(
+              page_limit_per_series=50,
+              page_size=200,
+              request_pause_s=0.08,
+          )
+          print("discovered_series", result.discovered_series)
+          print("relevant_series", result.relevant_series)
           print("pages", result.pages)
           print("cursor_exhausted", result.cursor_exhausted)
           print("error", result.error)
