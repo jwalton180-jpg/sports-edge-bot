@@ -20,6 +20,85 @@ SUPPORTED_PREFIXES: tuple[tuple[str, str], ...] = (
 )
 
 
+# Production "ship-now" catalog: current game/period/player-stat series observed
+# on Kalshi. All mode uses a compact overview; selecting one sport loads the
+# full list below. Futures/awards/season markets are intentionally excluded.
+PRODUCTION_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
+    "MLB": (
+        "KXMLBGAME","KXMLBSPREAD","KXMLBTOTAL","KXMLBRFI","KXMLBHR",
+        "KXMLBF5TOTAL","KXMLBF5","KXMLBKS","KXMLBTEAMTOTAL","KXMLBHIT",
+        "KXMLBSTGAME","KXMLBF5SPREAD","KXMLBHRR","KXMLBTB","KXMLBF3",
+        "KXMLBRBI","KXMLBF7","KXMLBEXTRAS","KXMLBINNINGWIN",
+        "KXMLBINNINGTOTAL","KXMLBWA","KXMLBHA","KXMLBPITCH","KXMLBNEXTHR",
+    ),
+    "NBA": (
+        "KXNBAGAME","KXNBASPREAD","KXNBATOTAL","KXNBASUMMERGAME","KXNBAPTS",
+        "KXNBA1HSPREAD","KXNBA1HWINNER","KXNBA1HTOTAL","KXNBASUMMERTOTAL",
+        "KXNBATEAMTOTAL","KXNBASUMMERSPREAD","KXNBA3PT","KXNBAREB","KXNBAAST",
+        "KXNBA2HWINNER","KXNBA2D","KXNBA3D","KXNBA2HSPREAD","KXNBA2HTOTAL",
+        "KXNBA1QWINNER","KXNBA1QSPREAD","KXNBASTL","KXNBABLK","KXNBA3QSPREAD",
+        "KXNBA2QWINNER","KXNBA3QWINNER","KXNBA2QSPREAD","KXNBA4QWINNER",
+        "KXNBA1QTOTAL","KXNBA3QTOTAL","KXNBA2QTOTAL","KXNBA4QSPREAD",
+        "KXNBA4QTOTAL","KXNBAPLAYOFFPTS","KXNBAH2HBENCHPTS","KXNBAH2HPRA",
+        "KXNBAH2HPTS","KXNBAH2H3PT","KXNBAH2HTEAM3PT","KXNBARACE",
+        "KXNBAPRA","KXNBABENCHPTS","KXNBARA","KXNBASTOCKS","KXNBASTOCK",
+        "KXNBAPR","KXNBAFIRSTBASKET","KXNBAWINMARGIN",
+    ),
+    "WNBA": (
+        "KXWNBAGAME","KXWNBASPREAD","KXWNBATOTAL","KXWNBA1HTOTAL",
+        "KXWNBA1HSPREAD","KXWNBAPTS","KXWNBA1HWINNER","KXWNBA1QTOTAL",
+        "KXWNBA3QTOTAL","KXWNBA2QTOTAL","KXWNBA1QSPREAD","KXWNBAREB",
+        "KXWNBA1QWINNER","KXWNBA4QTOTAL","KXWNBA3QSPREAD","KXWNBA3PT",
+        "KXWNBA3QWINNER","KXWNBA2QWINNER","KXWNBAAST","KXWNBA2QSPREAD",
+        "KXWNBATEAMTOTAL","KXWNBA4QWINNER","KXWNBA2HTOTAL",
+        "KXWNBA2HSPREAD","KXWNBA4QSPREAD","KXWNBA2HWINNER","KXWNBA40PTS",
+        "KXWNBAH2HPRA","KXWNBAH2HPTS",
+    ),
+    "NFL": (
+        "KXNFLGAME","KXNFLSPREAD","KXNFLTOTAL","KXNFLTD","KXNFLANYTD",
+        "KXNFLFIRSTTD","KXNFLRECYDS","KXNFLRSHYDS","KXNFLPASSYDS","KXNFL2TD",
+        "KXNFL1HSPREAD","KXNFLREC","KXNFL1HTOTAL","KXNFL1H","KXNFLTEAMTOTAL",
+        "KXNFLPASSTDS","KXNFL1HWINNER","KXNFL1Q","KXNFL2HSPREAD","KXNFL1QTOTAL",
+        "KXNFL1QSPREAD","KXNFL2H","KXNFL2HTOTAL","KXNFL3QSPREAD","KXNFL3Q",
+        "KXNFL3QTOTAL","KXNFLTEAMFIRSTTD","KXNFL4QSPREAD","KXNFL4Q",
+        "KXNFL2QSPREAD","KXNFL2Q","KXNFL2QTOTAL","KXNFL1QWINNER",
+        "KXNFL4QTOTAL","KXNFL1HTEAMTOTAL","KXNFLRRYDS","KXNFLRSHATT",
+        "KXNFLFIRSTTDTEAM","KXNFLFFPTS","KXNFLFIRSTTDTIME","KXNFLRACE",
+        "KXNFLDSTTD","KXNFLNEXTTD","KXNFLPASSINT","KXNFLPASSCOMP",
+        "KXNFLLEADCHANGE","KXNFLTEAMTD","KXNFLPASSATT","KXNFL2HWINNER",
+        "KXNFLFG","KXNFL2PTCONV","KXNFLTEAMSACK","KXNFLLARGELEAD",
+        "KXNFLGAMETD","KXNFLTOTALTD","KXNFLGAMESACK","KXNFLLONGRSH",
+        "KXNFLLONGREC","KXNFL1QBTTS","KXNFLBOTH","KXNFLSFTY",
+        "KXNFLEQBTTS","KXNFL2QBTTS","KXNFL3QBTTS","KXNFL4QBTTS",
+        "KXNFLNEXTINT","KXNFLLONGESTFG","KXNFLRSHYDSH2H","KXNFLPASSYDSH2H",
+        "KXNFLRECYDSH2H","KXNFLTEAMTO","KXNFLGAMETO","KXNFLTEAM1STDOWNS",
+        "KXNFLINT","KXNFLTEAMFG","KXNFL2HTD","KXNFL1HTD","KXNFLSACK",
+    ),
+    "Tennis": (
+        "KXATPMATCH","KXATPCHALLENGERMATCH","KXWTAMATCH","KXITFMATCH",
+        "KXITFWMATCH","KXWTACHALLENGERMATCH","KXATPSETWINNER",
+        "KXWTASETWINNER","KXITFDOUBLES","KXATPEXACTMATCH","KXWTADOUBLES",
+        "KXITFWDOUBLES","KXATPDOUBLES","KXATPGTOTAL","KXATPGSPREAD",
+        "KXWTAEXACTMATCH","KXATPCHALLENGERDOUBLES","KXWTAGTOTAL",
+        "KXATPTOTALSETS","KXATPSSPREAD","KXATPGAMETOTAL","KXATPACES",
+        "KXATPS1GWINNER","KXATPS2GWINNER","KXATPS3GWINNER","KXATPS4GWINNER",
+        "KXATPS5GWINNER","KXATPGAMESPREAD","KXATPTIEBREAK","KXATPGWINNER",
+        "KXWTAACES","KXATPANYSET",
+    ),
+}
+
+OVERVIEW_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
+    "MLB": ("KXMLBGAME","KXMLBSPREAD","KXMLBTOTAL"),
+    "NBA": ("KXNBAGAME","KXNBASPREAD","KXNBATOTAL"),
+    "WNBA": ("KXWNBAGAME","KXWNBASPREAD","KXWNBATOTAL"),
+    "NFL": ("KXNFLGAME","KXNFLSPREAD","KXNFLTOTAL"),
+    "Tennis": (
+        "KXATPMATCH","KXATPCHALLENGERMATCH","KXWTAMATCH",
+        "KXWTACHALLENGERMATCH","KXITFMATCH","KXITFWMATCH",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class KalshiCatalogResult:
     markets: tuple[dict, ...]
@@ -251,6 +330,8 @@ def _fetch_one_series(
                 pacer=pacer,
             )
         except Exception as exc:
+            if _status_code(exc) == 404:
+                return rows, pages, latencies, None, True
             return rows, pages, latencies, f"{series_ticker}: {str(exc)[:180]}", False
 
         pages += 1
@@ -295,7 +376,9 @@ def fetch_supported_sport_catalog(
     page_size: int = 200,
     request_pause_s: float = 0.0,
     max_workers: int = 6,
-    request_interval_s: float = 0.10,
+    request_interval_s: float = 0.15,
+    sports: tuple[str, ...] | list[str] | None = None,
+    overview_only: bool = False,
 ) -> KalshiCatalogResult:
     """Discover supported sports from Kalshi /series, then fetch open markets.
 
@@ -329,11 +412,30 @@ def fetch_supported_sport_catalog(
             error=f"Kalshi series discovery failed: {str(exc)[:240]}",
         )
 
-    relevant: list[tuple[dict, str]] = []
-    for row in all_series:
-        sport = _sport_for_series(row)
-        if sport is not None and row.get("ticker") and _series_is_actionable(row, sport):
-            relevant.append((row, sport))
+    selected_sports = tuple(sports) if sports else tuple(PRODUCTION_SERIES_BY_SPORT)
+
+    if client is None:
+        # Production path: bounded live game/prop families. This removes the
+        # hundreds of stale/future series requests that caused Kalshi 429s.
+        source = OVERVIEW_SERIES_BY_SPORT if overview_only else PRODUCTION_SERIES_BY_SPORT
+        relevant = [
+            ({"ticker": ticker, "title": ticker}, sport)
+            for sport in selected_sports
+            if sport in source
+            for ticker in source[sport]
+        ]
+    else:
+        # Deterministic/test path retains metadata discovery behavior.
+        relevant: list[tuple[dict, str]] = []
+        for row in all_series:
+            sport = _sport_for_series(row)
+            if (
+                sport is not None
+                and sport in selected_sports
+                and row.get("ticker")
+                and _series_is_actionable(row, sport)
+            ):
+                relevant.append((row, sport))
 
     # A supplied client may be a deterministic fake or a caller-owned session;
     # keep that path sequential. Production creates one client per worker task.
