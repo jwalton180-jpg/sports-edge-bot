@@ -1,0 +1,45 @@
+name: Premium intelligence checks
+on:
+  push:
+    branches: [premium-intelligence-rebuild-20260924]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt pytest
+      - name: Unit tests
+        run: pytest -q
+      - name: Compile
+        run: python -m compileall -q sports_edge app.py launch_on_demand.py
+      - name: Import smoke
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sports_edge.models.intelligence
+          import sports_edge.research.tipsters
+          import sports_edge.research.line_history
+          import sports_edge.models.parlay_candidates
+          print("imports-ok")
+          PY
+      - name: Streamlit smoke
+        shell: bash
+        run: |
+          streamlit run app.py --server.headless=true --server.port=8501 >/tmp/streamlit.log 2>&1 &
+          PID=$!
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health >/tmp/health.txt 2>/dev/null; then
+              cat /tmp/health.txt
+              kill $PID || true
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/streamlit.log
+          kill $PID || true
+          exit 1
