@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import threading
 import time
 from typing import Any
 
@@ -44,11 +45,13 @@ def _series_text(row: dict[str, Any]) -> str:
 
 def _sport_for_series(row: dict[str, Any]) -> str | None:
     ticker = str(row.get("ticker") or "").upper().strip()
+    text = " " + _series_text(row) + " "
+    if " pickleball " in text or " table tennis " in text:
+        return None
     for prefix, sport in SUPPORTED_PREFIXES:
         if ticker.startswith(prefix):
             return sport
 
-    text = " " + _series_text(row) + " "
     if " wnba " in text or " women's national basketball association " in text:
         return "WNBA"
     if " major league baseball " in text or " mlb " in text:
@@ -173,10 +176,36 @@ def _status_code(exc: Exception) -> int | None:
         return None
 
 
-def _with_backoff(call, *, attempts: int = 6, base_delay_s: float = 0.35):
+class _RequestPacer:
+    """Shared start-rate limiter for concurrent Kalshi reads."""
+    def __init__(self, min_interval_s: float):
+        self.min_interval_s = max(0.0, float(min_interval_s))
+        self._lock = threading.Lock()
+        self._next_at = 0.0
+
+    def wait(self) -> None:
+        if self.min_interval_s <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            sleep_for = max(0.0, self._next_at - now)
+            self._next_at = max(now, self._next_at) + self.min_interval_s
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+
+
+def _with_backoff(
+    call,
+    *,
+    attempts: int = 8,
+    base_delay_s: float = 0.45,
+    pacer: _RequestPacer | None = None,
+):
     delay = max(0.05, float(base_delay_s))
     last: Exception | None = None
     for attempt in range(max(1, attempts)):
+        if pacer is not None:
+            pacer.wait()
         try:
             return call()
         except Exception as exc:
@@ -186,7 +215,7 @@ def _with_backoff(call, *, attempts: int = 6, base_delay_s: float = 0.35):
             if not retryable or attempt >= attempts - 1:
                 raise
             time.sleep(delay)
-            delay = min(4.0, delay * 2.0)
+            delay = min(6.0, delay * 2.0)
     if last is not None:
         raise last
     raise RuntimeError("request failed")
@@ -200,6 +229,7 @@ def _fetch_one_series(
     page_limit_per_series: int,
     page_size: int,
     request_pause_s: float,
+    pacer: _RequestPacer | None,
 ) -> tuple[list[dict], int, list[float], str | None, bool]:
     worker = client or KalshiPublicClient()
     series_ticker = str(series_row.get("ticker") or "").strip()
@@ -215,9 +245,10 @@ def _fetch_one_series(
                 lambda st=series_ticker, cur=cursor: worker.markets(
                     status="open",
                     series_ticker=st,
-                    limit=min(200, max(1, int(page_size))),
+                    limit=min(1000, max(1, int(page_size))),
                     cursor=cur,
-                )
+                ),
+                pacer=pacer,
             )
         except Exception as exc:
             return rows, pages, latencies, f"{series_ticker}: {str(exc)[:180]}", False
@@ -262,8 +293,9 @@ def fetch_supported_sport_catalog(
     *,
     page_limit_per_series: int = 50,
     page_size: int = 200,
-    request_pause_s: float = 0.05,
-    max_workers: int = 4,
+    request_pause_s: float = 0.0,
+    max_workers: int = 6,
+    request_interval_s: float = 0.10,
 ) -> KalshiCatalogResult:
     """Discover supported sports from Kalshi /series, then fetch open markets.
 
@@ -272,6 +304,7 @@ def fetch_supported_sport_catalog(
     behavior. Every series still exhausts its own cursor or is marked incomplete.
     """
     discovery_client = client or KalshiPublicClient()
+    pacer = None if client is not None else _RequestPacer(request_interval_s)
     found: dict[str, dict] = {}
     latencies: list[float] = []
     errors: list[str] = []
@@ -279,7 +312,10 @@ def fetch_supported_sport_catalog(
     pages = 0
 
     try:
-        series_response = _with_backoff(lambda: discovery_client.series_list(include_volume=True))
+        series_response = _with_backoff(
+            lambda: discovery_client.series_list(include_volume=True),
+            pacer=pacer,
+        )
         if series_response.latency_ms is not None:
             latencies.append(float(series_response.latency_ms))
         payload = series_response.data if isinstance(series_response.data, dict) else {}
@@ -312,6 +348,7 @@ def fetch_supported_sport_catalog(
             page_limit_per_series=page_limit_per_series,
             page_size=page_size,
             request_pause_s=request_pause_s,
+            pacer=pacer,
         )
 
     if workers == 1:
