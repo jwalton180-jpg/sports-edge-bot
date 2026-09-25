@@ -1,0 +1,175 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from typing import Iterable
+
+from sports_edge.models.game_scope import looks_like_future, normalize
+
+
+@dataclass(frozen=True)
+class KalshiSportMarket:
+    sport: str
+    family: str
+    market: dict
+
+
+# Known live/game/prop prefixes. Prefix matching intentionally excludes
+# championship/futures families via looks_like_future() before classification.
+MLB_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("KXMLBGAME", "Moneyline"),
+    ("KXMLBSPREAD", "Spread"),
+    ("KXMLBTOTAL", "Game Total"),
+    ("KXMLBF3", "First 3 Innings"),
+    ("KXMLBF5", "First 5 Innings"),
+    ("KXMLBF7", "First 7 Innings"),
+    ("KXMLBHIT", "Hits"),
+    ("KXMLBHRR", "Home Runs"),
+    ("KXMLBHR", "Home Runs"),
+    ("KXMLBTB", "Total Bases"),
+    ("KXMLBRBI", "RBIs"),
+    ("KXMLBTEAMTOTAL", "Team Total"),
+    ("KXMLBRFI", "First Inning Run"),
+    ("KXMLBEXTRAS", "Extra Innings"),
+)
+
+NFL_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("KXNFLGAME", "Moneyline"),
+    ("KXNFLSPREAD", "Spread"),
+    ("KXNFLTOTAL", "Game Total"),
+    ("KXNFL1H", "First Half"),
+    ("KXNFL2H", "Second Half"),
+    ("KXNFL1Q", "First Quarter"),
+    ("KXNFL2Q", "Second Quarter"),
+    ("KXNFL3Q", "Third Quarter"),
+    ("KXNFL4Q", "Fourth Quarter"),
+    ("KXNFLOT", "Overtime"),
+    ("KXNFLPASSTDS", "Passing TDs"),
+    ("KXNFLPASSYDS", "Passing Yards"),
+    ("KXNFLTD", "Player Touchdowns"),
+    ("KXNFLTOTALTD", "Total TDs"),
+    ("KXNFLFIRSTTDTEAM", "First TD Team"),
+    ("KXNFLTEAMFIRSTTD", "Team First TD"),
+    ("KXNFLTEAMTD", "Team TDs"),
+    ("KXNFLFG", "Field Goals"),
+    ("KXNFLWINMARGIN", "Win Margin"),
+)
+
+TENNIS_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("KXATPMATCH", "Match Winner"),
+    ("KXWTAMATCH", "Match Winner"),
+    ("KXITFMATCH", "Match Winner"),
+    ("KXATPSETWINNER", "Set Winner"),
+    ("KXWTASETWINNER", "Set Winner"),
+    ("KXITFSETWINNER", "Set Winner"),
+    ("KXATPGTOTAL", "Games Total"),
+    ("KXWTAGTOTAL", "Games Total"),
+    ("KXATPGSPREAD", "Games Spread"),
+    ("KXWTAGSPREAD", "Games Spread"),
+    ("KXATPTOTALSETS", "Total Sets"),
+    ("KXWTATOTALSETS", "Total Sets"),
+    ("KXATPEXACTMATCH", "Exact Match"),
+    ("KXWTAEXACTMATCH", "Exact Match"),
+)
+
+ALL_PREFIXES = {
+    "MLB": MLB_PREFIXES,
+    "NFL": NFL_PREFIXES,
+    "Tennis": TENNIS_PREFIXES,
+}
+
+
+def _series(market: dict) -> str:
+    value = market.get("series_ticker")
+    if value:
+        return str(value).upper().strip()
+    ticker = str(market.get("ticker") or "").upper().strip()
+    # Most Kalshi market tickers start with their series ticker.
+    return ticker.split("-", 1)[0]
+
+
+def _text(market: dict) -> str:
+    return normalize(
+        " ".join(
+            str(market.get(key) or "")
+            for key in (
+                "title",
+                "subtitle",
+                "event_title",
+                "yes_sub_title",
+                "no_sub_title",
+                "ticker",
+                "event_ticker",
+                "series_ticker",
+            )
+        )
+    )
+
+
+def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
+    if looks_like_future(market):
+        return None
+
+    series = _series(market)
+    for sport, prefixes in ALL_PREFIXES.items():
+        for prefix, family in prefixes:
+            if series.startswith(prefix):
+                return sport, family
+
+    # Conservative fallback for newly introduced series. Require explicit sport
+    # text plus game/prop wording; do not classify generic "sports" markets.
+    text = _text(market)
+    if any(x in text for x in ("professional baseball", "pro baseball", "mlb")):
+        if any(x in text for x in (" vs ", " hit", "home run", "strikeout", "total base", "rbi", "spread", "total")):
+            return "MLB", "Other"
+    if "nfl" in text or "pro football" in text:
+        if any(x in text for x in (" vs ", "passing", "rushing", "receiving", "touchdown", "spread", "total")):
+            return "NFL", "Other"
+    if any(x in text for x in ("tennis", " atp ", " wta ", " itf ")):
+        if any(x in text for x in (" vs ", "match", "set", "games total", "games spread")):
+            return "Tennis", "Other"
+
+    return None
+
+
+def group_kalshi_sports(markets: Iterable[dict]) -> dict[str, list[KalshiSportMarket]]:
+    grouped: dict[str, list[KalshiSportMarket]] = {"MLB": [], "NFL": [], "Tennis": []}
+    for market in markets:
+        classification = classify_kalshi_market(market)
+        if classification is None:
+            continue
+        sport, family = classification
+        grouped[sport].append(KalshiSportMarket(sport=sport, family=family, market=market))
+
+    for sport in grouped:
+        grouped[sport].sort(
+            key=lambda row: (
+                float(row.market.get("volume_fp", row.market.get("volume", 0)) or 0),
+                str(row.market.get("ticker") or ""),
+            ),
+            reverse=True,
+        )
+    return grouped
+
+
+def prop_families(sport: str) -> set[str]:
+    if sport == "MLB":
+        return {"Hits", "Home Runs", "Total Bases", "RBIs"}
+    if sport == "NFL":
+        return {"Passing TDs", "Passing Yards", "Player Touchdowns", "Team TDs", "Field Goals"}
+    if sport == "Tennis":
+        return {"Set Winner", "Games Total", "Games Spread", "Total Sets", "Exact Match"}
+    return set()
+
+
+def parlay_pool(
+    grouped: dict[str, list[KalshiSportMarket]],
+    sport: str,
+    *,
+    include_props: bool = True,
+) -> list[KalshiSportMarket]:
+    rows = list(grouped.get(sport, []))
+    if include_props:
+        return rows
+    allowed = {"Moneyline", "Spread", "Game Total", "Match Winner"}
+    return [row for row in rows if row.family in allowed]
