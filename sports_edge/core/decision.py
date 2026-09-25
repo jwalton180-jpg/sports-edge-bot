@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-
+from sports_edge.core.health import SourceHealth, Freshness
 
 @dataclass(frozen=True)
 class DecisionGateResult:
@@ -8,30 +8,18 @@ class DecisionGateResult:
     reasons: tuple[str, ...]
 
 
-def evidence_decision_gate(
-    *,
-    book_count: int,
-    source_age_s: float,
-    disagreement_pp: float,
-    edge_points: float | None,
-    model_ready: bool,
-    dependency_valid: bool = True,
-    min_books: int = 3,
-    max_age_s: float = 180.0,
-    max_disagreement_pp: float = 12.0,
-    min_edge_points: float = 3.0,
-) -> DecisionGateResult:
-    reasons: list[str] = []
+def live_decision_gate(source_health: list[SourceHealth], dependency_valid: bool,
+                       min_sources: int = 2, stale_s: float = 20, hard_stale_s: float = 60,
+                       max_disagreement: bool = False) -> DecisionGateResult:
+    reasons=[]
     if not dependency_valid:
         reasons.append("player/lineup dependency invalidated")
-    if book_count < min_books:
-        reasons.append(f"only {book_count} fresh book(s); require {min_books}")
-    if source_age_s > max_age_s:
-        reasons.append("source evidence stale")
-    if disagreement_pp > max_disagreement_pp:
-        reasons.append("cross-book disagreement above threshold")
-    if edge_points is None or edge_points < min_edge_points:
-        reasons.append("price edge below threshold")
-    if not model_ready:
-        reasons.append("sport model overlay unavailable")
+    healthy=[s for s in source_health if s.status(stale_s,hard_stale_s) in {Freshness.FRESH,Freshness.DEGRADED}]
+    fresh=[s for s in source_health if s.status(stale_s,hard_stale_s)==Freshness.FRESH]
+    if len(healthy)<min_sources:
+        reasons.append(f"only {len(healthy)} healthy source(s); require {min_sources}")
+    if not fresh:
+        reasons.append("no fresh source")
+    if max_disagreement:
+        reasons.append("cross-source live-state disagreement")
     return DecisionGateResult(not reasons, tuple(reasons))
