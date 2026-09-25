@@ -6,6 +6,7 @@ from statistics import mean, pstdev
 
 from sports_edge.core.math import clamp
 from sports_edge.data.public_player_data import (
+    mlb_recent_rows,
     mlb_season_rows,
     nba_player_rows,
     nfl_weekly_rows,
@@ -91,6 +92,12 @@ def _mlb_index(group: str, season: int) -> dict[str, dict]:
     return unique_person_index(rows, lambda row: row.get("player_name"))
 
 
+@lru_cache(maxsize=8)
+def _mlb_recent_index(group: str, season: int, games: int) -> dict[str, dict]:
+    rows = mlb_recent_rows(group, season, games)
+    return unique_person_index(rows, lambda row: row.get("player_name"))
+
+
 def mlb_prop_evidence(
     player: str,
     family: str,
@@ -103,21 +110,38 @@ def mlb_prop_evidence(
     if row is None:
         return None
 
+    recent_games = 5 if family == "Strikeouts" else 15
+    recent = resolve_person(_mlb_recent_index(group, season, recent_games), player)
+
     if family == "Hits":
         games = int(_float(row.get("gamesPlayed")))
         hits = _float(row.get("hits"))
         at_bats = _float(row.get("atBats"))
         if games < 20 or at_bats < 50:
             return None
-        rate = hits / max(1.0, games)
+        season_rate = hits / max(1.0, games)
+        recent_rate = None
+        recent_n = 0
+        if recent is not None:
+            recent_n = int(_float(recent.get("gamesPlayed")))
+            recent_hits = _float(recent.get("hits"))
+            if recent_n >= 5:
+                recent_rate = recent_hits / recent_n
+        rate = 0.72 * season_rate + 0.28 * recent_rate if recent_rate is not None else season_rate
         p = _poisson_tail(rate, line)
-        confidence = clamp(0.42 + 0.30 * min(1.0, games / 100.0), 0.0, 0.75)
-        factors = (
+        confidence = clamp(
+            0.42 + 0.26 * min(1.0, games / 100.0) + (0.05 if recent_rate is not None else 0.0),
+            0.0, 0.76,
+        )
+        factors = [
             f"2026 MLB: {hits:.0f} hits in {games} games",
             f"Contact rate {hits / max(1.0, at_bats):.3f} over {at_bats:.0f} AB",
-            f"Season hit rate {rate:.2f} per game vs {line + 0.5:g}+ threshold",
-        )
-        name = "MLB hit-rate + exposure model"
+            f"Season hit rate {season_rate:.2f}/game",
+        ]
+        if recent_rate is not None:
+            factors.append(f"Recent {recent_n}-game hit rate {recent_rate:.2f}/game (28% blend)")
+        factors.append(f"Projected hit rate {rate:.2f}/game vs {line + 0.5:g}+ threshold")
+        name = "MLB season + recent hit-rate model"
         sample = games
     elif family == "Home Runs":
         games = int(_float(row.get("gamesPlayed")))
@@ -125,15 +149,29 @@ def mlb_prop_evidence(
         pa = _float(row.get("plateAppearances"))
         if games < 20 or pa < 50:
             return None
-        rate = homers / max(1.0, games)
+        season_rate = homers / max(1.0, games)
+        recent_rate = None
+        recent_n = 0
+        if recent is not None:
+            recent_n = int(_float(recent.get("gamesPlayed")))
+            recent_hr = _float(recent.get("homeRuns"))
+            if recent_n >= 5:
+                recent_rate = recent_hr / recent_n
+        rate = 0.78 * season_rate + 0.22 * recent_rate if recent_rate is not None else season_rate
         p = _poisson_tail(rate, line)
-        confidence = clamp(0.40 + 0.28 * min(1.0, games / 100.0), 0.0, 0.72)
-        factors = (
+        confidence = clamp(
+            0.40 + 0.25 * min(1.0, games / 100.0) + (0.04 if recent_rate is not None else 0.0),
+            0.0, 0.72,
+        )
+        factors = [
             f"2026 MLB: {homers:.0f} HR in {games} games",
             f"HR/PA {homers / max(1.0, pa):.3f} over {pa:.0f} PA",
-            f"Season HR rate {rate:.3f} per game vs {line + 0.5:g}+ threshold",
-        )
-        name = "MLB home-run rate + exposure model"
+            f"Season HR rate {season_rate:.3f}/game",
+        ]
+        if recent_rate is not None:
+            factors.append(f"Recent {recent_n}-game HR rate {recent_rate:.3f}/game (22% blend)")
+        factors.append(f"Projected HR rate {rate:.3f}/game vs {line + 0.5:g}+ threshold")
+        name = "MLB season + recent home-run model"
         sample = games
     elif family == "Strikeouts":
         starts = int(_float(row.get("gamesStarted")))
@@ -141,15 +179,28 @@ def mlb_prop_evidence(
         innings = str(row.get("inningsPitched") or "")
         if starts < 5:
             return None
-        rate = strikeouts / max(1.0, starts)
+        season_rate = strikeouts / max(1.0, starts)
+        recent_rate = None
+        recent_starts = 0
+        if recent is not None:
+            recent_starts = int(_float(recent.get("gamesStarted")))
+            recent_ks = _float(recent.get("strikeOuts"))
+            if recent_starts >= 2:
+                recent_rate = recent_ks / recent_starts
+        rate = 0.70 * season_rate + 0.30 * recent_rate if recent_rate is not None else season_rate
         p = _poisson_tail(rate, line)
-        confidence = clamp(0.42 + 0.30 * min(1.0, starts / 24.0), 0.0, 0.76)
-        factors = (
-            f"2026 MLB: {strikeouts:.0f} strikeouts across {starts} starts",
-            f"Season K/start {rate:.2f}; innings pitched {innings or 'n/a'}",
-            f"Threshold {line + 0.5:g}+ strikeouts",
+        confidence = clamp(
+            0.42 + 0.27 * min(1.0, starts / 24.0) + (0.05 if recent_rate is not None else 0.0),
+            0.0, 0.78,
         )
-        name = "MLB starter strikeout-rate model"
+        factors = [
+            f"2026 MLB: {strikeouts:.0f} strikeouts across {starts} starts",
+            f"Season K/start {season_rate:.2f}; innings pitched {innings or 'n/a'}",
+        ]
+        if recent_rate is not None:
+            factors.append(f"Recent {recent_starts}-start K/start {recent_rate:.2f} (30% blend)")
+        factors.append(f"Projected K/start {rate:.2f} vs {line + 0.5:g}+ threshold")
+        name = "MLB season + recent starter strikeout model"
         sample = starts
     else:
         return None
@@ -160,7 +211,7 @@ def mlb_prop_evidence(
         fair_probability=clamp(p, 0.01, 0.99),
         confidence=confidence,
         sample_size=sample,
-        factors=factors,
+        factors=tuple(factors),
     )
 
 
