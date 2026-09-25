@@ -108,6 +108,43 @@ def mlb_season_rows(group: str, season: int) -> tuple[dict, ...]:
     return tuple(out)
 
 
+
+@lru_cache(maxsize=8)
+def mlb_recent_rows(group: str, season: int, games: int) -> tuple[dict, ...]:
+    r = requests.get(
+        MLB_STATS_URL,
+        params={
+            "stats": "lastXGames",
+            "group": group,
+            "season": season,
+            "sportIds": 1,
+            "playerPool": "ALL",
+            "limit": 2000,
+            "numberOfGames": games,
+        },
+        headers={"User-Agent": "SportsEdgeReadOnly/1.0", "Accept": "application/json"},
+        timeout=25,
+    )
+    r.raise_for_status()
+    payload = r.json()
+    stats = payload.get("stats") or []
+    if not stats:
+        return ()
+    out: list[dict] = []
+    for split in stats[0].get("splits", []) or []:
+        player = split.get("player") or {}
+        stat = split.get("stat") or {}
+        row = {
+            "player_name": player.get("fullName"),
+            "player_id": player.get("id"),
+            "team_name": (split.get("team") or {}).get("name"),
+            "season": split.get("season"),
+        }
+        row.update(stat)
+        out.append(row)
+    return tuple(out)
+
+
 def unique_person_index(rows: Iterable[dict], name_getter) -> dict[str, dict]:
     """Index exact and conservative aliases; ambiguous aliases are removed."""
     exact: dict[str, dict] = {}
