@@ -18,12 +18,32 @@ class KalshiPublicClient:
         return self.http.get_json(f"{self.base}/exchange/status")
 
     def sports_filters(self):
-        return self.http.get_json(f"{self.base}/search/filters/sports")
+        return self.http.get_json(f"{self.base}/search/filters_by_sport")
 
-    def markets(self, status: str = "open", limit: int = 200, cursor: str | None = None, series_ticker: str | None = None):
-        params = {"status": status, "limit": min(limit, 200)}
-        if cursor: params["cursor"] = cursor
-        if series_ticker: params["series_ticker"] = series_ticker
+    def markets(
+        self,
+        status: str | None = "open",
+        limit: int = 200,
+        cursor: str | None = None,
+        series_ticker: str | None = None,
+        *,
+        min_close_ts: int | None = None,
+        max_close_ts: int | None = None,
+        mve_filter: str | None = None,
+    ):
+        params = {"limit": min(max(1, int(limit)), 1000)}
+        if status:
+            params["status"] = status
+        if cursor:
+            params["cursor"] = cursor
+        if series_ticker:
+            params["series_ticker"] = series_ticker
+        if min_close_ts is not None:
+            params["min_close_ts"] = int(min_close_ts)
+        if max_close_ts is not None:
+            params["max_close_ts"] = int(max_close_ts)
+        if mve_filter:
+            params["mve_filter"] = mve_filter
         return self.http.get_json(f"{self.base}/markets", params=params)
 
     def series_list(
