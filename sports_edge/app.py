@@ -53,7 +53,7 @@ def _fallback_catalog_diagnostics(markets):
 catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
-from sports_edge.models.parlay_intelligence import build_intelligent_parlay
+from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
@@ -976,6 +976,89 @@ elif view == "Player Props":
             "These are actual Kalshi contracts. Sports Edge will enrich exact markets with sportsbook/model evidence separately; "
             "missing external data no longer hides the Kalshi prop itself."
         )
+
+        model_family_key = None
+        if sport_filter == "MLB" and family == "Hits":
+            model_family_key = "batter_hits"
+        elif sport_filter == "MLB" and family == "Home Runs":
+            model_family_key = "batter_home_runs"
+
+        if model_family_key:
+            st.success("Independent Sports Edge model available for this prop family.")
+            if st.button(
+                "Run Sports Edge prop analysis",
+                type="primary",
+                use_container_width=True,
+                key=f"prop_model_scan_{sport_filter}_{family}",
+            ):
+                with st.spinner(f"Modeling current {sport_filter} {family} contracts…"):
+                    prop_model_candidates = model_candidates_from_kalshi(
+                        kalshi_grouped,
+                        sport_filter=sport_filter,
+                        include_mlb_hits=(model_family_key == "batter_hits"),
+                        max_mlb_hit_players=24 if model_family_key == "batter_hits" else None,
+                        include_mlb_home_runs=(model_family_key == "batter_home_runs"),
+                        max_mlb_hr_players=24 if model_family_key == "batter_home_runs" else None,
+                    )
+                    prop_model_candidates = [
+                        row for row in prop_model_candidates
+                        if row.market_key == model_family_key
+                    ]
+                    assessments = [assess_leg(row, "best") for row in prop_model_candidates]
+                    assessments.sort(
+                        key=lambda row: (
+                            row.qualified,
+                            row.score,
+                            row.edge_points if row.edge_points is not None else -999.0,
+                        ),
+                        reverse=True,
+                    )
+                    st.session_state[f"prop_model_results_{sport_filter}_{family}"] = assessments
+
+            assessments = st.session_state.get(
+                f"prop_model_results_{sport_filter}_{family}",
+                [],
+            )
+            if assessments:
+                qualified_count = sum(row.qualified for row in assessments)
+                c1, c2 = st.columns(2)
+                c1.metric("Model candidates", len(assessments))
+                c2.metric("Qualified edges", qualified_count)
+
+                analysis_rows = pd.DataFrame(
+                    [
+                        {
+                            "Status": "QUALIFIED" if row.qualified else "WATCH/PASS",
+                            "Selection": row.leg.selection,
+                            "Model fair": f"{row.fair_probability:.1%}",
+                            "Kalshi": f"{row.kalshi_probability:.1%}" if row.kalshi_probability is not None else "—",
+                            "Edge": f"{row.edge_points:+.1f} pp" if row.edge_points is not None else "—",
+                            "Model confidence": f"{row.leg.model_confidence:.0%}",
+                            "Score": f"{row.score:.0f}",
+                        }
+                        for row in assessments[:30]
+                    ]
+                )
+                st.dataframe(analysis_rows, use_container_width=True, hide_index=True)
+
+                for row in assessments[:12]:
+                    with st.expander(f"{row.leg.selection} — Sports Edge analysis"):
+                        st.write(f"**Model:** {row.leg.model_name or '—'}")
+                        st.write(f"**Model confidence:** {row.leg.model_confidence:.0%}")
+                        st.write(f"**Model-first fair:** {row.fair_probability:.1%}")
+                        if row.kalshi_probability is not None:
+                            st.write(f"**Kalshi:** {row.kalshi_probability:.1%}")
+                        if row.edge_points is not None:
+                            st.write(f"**Price edge:** {row.edge_points:+.1f} percentage points")
+                        for reason in row.reasons:
+                            st.caption("• " + reason)
+                        if row.warnings:
+                            st.warning(" · ".join(row.warnings))
+        elif sport_filter != "All":
+            st.info(
+                "This prop family is currently catalog-visible but does not yet have a production-validated "
+                "independent Sports Edge model. It will not be promoted as an intelligent pick from sportsbook consensus alone."
+            )
 
 elif view == "Edge Board":
     st.header("Edge Board")
