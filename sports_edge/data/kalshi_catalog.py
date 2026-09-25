@@ -247,3 +247,123 @@ def fetch_supported_sport_catalog(
         relevant_series=len(relevant),
         incomplete_series=tuple(sorted(x for x in incomplete if x)),
     )
+
+
+def fetch_current_sport_catalog(
+    client: KalshiPublicClient | None = None,
+    *,
+    past_hours: float = 12.0,
+    future_hours: float = 168.0,
+    page_limit: int = 60,
+    page_size: int = 1000,
+    now_ts: int | None = None,
+) -> KalshiCatalogResult:
+    """Fetch only current/live/upcoming regular sport contracts.
+
+    Kalshi close-time filters cannot be combined with status=open, so this
+    requests a bounded close-time window with no status filter and retains
+    open markets locally. Futures that happen to close inside the window are
+    removed later by the sport classifier's future gate.
+    """
+    worker = client or KalshiPublicClient()
+    now = int(time.time()) if now_ts is None else int(now_ts)
+    min_close = now - int(max(0.0, past_hours) * 3600)
+    max_close = now + int(max(1.0, future_hours) * 3600)
+
+    found: dict[str, dict] = {}
+    latencies: list[float] = []
+    cursor: str | None = None
+    last_cursor: str | None = None
+    pages = 0
+    series_seen: set[str] = set()
+
+    try:
+        for _ in range(max(1, int(page_limit))):
+            response = _with_backoff(
+                lambda cur=cursor: worker.markets(
+                    status=None,
+                    limit=min(1000, max(1, int(page_size))),
+                    cursor=cur,
+                    min_close_ts=min_close,
+                    max_close_ts=max_close,
+                    mve_filter="exclude",
+                )
+            )
+            pages += 1
+            if response.latency_ms is not None:
+                latencies.append(float(response.latency_ms))
+            payload = response.data if isinstance(response.data, dict) else {}
+
+            for raw in payload.get("markets", []) or []:
+                if not isinstance(raw, dict):
+                    continue
+                if str(raw.get("status") or "").lower() != "open":
+                    continue
+                ticker = str(raw.get("ticker") or "").strip()
+                if not ticker:
+                    continue
+                upper = ticker.upper()
+                sport = None
+                for prefix, candidate_sport in SUPPORTED_PREFIXES:
+                    if upper.startswith(prefix):
+                        sport = candidate_sport
+                        break
+                if sport is None:
+                    continue
+
+                enriched = dict(raw)
+                series_ticker = upper.split("-", 1)[0]
+                enriched.setdefault("series_ticker", series_ticker)
+                enriched["sports_edge_sport"] = sport
+                found[ticker] = enriched
+                series_seen.add(series_ticker)
+
+            next_cursor = payload.get("cursor")
+            if not next_cursor:
+                return KalshiCatalogResult(
+                    markets=tuple(found.values()),
+                    pages=pages,
+                    cursor_exhausted=True,
+                    max_latency_ms=max(latencies) if latencies else None,
+                    error=None,
+                    discovered_series=0,
+                    relevant_series=len(series_seen),
+                    incomplete_series=(),
+                )
+
+            next_cursor = str(next_cursor)
+            if next_cursor == cursor or next_cursor == last_cursor:
+                return KalshiCatalogResult(
+                    markets=tuple(found.values()),
+                    pages=pages,
+                    cursor_exhausted=False,
+                    max_latency_ms=max(latencies) if latencies else None,
+                    error="Kalshi current-market cursor repeated before exhaustion",
+                    discovered_series=0,
+                    relevant_series=len(series_seen),
+                    incomplete_series=("CURRENT_WINDOW",),
+                )
+            last_cursor = cursor
+            cursor = next_cursor
+
+        return KalshiCatalogResult(
+            markets=tuple(found.values()),
+            pages=pages,
+            cursor_exhausted=False,
+            max_latency_ms=max(latencies) if latencies else None,
+            error=f"Kalshi current-market safety limit reached after {pages} pages",
+            discovered_series=0,
+            relevant_series=len(series_seen),
+            incomplete_series=("CURRENT_WINDOW",),
+        )
+    except Exception as exc:
+        return KalshiCatalogResult(
+            markets=tuple(found.values()),
+            pages=pages,
+            cursor_exhausted=False,
+            max_latency_ms=max(latencies) if latencies else None,
+            error=f"Kalshi current-market fetch failed: {str(exc)[:240]}",
+            discovered_series=0,
+            relevant_series=len(series_seen),
+            incomplete_series=("CURRENT_WINDOW",),
+        )
