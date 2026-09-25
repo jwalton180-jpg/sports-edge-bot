@@ -6,6 +6,7 @@ from sports_edge.models.parlay_candidates import (
     candidate_legs_from_props,
     combo_blueprint,
     generate_candidate_parlay,
+    research_fallback_candidates,
 )
 from sports_edge.models.props import PropConsensus
 
@@ -222,3 +223,70 @@ def test_mixed_sports_diversification_uses_multiple_sports_when_available():
         max_per_event=1,
     )
     assert {leg.sport for leg in p.legs} == {"MLB", "NFL", "Tennis"}
+
+
+
+def test_tennis_research_fallback_generates_when_strict_edge_is_empty():
+    tennis_game = make_game(
+        event_id="tf1",
+        home="Player Alpha",
+        away="Player Beta",
+        sport="Tennis",
+    )
+    ts = (NOW - timedelta(seconds=20)).isoformat().replace("+00:00", "Z")
+    payload = {
+        "id": "tf1",
+        "home_team": "Player Alpha",
+        "away_team": "Player Beta",
+        "bookmakers": [
+            {
+                "key": f"book{i}",
+                "last_update": ts,
+                "markets": [
+                    {
+                        "key": "h2h",
+                        "last_update": ts,
+                        "outcomes": [
+                            {"name": "Player Alpha", "price": -165},
+                            {"name": "Player Beta", "price": 145},
+                        ],
+                    }
+                ],
+            }
+            for i in range(4)
+        ],
+    }
+    candidates = candidate_legs_from_h2h(tennis_game, payload, [], mode="edge", now=NOW)
+    strict = generate_candidate_parlay(
+        candidates,
+        target_legs=2,
+        mode="edge",
+        require_edge=True,
+        max_per_event=1,
+    )
+    assert strict.legs == ()
+
+    fallback = research_fallback_candidates(candidates)
+    assert fallback
+    assert all(row.sport == "Tennis" for row in fallback)
+    assert all(row.evidence_class == "CONSENSUS BASELINE" for row in fallback)
+
+    generated = generate_candidate_parlay(
+        fallback,
+        target_legs=1,
+        mode="high_confidence",
+        require_edge=False,
+        max_per_event=1,
+    )
+    assert len(generated.legs) == 1
+    assert generated.legs[0].sport == "Tennis"
+
+
+def test_research_fallback_rejects_stale_or_thin_consensus():
+    game = make_game()
+    good = candidate_legs_from_props(game, [prop("Aaron Judge", 0.68, books=3)], [], mode="high_confidence")[0]
+    stale = good.__class__(**{**good.__dict__, "source_age_s": 121.0})
+    thin = good.__class__(**{**good.__dict__, "book_count": 2})
+    weak = good.__class__(**{**good.__dict__, "consensus_probability": 0.51})
+    rows = research_fallback_candidates([good, stale, thin, weak])
+    assert rows == [good]
