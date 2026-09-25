@@ -11,7 +11,7 @@ import streamlit as st
 
 from sports_edge.core.startup import deployment_mode
 from sports_edge.data.kalshi import KalshiPublicClient
-from sports_edge.data.kalshi_catalog import fetch_current_sport_catalog
+from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
 from sports_edge.data.mlb import MLBClient
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
@@ -146,11 +146,11 @@ def _safe_error(exc: Exception) -> str:
 
 @st.cache_data(ttl=45, show_spinner=False)
 def get_kalshi_markets():
-    result = fetch_current_sport_catalog(
-        past_hours=12,
-        future_hours=168,
-        page_limit=60,
+    result = fetch_supported_sport_catalog(
+        page_limit_per_series=50,
         page_size=1000,
+        request_pause_s=0.02,
+        max_workers=8,
     )
     return (
         list(result.markets),
@@ -838,7 +838,7 @@ if view == "Games":
         c2.metric("Kalshi markets", len(kalshi_rows))
         st.dataframe(event_df, use_container_width=True, hide_index=True)
     st.caption(
-        f"Catalog: {len(markets)} current open markets · {kseries} active series · {kpages} market page(s) · "
+        f"Catalog: {len(markets)} actionable open markets · {kseries} active game/prop series · {kpages} market page(s) · "
         f"{'complete' if kcursor_exhausted else 'INCOMPLETE'} · "
         + " · ".join(f"{sport} {catalog_health.counts_by_sport.get(sport, 0)}" for sport in SUPPORTED_SPORTS)
     )
@@ -1099,6 +1099,6 @@ with st.expander("System status / Model Trust"):
 
 st.divider()
 st.caption(
-    f"Current Kalshi catalog · {len(markets)} open · {kseries} series · {kpages} pages · Kalshi request max {f'{klat:.0f} ms' if klat else '—'} · "
+    f"Actionable Kalshi catalog · {len(markets)} open · {kseries} series · {kpages} pages · Kalshi request max {f'{klat:.0f} ms' if klat else '—'} · "
     f"Deployment {deployment_mode().replace('_', ' ').title()}"
 )
