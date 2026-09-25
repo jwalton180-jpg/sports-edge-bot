@@ -11,6 +11,7 @@ import streamlit as st
 
 from sports_edge.core.startup import deployment_mode
 from sports_edge.data.kalshi import KalshiPublicClient
+from sports_edge.data.kalshi_catalog import fetch_open_market_catalog
 from sports_edge.data.mlb import MLBClient
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
@@ -21,7 +22,8 @@ from sports_edge.models.intelligence import (
     prop_book_offer_edges,
 )
 from sports_edge.models.kalshi_sports import (
-    TENNIS_SERIES,
+    SUPPORTED_SPORTS,
+    catalog_diagnostics,
     choose_kalshi_ticket,
     group_kalshi_sports,
     prop_families as kalshi_prop_families,
@@ -119,7 +121,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-24-kalshi-first-1")
+st.caption("Build: 2026-09-25-dynamic-catalog-p0")
 
 
 def _secret(name: str) -> str | None:
@@ -142,97 +144,16 @@ def _safe_error(exc: Exception) -> str:
     return msg[:300]
 
 
-def _fetch_kalshi_series(series_ticker: str, max_pages: int = 5):
-    client = KalshiPublicClient()
-    found: dict[str, dict] = {}
-    latencies: list[float] = []
-    cursor = None
-    for _ in range(max_pages):
-        r = client.markets(
-            status="open",
-            series_ticker=series_ticker,
-            limit=200,
-            cursor=cursor,
-        )
-        latencies.append(r.latency_ms)
-        payload = r.data if isinstance(r.data, dict) else {}
-        for market in payload.get("markets", []) or []:
-            ticker = str(market.get("ticker") or "")
-            if not ticker:
-                continue
-            row = dict(market)
-            row.setdefault("series_ticker", series_ticker)
-            found[ticker] = row
-        cursor = payload.get("cursor")
-        if not cursor:
-            break
-    return found, latencies
-
-
-@st.cache_data(ttl=20, show_spinner=False)
-def get_kalshi_markets(max_pages: int = 5):
-    client = KalshiPublicClient()
-    found: dict[str, dict] = {}
-    latencies: list[float] = []
-    errors: list[str] = []
-
-    cursor = None
-    for _ in range(max_pages):
-        try:
-            r = client.markets(status="open", limit=200, cursor=cursor)
-            latencies.append(r.latency_ms)
-            payload = r.data if isinstance(r.data, dict) else {}
-            for market in payload.get("markets", []) or []:
-                ticker = str(market.get("ticker") or "")
-                if ticker:
-                    found[ticker] = market
-            cursor = payload.get("cursor")
-            if not cursor:
-                break
-        except Exception as exc:
-            errors.append(_safe_error(exc))
-            break
-
-    cursor = None
-    for _ in range(3):
-        try:
-            r = client.events(status="open", limit=200, cursor=cursor, with_nested_markets=True)
-            latencies.append(r.latency_ms)
-            payload = r.data if isinstance(r.data, dict) else {}
-            for event in payload.get("events", []) or []:
-                for market in event.get("markets", []) or []:
-                    ticker = str(market.get("ticker") or "")
-                    if not ticker:
-                        continue
-                    row = dict(market)
-                    row.setdefault("event_ticker", event.get("event_ticker") or event.get("ticker"))
-                    row.setdefault("event_title", event.get("title"))
-                    found[ticker] = row
-            cursor = payload.get("cursor")
-            if not cursor:
-                break
-        except Exception as exc:
-            errors.append(_safe_error(exc))
-            break
-
-    # Guarantee complete direct tennis coverage. Generic market pagination is
-    # ordered across the whole exchange and can easily miss ATP/WTA/ITF series.
-    # Query each current tennis series directly and merge/dedupe by market ticker.
-    with ThreadPoolExecutor(max_workers=min(6, len(TENNIS_SERIES))) as pool:
-        futures = {
-            pool.submit(_fetch_kalshi_series, series): series
-            for series in TENNIS_SERIES
-        }
-        for future in as_completed(futures):
-            series = futures[future]
-            try:
-                tennis_found, tennis_latencies = future.result()
-                found.update(tennis_found)
-                latencies.extend(tennis_latencies)
-            except Exception as exc:
-                errors.append(f"{series}: {_safe_error(exc)}")
-
-    return list(found.values()), (" | ".join(errors[:3]) if errors else None), (max(latencies) if latencies else None)
+@st.cache_data(ttl=45, show_spinner=False)
+def get_kalshi_markets():
+    result = fetch_open_market_catalog(page_limit=250, page_size=200)
+    return (
+        list(result.markets),
+        result.error,
+        result.max_latency_ms,
+        result.pages,
+        result.cursor_exhausted,
+    )
 
 
 @st.cache_data(ttl=45, show_spinner=False)
@@ -298,18 +219,50 @@ def get_mlb_live():
         return {}, str(exc)
 
 
+def _sport_from_odds_key(key: str) -> str | None:
+    low = key.lower()
+    if key.startswith("tennis_"):
+        return "Tennis"
+    if "wnba" in low:
+        return "WNBA"
+    if "nba" in low:
+        return "NBA"
+    if "nfl" in low:
+        return "NFL"
+    if "mlb" in low:
+        return "MLB"
+    return None
+
+
 def sport_pairs(active_sports: list[dict]) -> list[tuple[str, str]]:
-    pairs = [("NFL", "americanfootball_nfl"), ("MLB", "baseball_mlb")]
-    tennis = []
+    wanted_keys = {
+        "americanfootball_nfl": "NFL",
+        "baseball_mlb": "MLB",
+        "basketball_nba": "NBA",
+        "basketball_wnba": "WNBA",
+    }
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
     for item in active_sports:
         key = str(item.get("key") or "")
         group = str(item.get("group") or "")
         title = str(item.get("title") or key)
-        if group.lower() == "tennis" or key.startswith("tennis_"):
-            tennis.append((f"Tennis · {title}", key))
-    pairs.extend(tennis[:16])
-    return pairs
+        sport = _sport_from_odds_key(key)
 
+        if key in wanted_keys:
+            pairs.append((wanted_keys[key], key))
+            seen.add(key)
+        elif sport == "Tennis" or group.lower() == "tennis":
+            pairs.append((f"Tennis · {title}", key))
+            seen.add(key)
+
+    # Keep core leagues available even if /sports ordering changes.
+    for key, label in wanted_keys.items():
+        if key not in seen:
+            pairs.append((label, key))
+
+    return pairs
 
 def build_game_universe(api_key: str | None, active_sports: list[dict]):
     if not api_key:
@@ -323,7 +276,9 @@ def build_game_universe(api_key: str | None, active_sports: list[dict]):
         if err:
             errors.append(f"{label}: {err}")
             continue
-        sport = "Tennis" if key.startswith("tennis_") else ("NFL" if "nfl" in key else "MLB")
+        sport = _sport_from_odds_key(key)
+        if sport is None:
+            continue
         built = build_game_events(raw, sport_key=key, sport=sport)
         games.extend(built)
         for event in raw:
@@ -430,7 +385,7 @@ def signal_table(signals: list[LiveSignal]) -> pd.DataFrame:
 def _kalshi_rows_for_sport(grouped, sport_filter_value: str):
     if sport_filter_value == "All":
         rows = []
-        for sport_name in ("MLB", "NFL", "Tennis"):
+        for sport_name in SUPPORTED_SPORTS:
             rows.extend(grouped.get(sport_name, []))
         return rows
     return list(grouped.get(sport_filter_value, []))
@@ -518,7 +473,9 @@ def build_game_line_signals(markets: list[dict], api_key: str | None, sport_filt
     intelligence: dict[tuple[str, str, str], object] = {}
 
     for label, key in sport_pairs(active):
-        sport = "Tennis" if key.startswith("tennis_") else ("NFL" if "nfl" in key else "MLB")
+        sport = _sport_from_odds_key(key)
+        if sport is None:
+            continue
         if sport_filter != "All" and sport != sport_filter:
             continue
 
@@ -825,7 +782,7 @@ st.session_state.view = view
 
 sport_filter = st.segmented_control(
     "Sport",
-    ["All", "MLB", "NFL", "Tennis"],
+    ["All", "MLB", "NBA", "WNBA", "NFL", "Tennis"],
     default="All",
     key="sport_filter_v2",
     label_visibility="collapsed",
@@ -836,8 +793,9 @@ if st.button("↻ Refresh live data", use_container_width=True):
     st.rerun()
 
 api_key = _secret("THE_ODDS_API_KEY")
-markets, kerr, klat = get_kalshi_markets()
+markets, kerr, klat, kpages, kcursor_exhausted = get_kalshi_markets()
 kalshi_grouped = group_kalshi_sports(markets)
+catalog_health = catalog_diagnostics(markets)
 kalshi_rows = _kalshi_rows_for_sport(kalshi_grouped, sport_filter)
 
 # Sportsbook schedules are no longer part of the default render path. They are
@@ -851,18 +809,37 @@ visible_games: list[GameEvent] = []
 if view == "Games":
     st.header("Kalshi Sports")
     st.markdown(
-        '<div class="nav-hint"><b>Kalshi-first universe.</b> These are current Kalshi MLB, NFL and tennis events. '
+        '<div class="nav-hint"><b>Kalshi-first universe.</b> Current MLB, NBA, WNBA, NFL and all Tennis markets are discovered from the full open Kalshi catalog. '
         'Futures/championship markets are removed before they reach the app.</div>',
         unsafe_allow_html=True,
     )
     if not kalshi_rows:
-        st.info("No current Kalshi markets were classified for this sport.")
+        sport_count = catalog_health.counts_by_sport.get(sport_filter, 0) if sport_filter != "All" else catalog_health.classified_markets
+        if markets and sport_count == 0:
+            st.error(
+                f"Kalshi returned {len(markets)} open markets, but 0 were classified for {sport_filter}. "
+                "This is a catalog/classifier condition, not a legitimate empty slate."
+            )
+        elif not kcursor_exhausted:
+            st.warning("Kalshi catalog ingestion is incomplete; the cursor did not exhaust.")
+        else:
+            st.info("No current Kalshi markets exist for this sport in the fully fetched open catalog.")
     else:
         event_df = kalshi_event_table(kalshi_rows)
         c1, c2 = st.columns(2)
         c1.metric("Kalshi events", len(event_df))
         c2.metric("Kalshi markets", len(kalshi_rows))
         st.dataframe(event_df, use_container_width=True, hide_index=True)
+    st.caption(
+        f"Catalog: {len(markets)} open markets · {kpages} page(s) · "
+        f"{'cursor exhausted' if kcursor_exhausted else 'INCOMPLETE'} · "
+        + " · ".join(f"{sport} {catalog_health.counts_by_sport.get(sport, 0)}" for sport in SUPPORTED_SPORTS)
+    )
+    if catalog_health.unclassified_supported_prefixes:
+        st.warning(
+            "Supported-sport series reached the catalog but were not classified: "
+            + ", ".join(catalog_health.unclassified_supported_prefixes[:12])
+        )
     if kerr:
         st.warning(f"Kalshi warning: {kerr}")
 
@@ -897,7 +874,7 @@ elif view == "Player Props":
         '<div class="section-note">Direct Kalshi prop markets first. MLB/NFL player props and tennis set/game props appear here even when sportsbook enrichment is unavailable.</div>',
         unsafe_allow_html=True,
     )
-    sports_to_show = ("MLB", "NFL", "Tennis") if sport_filter == "All" else (sport_filter,)
+    sports_to_show = SUPPORTED_SPORTS if sport_filter == "All" else (sport_filter,)
     prop_rows = []
     for sport_name in sports_to_show:
         allowed = kalshi_prop_families(sport_name)
@@ -1114,12 +1091,13 @@ with st.expander("System status / Model Trust"):
     st.write("**Game identity:** both participants must match before cross-source pricing is used.")
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
-    st.write("**Sport models:** tennis Elo/form, MLB probability baselines, and NFL distribution baselines are restored; they are only promoted when the required live/historical inputs are available.")
+    st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
+    st.write("**Sport models:** tennis Elo/form, MLB probability baselines, and NFL distribution baselines are restored; NBA/WNBA market coverage is enabled while model overlays remain evidence-gated.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
 st.divider()
 st.caption(
-    f"Premium intelligence branch · Kalshi request time {f'{klat:.0f} ms' if klat else '—'} · "
+    f"Dynamic Kalshi catalog · {len(markets)} open · {kpages} pages · Kalshi request max {f'{klat:.0f} ms' if klat else '—'} · "
     f"Deployment {deployment_mode().replace('_', ' ').title()}"
 )
