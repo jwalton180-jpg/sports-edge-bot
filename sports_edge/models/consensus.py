@@ -140,7 +140,7 @@ def consensus_from_event(
     *,
     market_key: str = "h2h",
     now: datetime | None = None,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
     min_books: int = 2,
     max_disagreement_pp: float = 12.0,
 ) -> dict[str, ConsensusQuote]:
@@ -234,7 +234,7 @@ def match_market_to_event(
     odds_events: list[dict],
     *,
     now: datetime | None = None,
-    max_age_s: float = 180.0,
+    max_age_s: float = 120.0,
 ) -> MarketConsensusMatch | None:
     """Resolve a Kalshi YES contract to an external event + participant.
 
