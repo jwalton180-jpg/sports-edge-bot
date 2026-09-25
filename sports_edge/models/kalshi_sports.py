@@ -168,6 +168,10 @@ def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
     if looks_like_future(market):
         return None
 
+    context_text = _text(market)
+    if "table tennis" in context_text:
+        return None
+
     series = _series(market)
     discovered_sport = str(market.get("sports_edge_sport") or "").strip()
     if discovered_sport in SUPPORTED_SPORTS:
