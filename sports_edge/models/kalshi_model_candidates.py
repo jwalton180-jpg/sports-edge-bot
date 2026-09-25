@@ -10,6 +10,7 @@ from sports_edge.data.public_team_data import team_game_model
 from sports_edge.models.game_scope import normalize
 from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.live_board import market_side_probability
+from sports_edge.models.mlb_hits_model import project_mlb_hits
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_research import TennisResearchModel, tennis_level_from_series
 
@@ -221,6 +222,87 @@ def _team_event_candidates(sport: str, rows: list[KalshiSportMarket]) -> list[Pa
     return out
 
 
+def _mlb_hit_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
+    out: list[ParlayCandidateLeg] = []
+
+    for row in rows:
+        market = row.market
+        title = str(market.get("title") or "")
+        player_name = title.split(":", 1)[0].strip()
+        if not player_name:
+            continue
+
+        floor = market.get("floor_strike")
+        try:
+            milestone = int(float(floor) + 0.5)
+        except (TypeError, ValueError):
+            match = re.search(r":\s*(\d+)\+\s*hits", title, re.I)
+            if not match:
+                continue
+            milestone = int(match.group(1))
+
+        event_date = _parse_date(market)
+        projection = project_mlb_hits(
+            player_name=player_name,
+            milestone_hits=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+        if projection is None or not projection.evidence.usable:
+            continue
+
+        yes_price = market_side_probability(market, "YES")
+        no_price = market_side_probability(market, "NO")
+        base = projection.evidence
+        no_evidence = replace(
+            base,
+            fair_probability=1.0 - base.fair_probability,
+            factors=tuple([
+                f"Complement of {projection.player_name} {milestone}+ hits model probability",
+                *base.factors,
+            ]),
+        )
+
+        for side, price, evidence, selection_side in (
+            ("YES", yes_price, base, "Over"),
+            ("NO", no_price, no_evidence, "Under"),
+        ):
+            if price is None:
+                continue
+            selection = (
+                f"{projection.player_name} {selection_side} "
+                f"{projection.line:g} Hits"
+            )
+            out.append(
+                ParlayCandidateLeg(
+                    sport="MLB",
+                    event_id=_event_key(market),
+                    event_title=projection.game_title,
+                    market_key="batter_hits",
+                    market_label="Hits",
+                    selection=selection,
+                    consensus_probability=evidence.fair_probability,
+                    book_count=0,
+                    source_age_s=0.0,
+                    median_odds=None,
+                    kalshi_ticker=str(market.get("ticker") or ""),
+                    kalshi_side=side,
+                    kalshi_price=price,
+                    kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                    kalshi_status="MODEL",
+                    evidence_class="MODEL",
+                    model_probability=evidence.fair_probability,
+                    model_confidence=evidence.confidence,
+                    model_name=evidence.model_name,
+                    model_sample_size=evidence.sample_size,
+                    model_reasons=evidence.factors,
+                    model_warnings=evidence.warnings,
+                )
+            )
+
+    return out
+
+
 def model_candidates_from_kalshi(
     grouped: dict[str, list[KalshiSportMarket]],
     *,
@@ -249,6 +331,10 @@ def model_candidates_from_kalshi(
                 all_rows.extend(_tennis_event_candidates(event_rows))
             else:
                 all_rows.extend(_team_event_candidates(sport, event_rows))
+
+        if sport == "MLB":
+            hit_rows = [row for row in rows if row.family == "Hits"]
+            all_rows.extend(_mlb_hit_candidates(hit_rows))
 
     # Model candidates are allowed to include both sides; the EV gate chooses.
     return all_rows
