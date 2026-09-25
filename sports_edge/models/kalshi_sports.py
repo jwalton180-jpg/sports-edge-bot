@@ -5,6 +5,7 @@ import re
 from typing import Iterable
 
 from sports_edge.models.game_scope import looks_like_future, normalize
+from sports_edge.models.live_board import market_side_probability
 
 
 @dataclass(frozen=True)
@@ -173,3 +174,118 @@ def parlay_pool(
         return rows
     allowed = {"Moneyline", "Spread", "Game Total", "Match Winner"}
     return [row for row in rows if row.family in allowed]
+
+
+
+@dataclass(frozen=True)
+class KalshiSideCandidate:
+    sport: str
+    family: str
+    ticker: str
+    event_key: str
+    event_title: str
+    side: str
+    selection: str
+    price: float
+    volume: float
+    market: dict
+
+
+def _selection(market: dict, side: str) -> str:
+    side = side.upper()
+    if side == "YES":
+        return str(
+            market.get("yes_sub_title")
+            or market.get("yes_title")
+            or market.get("yes_label")
+            or market.get("title")
+            or "YES"
+        ).strip()
+    return str(
+        market.get("no_sub_title")
+        or market.get("no_title")
+        or market.get("no_label")
+        or ("NO — " + str(market.get("title") or ""))
+    ).strip()
+
+
+def side_candidates(rows: Iterable[KalshiSportMarket]) -> list[KalshiSideCandidate]:
+    out: list[KalshiSideCandidate] = []
+    for row in rows:
+        market = row.market
+        ticker = str(market.get("ticker") or "").strip()
+        if not ticker:
+            continue
+        event_key = str(market.get("event_ticker") or ticker.rsplit("-", 1)[0] or ticker)
+        event_title = str(market.get("event_title") or market.get("title") or ticker).strip()
+        try:
+            volume = float(market.get("volume_fp", market.get("volume", 0)) or 0)
+        except (TypeError, ValueError):
+            volume = 0.0
+        for side in ("YES", "NO"):
+            price = market_side_probability(market, side)
+            if price is None:
+                continue
+            out.append(
+                KalshiSideCandidate(
+                    sport=row.sport,
+                    family=row.family,
+                    ticker=ticker,
+                    event_key=event_key,
+                    event_title=event_title,
+                    side=side,
+                    selection=_selection(market, side),
+                    price=price,
+                    volume=volume,
+                    market=market,
+                )
+            )
+    return out
+
+
+def choose_kalshi_ticket(
+    candidates: list[KalshiSideCandidate],
+    *,
+    mode: str,
+    target_legs: int,
+    max_per_event: int = 1,
+) -> list[KalshiSideCandidate]:
+    """Build a distinct Kalshi-first ticket pool.
+
+    Longshot mode deliberately targets 7-35c sides. Best mode avoids that band
+    and favors stronger market probabilities. Neither mode claims price edge
+    until sportsbook/model enrichment is available.
+    """
+    if mode == "longshot":
+        pool = [candidate for candidate in candidates if 0.07 <= candidate.price <= 0.35]
+        pool.sort(
+            key=lambda candidate: (
+                candidate.volume,
+                -abs(candidate.price - 0.20),
+            ),
+            reverse=True,
+        )
+    else:
+        pool = [candidate for candidate in candidates if 0.40 <= candidate.price <= 0.82]
+        pool.sort(
+            key=lambda candidate: (
+                candidate.volume,
+                candidate.price,
+            ),
+            reverse=True,
+        )
+
+    selected: list[KalshiSideCandidate] = []
+    event_counts: dict[str, int] = {}
+    used_tickers: set[str] = set()
+    for candidate in pool:
+        if candidate.ticker in used_tickers:
+            continue
+        if event_counts.get(candidate.event_key, 0) >= max_per_event:
+            continue
+        selected.append(candidate)
+        used_tickers.add(candidate.ticker)
+        event_counts[candidate.event_key] = event_counts.get(candidate.event_key, 0) + 1
+        if len(selected) >= target_legs:
+            break
+    return selected
