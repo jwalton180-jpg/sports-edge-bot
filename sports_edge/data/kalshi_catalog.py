@@ -95,7 +95,12 @@ def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
             "GAMETOTAL", "TOTALSETS", "EXACTMATCH", "EXACTSETS",
             "TIEBREAK", "ACES", "FAULT", "SERVE", "BREAK",
         )
-        return any(token in ticker for token in tokens)
+        title_terms = (
+            "match", "doubles", "set winner", "game winner", "game spread",
+            "set spread", "total games", "total sets", "exact match",
+            "tiebreak", "aces", "double fault", "serve", "break point",
+        )
+        return any(token in ticker for token in tokens) or any(term in title for term in title_terms)
 
     if sport == "MLB":
         tokens = (
@@ -105,7 +110,17 @@ def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
             "PITCH", "NEXTHR", "HITSALLOWED", "EARNEDRUN",
         )
         exact = {"KXMLBHR", "KXMLBTB", "KXMLBKS", "KXMLBWA"}
-        return ticker in exact or any(token in ticker for token in tokens)
+        title_terms = (
+            " game", "spread", "total", "inning", "player hits", "home runs",
+            "hits runs rbis", "total bases", "rbis", "strikeouts", "walks",
+            "outs recorded", "earned runs", "hits allowed", "next homerun",
+            "player to pitch",
+        )
+        return (
+            ticker in exact
+            or any(token in ticker for token in tokens)
+            or any(term in title for term in title_terms)
+        )
 
     if sport in {"NBA", "WNBA"}:
         tokens = (
@@ -115,7 +130,17 @@ def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
             "BENCHPTS", "H2H", "DOUBLEDOUBLE",
         )
         exact_suffixes = ("2D",)
-        return any(token in ticker for token in tokens) or any(ticker.endswith(x) for x in exact_suffixes)
+        title_terms = (
+            " game", "spread", "total", "quarter", "half", "player points",
+            "rebounds", "assists", "threes", "three-pointers", "blocks",
+            "steals", "points + rebounds", "first basket", "race to points",
+            "bench points", "head-to-head", "double double", "team total",
+        )
+        return (
+            any(token in ticker for token in tokens)
+            or any(ticker.endswith(x) for x in exact_suffixes)
+            or any(term in title for term in title_terms)
+        )
 
     if sport == "NFL":
         if " most " in f" {title} " or " weekly " in f" {title} ":
@@ -128,7 +153,14 @@ def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
             "ESCALATOR", "NEXTTD", "NEXTINT", "RRYDS", "LONGREC",
             "LONGFG",
         )
-        return any(token in ticker for token in tokens)
+        title_terms = (
+            " game", "spread", "total", "quarter", "half", "passing",
+            "rushing", "receiving", "receptions", "touchdown", "field goal",
+            "sacks", "interception", "safety", "turnovers", "2-point",
+            "first downs", "lead changes", "both teams to score",
+            "fantasy points", "team total",
+        )
+        return any(token in ticker for token in tokens) or any(term in title for term in title_terms)
 
     return False
 
