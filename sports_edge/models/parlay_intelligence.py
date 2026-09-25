@@ -50,6 +50,24 @@ def _model_evidence(leg: ParlayCandidateLeg) -> ModelEvidence | None:
     )
 
 
+def _best_value_gate(model: ModelEvidence | None) -> tuple[float, float, float, str]:
+    """Use deeper model evidence to price smaller, still-positive edges.
+
+    Best Available is not the same product as the longshot builder. A rigid
+    +3 pp cutoff was discarding well-supported model edges and collapsing
+    otherwise broad slates to one leg. We keep +3 pp as the default, but allow
+    tighter positive-value gates only when both model confidence and sample
+    depth are materially stronger. Negative/zero model edge never qualifies.
+    """
+    if model is None:
+        return 3.0, 1.05, 0.45, "standard"
+    if model.confidence >= 0.72 and model.sample_size >= 15:
+        return 1.0, 1.015, 0.52, "deep-evidence"
+    if model.confidence >= 0.60 and model.sample_size >= 8:
+        return 2.0, 1.03, 0.50, "strong-evidence"
+    return 3.0, 1.05, 0.45, "standard"
+
+
 def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
     model = _model_evidence(leg)
     price = None if leg.kalshi_price is None else clamp(float(leg.kalshi_price))
@@ -138,12 +156,19 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
             + 0.10 * fair_support
         )
     else:
-        if edge is None or edge < 3.0:
-            failures.append("model price edge below +3.0 pp")
-        if multiple is None or multiple < 1.05:
-            failures.append("fair/price value multiple below 1.05x")
-        if fair < 0.45:
-            failures.append("model-first fair probability below 45% for Best Available")
+        min_edge, min_multiple, min_fair, gate_tier = _best_value_gate(model)
+        if edge is None or edge < min_edge:
+            failures.append(f"model price edge below +{min_edge:.1f} pp for {gate_tier} Best Available gate")
+        if multiple is None or multiple < min_multiple:
+            failures.append(f"fair/price value multiple below {min_multiple:.3g}x for {gate_tier} Best Available gate")
+        if fair < min_fair:
+            failures.append(f"model-first fair probability below {min_fair:.0%} for {gate_tier} Best Available gate")
+        if gate_tier != "standard":
+            reasons.append(
+                f"{gate_tier.replace('-', ' ').title()} Best Available gate: "
+                f"confidence {model.confidence:.0%}, sample {model.sample_size}, "
+                f"requires +{min_edge:.1f} pp edge and {min_multiple:.3g}x value"
+            )
 
         edge_score = clamp((edge or 0.0) / 10.0)
         fair_score = clamp((fair - 0.40) / 0.35)
