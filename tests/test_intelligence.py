@@ -98,3 +98,49 @@ def test_prop_leave_one_out_detects_underpriced_book_without_using_itself():
     assert fd.comparison_books == 2
     assert fd.edge_points > 5
     assert fd.leave_one_out_fair_probability > fd.break_even_probability
+
+
+
+def test_default_freshness_accepts_120_seconds_but_rejects_121():
+    fresh_event = {
+        "bookmakers": [
+            _book("pinnacle", "A", -150, "B", 130, 120),
+            _book("draftkings", "A", -145, "B", 125, 120),
+        ]
+    }
+    stale_event = {
+        "bookmakers": [
+            _book("pinnacle", "A", -150, "B", 130, 121),
+            _book("draftkings", "A", -145, "B", 125, 121),
+        ]
+    }
+
+    assert h2h_intelligence(fresh_event, "A", market_probability=0.50, now=NOW) is not None
+    assert h2h_intelligence(stale_event, "A", market_probability=0.50, now=NOW) is None
+
+
+def test_prop_default_freshness_rejects_121_second_quotes():
+    def payload(age):
+        ts = (NOW - timedelta(seconds=age)).isoformat().replace("+00:00", "Z")
+        return {
+            "id": "evt-age",
+            "bookmakers": [
+                {
+                    "key": key,
+                    "title": key,
+                    "last_update": ts,
+                    "markets": [{
+                        "key": "player_points",
+                        "last_update": ts,
+                        "outcomes": [
+                            {"name": "Over", "description": "Player A", "price": -110, "point": 20.5},
+                            {"name": "Under", "description": "Player A", "price": -110, "point": 20.5},
+                        ],
+                    }],
+                }
+                for key in ("pinnacle", "draftkings", "fanduel")
+            ],
+        }
+
+    assert prop_book_offer_edges(payload(120), ("player_points",), now=NOW)
+    assert prop_book_offer_edges(payload(121), ("player_points",), now=NOW) == []
