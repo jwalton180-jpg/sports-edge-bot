@@ -106,10 +106,11 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
         # fresh independent confirmation instead of auto-promotion.
         raw_model_gap = None if price is None else 100.0 * (model.fair_probability - price)
         fresh_secondary = leg.book_count >= 2 and leg.source_age_s <= 120
-        if raw_model_gap is not None and raw_model_gap >= 25.0:
+        confirmation_gap_pp = 15.0 if model.confidence < 0.60 else 25.0
+        if raw_model_gap is not None and raw_model_gap >= confirmation_gap_pp:
             if not fresh_secondary:
                 failures.append(
-                    "extreme model-market dislocation requires fresh secondary confirmation"
+                    f"model-market dislocation of at least {confirmation_gap_pp:.0f} pp requires fresh secondary confirmation at this model-confidence level"
                 )
             else:
                 book_probability = clamp(float(leg.consensus_probability))
