@@ -192,6 +192,7 @@ def get_kalshi_markets(sport_filter_value: str):
 
 
 @st.cache_data(ttl=45, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_active_sports(api_key: str):
     try:
         r = OddsClient(api_key=api_key).sports()
@@ -222,7 +223,7 @@ def get_featured_odds(api_key: str, sport_key: str):
         return [], _safe_error(exc), None
 
 
-@st.cache_data(ttl=20, show_spinner=False)
+@st.cache_data(ttl=45, show_spinner=False)
 def get_event_odds(api_key: str, sport_key: str, event_id: str, markets: str):
     try:
         r = OddsClient(api_key=api_key).event_odds(
@@ -786,23 +787,38 @@ def scan_parlay_candidates(
         sports = list(dict.fromkeys(s for s, _ in plan))
         scan_games = _linked_scan_games(games_in, scoped_markets, sports, max_games)
         keys_by_sport = {sport: keys for sport, keys in plan}
+        tasks: list[tuple[GameEvent, tuple[str, ...]]] = []
         for game in scan_games:
             keys = keys_by_sport.get(game.sport)
-            if not keys:
-                continue
-            payload, err, _ = get_event_odds(
-                api_key_value,
-                game.sport_key,
-                game.event_id,
-                ",".join(keys),
-            )
-            calls += 1
-            if err:
-                errors.append(f"{game.away_team} @ {game.home_team}: {err}")
-                continue
-            quotes = prop_consensus(payload, market_keys=keys) if payload else []
-            exact = build_prop_signals(scoped_markets.get(game.event_id, []), game, quotes)
-            candidates.extend(candidate_legs_from_props(game, quotes, exact, mode=mode))
+            if keys:
+                tasks.append((game, keys))
+
+        calls += len(tasks)
+        if tasks:
+            max_workers = min(4, len(tasks))
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                future_map = {
+                    pool.submit(
+                        get_event_odds,
+                        api_key_value,
+                        game.sport_key,
+                        game.event_id,
+                        ",".join(keys),
+                    ): (game, keys)
+                    for game, keys in tasks
+                }
+                for future in as_completed(future_map):
+                    game, keys = future_map[future]
+                    try:
+                        payload, err, _ = future.result()
+                    except Exception as exc:
+                        payload, err = {}, _safe_error(exc)
+                    if err:
+                        errors.append(f"{game.away_team} @ {game.home_team}: {err}")
+                        continue
+                    quotes = prop_consensus(payload, market_keys=keys) if payload else []
+                    exact = build_prop_signals(scoped_markets.get(game.event_id, []), game, quotes)
+                    candidates.extend(candidate_legs_from_props(game, quotes, exact, mode=mode))
 
     dedup: dict[tuple[str, str], ParlayCandidateLeg] = {}
     for row in candidates:
@@ -1077,7 +1093,7 @@ elif view == "Parlay Generator":
         min_value=scan_min,
         max_value=scan_max,
         value=scan_default,
-        help="This only controls optional sportsbook enrichment. The model candidate universe comes directly from Kalshi and public sport data.",
+        help="This only controls the optional secondary sportsbook cross-check. The first ticket is built from Kalshi + sport models without waiting on books.",
         key=f"intel_games_v3_{sport_filter}",
     )
 
@@ -1094,14 +1110,12 @@ elif view == "Parlay Generator":
         )
 
     if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
-        with st.spinner("Scoring current Kalshi markets with sport-specific models…"):
+        with st.spinner("Running sport models against current Kalshi markets…"):
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
                 sport_filter=sport_filter,
             )
 
-            # Preset controls which model families are allowed. Model evidence
-            # remains mandatory; unsupported prop families still fail closed.
             supported_model_presets = {
                 "Best Available",
                 "Mixed Sports",
@@ -1127,21 +1141,50 @@ elif view == "Parlay Generator":
             elif preset not in supported_model_presets:
                 model_candidates = []
 
-            active_err = None
-            universe_errors: list[str] = []
-            scan_errors: list[str] = []
-            calls = 0
-            book_candidates: list[ParlayCandidateLeg] = []
-            linked_games = 0
-            games_discovered = 0
+            # Render from independent sport models first. Do not make the user
+            # wait for optional sportsbook discovery/enrichment.
+            result = build_intelligent_parlay(
+                model_candidates,
+                mode=mode,
+                target_legs=target,
+                max_per_event=1,
+                diversify_sports=(sport_filter == "All"),
+            )
 
-            # Sportsbooks are optional secondary calibration only.
-            if api_key and model_candidates:
+            st.session_state["intel_parlay_v3"] = {
+                "result": result,
+                "preset": preset,
+                "mode": mode,
+                "sport": sport_filter,
+                "target": target,
+                "model_candidates": len(model_candidates),
+                "model_covered": sum(1 for row in model_candidates if row.model_probability is not None),
+                "book_confirmed": 0,
+                "games_discovered": 0,
+                "linked_games": 0,
+                "calls": 0,
+                "errors": [],
+                "model_candidate_rows": model_candidates,
+                "secondary_done": False,
+            }
+
+    state = st.session_state.get("intel_parlay_v3")
+    state_matches = (
+        state
+        and state.get("mode") == mode
+        and state.get("preset") == preset
+        and state.get("sport") == sport_filter
+        and state.get("target") == target
+    )
+
+    if state_matches and api_key and state.get("model_candidate_rows") and not state.get("secondary_done"):
+        st.caption("Model-first ticket is ready. Sportsbook confirmation is optional and runs separately.")
+        if st.button("Add optional sportsbook cross-check", use_container_width=True, key="secondary_crosscheck_v4"):
+            with st.spinner("Cross-checking a bounded set of fresh sportsbook props…"):
+                model_candidates = list(state.get("model_candidate_rows") or [])
                 active, active_err = get_active_sports(api_key)
                 lazy_games, _, universe_errors = build_game_universe(api_key, active, sport_filter)
-                games_discovered = len(lazy_games)
                 lazy_scoped = game_scoped_markets(markets, lazy_games)
-                linked_games = sum(1 for game in lazy_games if lazy_scoped.get(game.event_id))
                 candidate_mode = "longshot" if mode == "longshot" else "high_confidence"
                 book_candidates, scan_errors, calls = scan_parlay_candidates(
                     preset=preset,
@@ -1150,36 +1193,36 @@ elif view == "Parlay Generator":
                     games_in=lazy_games,
                     scoped_markets=lazy_scoped,
                     api_key_value=api_key,
-                    max_games=scan_games_n,
+                    max_games=min(scan_games_n, 6 if preset == "MLB Hits" else scan_games_n),
                 )
-
-            candidates = attach_sportsbook_context(model_candidates, book_candidates)
-            result = build_intelligent_parlay(
-                candidates,
-                mode=mode,
-                target_legs=target,
-                max_per_event=1,
-                diversify_sports=(sport_filter == "All"),
-            )
-
-            model_covered = sum(1 for row in candidates if row.model_probability is not None)
-            book_confirmed = sum(1 for row in candidates if row.book_count > 0)
-            st.session_state["intel_parlay_v3"] = {
-                "result": result,
-                "preset": preset,
-                "mode": mode,
-                "sport": sport_filter,
-                "model_candidates": len(model_candidates),
-                "model_covered": model_covered,
-                "book_confirmed": book_confirmed,
-                "games_discovered": games_discovered,
-                "linked_games": linked_games,
-                "calls": calls,
-                "errors": [e for e in ([active_err] + universe_errors + scan_errors) if e],
-            }
+                candidates = attach_sportsbook_context(model_candidates, book_candidates)
+                result = build_intelligent_parlay(
+                    candidates,
+                    mode=mode,
+                    target_legs=target,
+                    max_per_event=1,
+                    diversify_sports=(sport_filter == "All"),
+                )
+                st.session_state["intel_parlay_v3"] = {
+                    "result": result,
+                    "preset": preset,
+                    "mode": mode,
+                    "sport": sport_filter,
+                    "target": target,
+                    "model_candidates": len(model_candidates),
+                    "model_covered": sum(1 for row in candidates if row.model_probability is not None),
+                    "book_confirmed": sum(1 for row in candidates if row.book_count > 0),
+                    "games_discovered": len(lazy_games),
+                    "linked_games": sum(1 for game in lazy_games if lazy_scoped.get(game.event_id)),
+                    "calls": calls,
+                    "errors": [e for e in ([active_err] + universe_errors + scan_errors) if e],
+                    "model_candidate_rows": model_candidates,
+                    "secondary_done": True,
+                }
+                st.rerun()
 
     state = st.session_state.get("intel_parlay_v3")
-    if state and state.get("mode") == mode and state.get("preset") == preset and state.get("sport") == sport_filter:
+    if state and state.get("mode") == mode and state.get("preset") == preset and state.get("sport") == sport_filter and state.get("target") == target:
         result = state["result"]
         if result.legs:
             c1, c2, c3, c4 = st.columns(4)
