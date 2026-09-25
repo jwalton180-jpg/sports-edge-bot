@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+import importlib
 import inspect
 import os
 from statistics import median
+from types import SimpleNamespace
 
 import pandas as pd
 import streamlit as st
@@ -21,14 +23,34 @@ from sports_edge.models.intelligence import (
     h2h_intelligence,
     prop_book_offer_edges,
 )
-from sports_edge.models.kalshi_sports import (
-    SUPPORTED_SPORTS,
-    catalog_diagnostics,
-    choose_kalshi_ticket,
-    group_kalshi_sports,
-    prop_families as kalshi_prop_families,
-    side_candidates as kalshi_side_candidates,
-)
+# Streamlit Community Cloud can briefly hot-reload app.py while keeping an
+# older dependency module in sys.modules. Reload this module explicitly so a
+# partial deploy cannot crash startup on newly added exports.
+_ks = importlib.import_module("sports_edge.models.kalshi_sports")
+try:
+    _ks = importlib.reload(_ks)
+except Exception:
+    # Keep the previous module available; safe fallbacks below prevent a
+    # missing newly-added export from taking the whole app down.
+    pass
+
+SUPPORTED_SPORTS = getattr(_ks, "SUPPORTED_SPORTS", ("MLB", "NBA", "WNBA", "NFL", "Tennis"))
+choose_kalshi_ticket = _ks.choose_kalshi_ticket
+group_kalshi_sports = _ks.group_kalshi_sports
+kalshi_prop_families = _ks.prop_families
+kalshi_side_candidates = _ks.side_candidates
+
+def _fallback_catalog_diagnostics(markets):
+    grouped = group_kalshi_sports(markets)
+    counts = {sport: len(grouped.get(sport, [])) for sport in SUPPORTED_SPORTS}
+    return SimpleNamespace(
+        total_open_markets=len(markets),
+        classified_markets=sum(counts.values()),
+        unclassified_supported_prefixes=(),
+        counts_by_sport=counts,
+    )
+
+catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_candidates import (
