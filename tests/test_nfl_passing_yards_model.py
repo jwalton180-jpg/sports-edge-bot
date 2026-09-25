@@ -11,7 +11,7 @@ import sports_edge.models.kalshi_model_candidates as kmc
 import sports_edge.models.nfl_passing_yards_model as pmodel
 
 
-def _context(rows=3):
+def _context(rows=3, prior_rows_count=8):
     player_rows = []
     values = [
         (31, 248, 5.7),
@@ -20,6 +20,27 @@ def _context(rows=3):
     ][:rows]
     for week, (attempts, yards, cpoe) in enumerate(values, start=1):
         player_rows.append(
+            {
+                "week": str(week),
+                "attempts": str(attempts),
+                "passing_yards": str(yards),
+                "passing_cpoe": str(cpoe),
+            }
+        )
+
+    prior_player_rows = []
+    prior_values = [
+        (32, 241, 1.8),
+        (35, 266, 4.1),
+        (30, 218, -0.5),
+        (36, 281, 5.0),
+        (34, 254, 2.3),
+        (29, 207, -1.1),
+        (38, 296, 6.2),
+        (33, 245, 1.0),
+    ][:prior_rows_count]
+    for week, (attempts, yards, cpoe) in enumerate(prior_values, start=1):
+        prior_player_rows.append(
             {
                 "week": str(week),
                 "attempts": str(attempts),
@@ -55,6 +76,7 @@ def _context(rows=3):
         roster_week=4,
         scheduled_qb_name="Test Quarterback",
         player_rows=tuple(player_rows),
+        prior_player_rows=tuple(prior_player_rows),
         opponent_allowed_rows=opponent_allowed,
         league_rows=league,
     )
@@ -78,8 +100,12 @@ def test_passing_model_produces_reasonable_projection(monkeypatch):
     assert any("Opponent pass defense" in x for x in projection.evidence.factors)
 
 
-def test_passing_model_fails_closed_on_thin_sample(monkeypatch):
-    monkeypatch.setattr(pmodel, "resolve_passing_context", lambda **kwargs: _context(rows=1))
+def test_passing_model_fails_closed_on_thin_sample_without_prior(monkeypatch):
+    monkeypatch.setattr(
+        pmodel,
+        "resolve_passing_context",
+        lambda **kwargs: _context(rows=1, prior_rows_count=0),
+    )
     assert (
         project_nfl_passing_yards(
             player_name="Test Quarterback",
@@ -197,3 +223,21 @@ def test_passing_title_fallback_parses_threshold(monkeypatch):
     )
     out = kmc._nfl_passing_candidates([row])
     assert any(x.selection == "Test Quarterback Over 274.5 Passing Yards" for x in out)
+
+
+
+def test_two_game_sample_is_stabilized_by_prior_season(monkeypatch):
+    monkeypatch.setattr(
+        pmodel,
+        "resolve_passing_context",
+        lambda **kwargs: _context(rows=2, prior_rows_count=8),
+    )
+    projection = project_nfl_passing_yards(
+        player_name="Test Quarterback",
+        milestone_yards=250,
+        event_date=date(2026, 9, 27),
+    )
+    assert projection is not None
+    assert projection.evidence.confidence <= 0.58
+    assert any("Decayed prior-season baseline" in x for x in projection.evidence.factors)
+    assert any("stabilized with decayed prior-season" in x for x in projection.evidence.warnings)
