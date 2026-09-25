@@ -37,16 +37,17 @@ jobs:
       - name: Live Kalshi catalog completeness probe
         run: |
           python - <<'PY'
-          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
-          from sports_edge.models.kalshi_sports import catalog_diagnostics
+          from sports_edge.data.kalshi_catalog import fetch_current_sport_catalog
+          from sports_edge.models.kalshi_sports import catalog_diagnostics, group_kalshi_sports
+          from sports_edge.models.game_scope import looks_like_future
 
-          result = fetch_supported_sport_catalog(
-              page_limit_per_series=50,
-              page_size=200,
-              request_pause_s=0.08,
+          result = fetch_current_sport_catalog(
+              past_hours=12,
+              future_hours=168,
+              page_limit=60,
+              page_size=1000,
           )
-          print("discovered_series", result.discovered_series)
-          print("relevant_series", result.relevant_series)
+          print("active_series", result.relevant_series)
           print("pages", result.pages)
           print("cursor_exhausted", result.cursor_exhausted)
           print("error", result.error)
@@ -59,6 +60,9 @@ jobs:
           assert result.markets, "Kalshi returned no open markets"
           assert result.cursor_exhausted, result.error or "cursor did not exhaust"
           assert diag.classified_markets > 0, "No supported sport markets classified"
+          assert diag.counts_by_sport["Tennis"] > 0, "No current Tennis markets classified"
+          grouped = group_kalshi_sports(result.markets)
+          assert not any(looks_like_future(row.market) for rows in grouped.values() for row in rows), "Future leaked into current catalog"
           PY
 
       - name: Streamlit server smoke
