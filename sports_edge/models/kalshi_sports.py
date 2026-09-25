@@ -69,11 +69,12 @@ def _baseball_family(series: str) -> str:
         (("F3",), "First 3 Innings"),
         (("F5",), "First 5 Innings"),
         (("F7",), "First 7 Innings"),
+        (("HRR",), "Hits + Runs + RBIs"),
         (("HIT",), "Hits"),
         (("HR",), "Home Runs"),
         (("TB", "TOTALBASE"), "Total Bases"),
         (("RBI",), "RBIs"),
-        (("K", "STRIKEOUT"), "Strikeouts"),
+        (("KS", "STRIKEOUT", "PITCHERK"), "Strikeouts"),
         (("RFI",), "First Inning Run"),
         (("EXTRAS",), "Extra Innings"),
     )
@@ -141,7 +142,10 @@ def _basketball_family(series: str, sport: str) -> str:
 
 def _tennis_family(series: str) -> str:
     checks = (
+        (("ANYSET",), "Any Set Winner"),
         (("SETWINNER",), "Set Winner"),
+        (("GWINNER",), "Game Winner"),
+        (("ACES",), "Aces"),
         (("GTOTAL", "GAMESTOTAL"), "Games Total"),
         (("GSPREAD", "GAMESSPREAD"), "Games Spread"),
         (("TOTALSETS",), "Total Sets"),
@@ -240,7 +244,10 @@ def catalog_diagnostics(markets: Iterable[dict]) -> CatalogDiagnostics:
             continue
 
         series = _series(market)
-        if series.startswith(("KXMLB", "KXNBA", "KXWNBA", "KXNFL", "KXATP", "KXWTA", "KXITF")):
+        if (
+            not looks_like_future(market)
+            and series.startswith(("KXMLB", "KXNBA", "KXWNBA", "KXNFL", "KXATP", "KXWTA", "KXITF"))
+        ):
             unknown_prefixes.add(series)
 
     return CatalogDiagnostics(
@@ -253,7 +260,7 @@ def catalog_diagnostics(markets: Iterable[dict]) -> CatalogDiagnostics:
 
 def prop_families(sport: str) -> set[str]:
     if sport == "MLB":
-        return {"Hits", "Home Runs", "Total Bases", "RBIs", "Strikeouts", "Other MLB"}
+        return {"Hits", "Hits + Runs + RBIs", "Home Runs", "Total Bases", "RBIs", "Strikeouts", "Other MLB"}
     if sport == "NFL":
         return {
             "Passing TDs", "Passing Yards", "Rushing Yards", "Receiving Yards",
@@ -268,9 +275,9 @@ def prop_families(sport: str) -> set[str]:
         }
     if sport == "Tennis":
         return {
-            "Match Winner", "Doubles Match Winner", "Set Winner",
-            "Games Total", "Games Spread", "Total Sets", "Exact Match",
-            "Other Tennis",
+            "Match Winner", "Doubles Match Winner", "Set Winner", "Any Set Winner",
+            "Game Winner", "Aces", "Games Total", "Games Spread", "Total Sets",
+            "Exact Match", "Other Tennis",
         }
     return set()
 
