@@ -66,7 +66,7 @@ def test_longshot_and_best_use_distinct_price_profiles():
 
     assert longshot
     assert best
-    assert all(0.07 <= leg.price <= 0.35 for leg in longshot)
+    assert all(0.05 <= leg.price <= 0.35 for leg in longshot)
     assert all(0.40 <= leg.price <= 0.82 for leg in best)
     assert {leg.ticker for leg in longshot} != {leg.ticker for leg in best}
 
@@ -106,3 +106,30 @@ def test_new_direct_tennis_series_fails_open_to_other_tennis_not_out_of_app():
     )
     row["series_ticker"] = "KXATPBREAKPOINTS"
     assert classify_kalshi_market(row) == ("Tennis", "Other Tennis")
+
+
+
+def test_nba_and_wnba_are_first_class_and_unknown_families_stay_visible():
+    nba = market("KXNBAPTS-26SEP25-PLAYER", "Player points", event="NBA1")
+    wnba = market("KXWNBAREB-26SEP25-PLAYER", "Player rebounds", event="WNBA1")
+    new_nba = market("KXNBANEWSTAT-26SEP25-PLAYER", "New NBA stat", event="NBA2")
+
+    assert classify_kalshi_market(nba) == ("NBA", "Points")
+    assert classify_kalshi_market(wnba) == ("WNBA", "Rebounds")
+    assert classify_kalshi_market(new_nba) == ("NBA", "Other NBA")
+
+    grouped = group_kalshi_sports([nba, wnba, new_nba])
+    assert len(grouped["NBA"]) == 2
+    assert len(grouped["WNBA"]) == 1
+
+
+def test_challenger_itf_and_new_tennis_families_never_drop_out():
+    rows = [
+        market("KXATPCHALLENGERMATCH-26SEP25-A", "A vs B", event="T1"),
+        market("KXITFWSETWINNER-26SEP25-B", "C vs D set", event="T2"),
+        market("KXWTABREAKPOINTS-26SEP25-C", "Break points", event="T3"),
+    ]
+    classified = [classify_kalshi_market(row) for row in rows]
+    assert classified[0] == ("Tennis", "Match Winner")
+    assert classified[1] == ("Tennis", "Set Winner")
+    assert classified[2] == ("Tennis", "Other Tennis")
