@@ -22,6 +22,7 @@ from sports_edge.models.parlay_candidates import (
     candidate_legs_from_props,
     combo_blueprint,
     generate_candidate_parlay,
+    research_fallback_candidates,
 )
 from sports_edge.models.prop_edges import build_prop_signals
 from sports_edge.models.props import PROP_GROUPS, prop_consensus
@@ -849,12 +850,7 @@ elif view == "Parlay Generator":
                     # Do not leave the user with a blank generator when no exact
                     # Kalshi dislocation exists. Show a clearly labelled research
                     # slate based on fresh, multi-book consensus quality instead.
-                    fallback_candidates = [
-                        row for row in candidates
-                        if row.book_count >= 3
-                        and row.source_age_s <= 120
-                        and row.consensus_probability >= 0.52
-                    ]
+                    fallback_candidates = research_fallback_candidates(candidates)
                     if fallback_candidates:
                         generated = _generate_parlay_compat(
                             fallback_candidates,
