@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Iterable
 
 from sports_edge.models.game_scope import looks_like_future, normalize
 from sports_edge.models.live_board import market_side_probability
+
+
+SUPPORTED_SPORTS: tuple[str, ...] = ("MLB", "NBA", "WNBA", "NFL", "Tennis")
 
 
 @dataclass(frozen=True)
@@ -15,102 +17,12 @@ class KalshiSportMarket:
     market: dict
 
 
-# Known live/game/prop prefixes. Prefix matching intentionally excludes
-# championship/futures families via looks_like_future() before classification.
-MLB_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("KXMLBGAME", "Moneyline"),
-    ("KXMLBSPREAD", "Spread"),
-    ("KXMLBTOTAL", "Game Total"),
-    ("KXMLBF3", "First 3 Innings"),
-    ("KXMLBF5", "First 5 Innings"),
-    ("KXMLBF7", "First 7 Innings"),
-    ("KXMLBHIT", "Hits"),
-    ("KXMLBHRR", "Home Runs"),
-    ("KXMLBHR", "Home Runs"),
-    ("KXMLBTB", "Total Bases"),
-    ("KXMLBRBI", "RBIs"),
-    ("KXMLBTEAMTOTAL", "Team Total"),
-    ("KXMLBRFI", "First Inning Run"),
-    ("KXMLBEXTRAS", "Extra Innings"),
-)
-
-NFL_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("KXNFLGAME", "Moneyline"),
-    ("KXNFLSPREAD", "Spread"),
-    ("KXNFLTOTAL", "Game Total"),
-    ("KXNFL1H", "First Half"),
-    ("KXNFL2H", "Second Half"),
-    ("KXNFL1Q", "First Quarter"),
-    ("KXNFL2Q", "Second Quarter"),
-    ("KXNFL3Q", "Third Quarter"),
-    ("KXNFL4Q", "Fourth Quarter"),
-    ("KXNFLOT", "Overtime"),
-    ("KXNFLPASSTDS", "Passing TDs"),
-    ("KXNFLPASSYDS", "Passing Yards"),
-    ("KXNFLTD", "Player Touchdowns"),
-    ("KXNFLTOTALTD", "Total TDs"),
-    ("KXNFLFIRSTTDTEAM", "First TD Team"),
-    ("KXNFLTEAMFIRSTTD", "Team First TD"),
-    ("KXNFLTEAMTD", "Team TDs"),
-    ("KXNFLFG", "Field Goals"),
-    ("KXNFLWINMARGIN", "Win Margin"),
-)
-
-TENNIS_SERIES: tuple[str, ...] = (
-    "KXATPMATCH",
-    "KXATPCHALLENGERMATCH",
-    "KXATPDOUBLES",
-    "KXATPSETWINNER",
-    "KXATPGTOTAL",
-    "KXWTAMATCH",
-    "KXWTACHALLENGERMATCH",
-    "KXWTADOUBLES",
-    "KXWTASETWINNER",
-    "KXITFMATCH",
-    "KXITFDOUBLES",
-    "KXITFWMATCH",
-    "KXITFWDOUBLES",
-)
-
-TENNIS_PREFIXES: tuple[tuple[str, str], ...] = (
-    ("KXATPCHALLENGERMATCH", "Match Winner"),
-    ("KXWTACHALLENGERMATCH", "Match Winner"),
-    ("KXATPDOUBLES", "Doubles Match Winner"),
-    ("KXWTADOUBLES", "Doubles Match Winner"),
-    ("KXITFDOUBLES", "Doubles Match Winner"),
-    ("KXITFWDOUBLES", "Doubles Match Winner"),
-    ("KXITFWMATCH", "Match Winner"),
-    ("KXITFMATCH", "Match Winner"),
-    ("KXATPMATCH", "Match Winner"),
-    ("KXWTAMATCH", "Match Winner"),
-    ("KXATPSETWINNER", "Set Winner"),
-    ("KXWTASETWINNER", "Set Winner"),
-    ("KXITFSETWINNER", "Set Winner"),
-    ("KXITFWSETWINNER", "Set Winner"),
-    ("KXATPGTOTAL", "Games Total"),
-    ("KXWTAGTOTAL", "Games Total"),
-    ("KXITFGTOTAL", "Games Total"),
-    ("KXITFWGTOTAL", "Games Total"),
-    ("KXATPGSPREAD", "Games Spread"),
-    ("KXWTAGSPREAD", "Games Spread"),
-    ("KXITFGSPREAD", "Games Spread"),
-    ("KXITFWGSPREAD", "Games Spread"),
-    ("KXATPTOTALSETS", "Total Sets"),
-    ("KXWTATOTALSETS", "Total Sets"),
-    ("KXITFTOTALSETS", "Total Sets"),
-    ("KXITFWTOTALSETS", "Total Sets"),
-    ("KXATPEXACTMATCH", "Exact Match"),
-    ("KXWTAEXACTMATCH", "Exact Match"),
-    ("KXITFEXACTMATCH", "Exact Match"),
-    ("KXITFWEXACTMATCH", "Exact Match"),
-)
-
-
-ALL_PREFIXES = {
-    "MLB": MLB_PREFIXES,
-    "NFL": NFL_PREFIXES,
-    "Tennis": TENNIS_PREFIXES,
-}
+@dataclass(frozen=True)
+class CatalogDiagnostics:
+    total_open_markets: int
+    classified_markets: int
+    unclassified_supported_prefixes: tuple[str, ...]
+    counts_by_sport: dict[str, int]
 
 
 def _series(market: dict) -> str:
@@ -118,7 +30,6 @@ def _series(market: dict) -> str:
     if value:
         return str(value).upper().strip()
     ticker = str(market.get("ticker") or "").upper().strip()
-    # Most Kalshi market tickers start with their series ticker.
     return ticker.split("-", 1)[0]
 
 
@@ -135,67 +46,151 @@ def _text(market: dict) -> str:
                 "ticker",
                 "event_ticker",
                 "series_ticker",
+                "category",
             )
         )
     )
 
 
-def _tennis_family_from_series(series: str) -> str | None:
-    """Infer direct tennis market family from any ATP/WTA/ITF series ticker."""
-    if not series.startswith(("KXATP", "KXWTA", "KXITF")):
-        return None
-    if "SETWINNER" in series:
-        return "Set Winner"
-    if "GTOTAL" in series or "GAMESTOTAL" in series:
-        return "Games Total"
-    if "GSPREAD" in series or "GAMESSPREAD" in series:
-        return "Games Spread"
-    if "TOTALSETS" in series:
-        return "Total Sets"
-    if "EXACTMATCH" in series:
-        return "Exact Match"
-    if "DOUBLES" in series:
-        return "Doubles Match Winner"
-    if "MATCH" in series:
-        return "Match Winner"
-    # Keep newly introduced direct tennis series visible instead of silently
-    # dropping them. They remain labelled Other Tennis until explicitly mapped.
+def _contains(series: str, *tokens: str) -> bool:
+    return any(token in series for token in tokens)
+
+
+def _baseball_family(series: str) -> str:
+    checks = (
+        (("GAME",), "Moneyline"),
+        (("SPREAD",), "Spread"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("TOTAL",), "Game Total"),
+        (("F3",), "First 3 Innings"),
+        (("F5",), "First 5 Innings"),
+        (("F7",), "First 7 Innings"),
+        (("HIT",), "Hits"),
+        (("HR",), "Home Runs"),
+        (("TB", "TOTALBASE"), "Total Bases"),
+        (("RBI",), "RBIs"),
+        (("K", "STRIKEOUT"), "Strikeouts"),
+        (("RFI",), "First Inning Run"),
+        (("EXTRAS",), "Extra Innings"),
+    )
+    for tokens, family in checks:
+        if _contains(series, *tokens):
+            return family
+    return "Other MLB"
+
+
+def _football_family(series: str) -> str:
+    checks = (
+        (("GAME",), "Moneyline"),
+        (("SPREAD",), "Spread"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("TOTAL",), "Game Total"),
+        (("1H",), "First Half"),
+        (("2H",), "Second Half"),
+        (("1Q",), "First Quarter"),
+        (("2Q",), "Second Quarter"),
+        (("3Q",), "Third Quarter"),
+        (("4Q",), "Fourth Quarter"),
+        (("PASSYDS", "PASSYARD"), "Passing Yards"),
+        (("PASSTDS", "PASSTD"), "Passing TDs"),
+        (("RUSHYDS", "RUSHYARD"), "Rushing Yards"),
+        (("RECYDS", "RECEIVINGYDS", "RECYARD"), "Receiving Yards"),
+        (("RECEPTIONS", "RECPT"), "Receptions"),
+        (("FIRSTTD",), "First Touchdown"),
+        (("TD",), "Player Touchdowns"),
+        (("FG",), "Field Goals"),
+        (("WINMARGIN",), "Win Margin"),
+        (("OT",), "Overtime"),
+    )
+    for tokens, family in checks:
+        if _contains(series, *tokens):
+            return family
+    return "Other NFL"
+
+
+def _basketball_family(series: str, sport: str) -> str:
+    checks = (
+        (("GAME",), "Moneyline"),
+        (("SPREAD",), "Spread"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("TOTAL",), "Game Total"),
+        (("1H",), "First Half"),
+        (("2H",), "Second Half"),
+        (("1Q",), "First Quarter"),
+        (("2Q",), "Second Quarter"),
+        (("3Q",), "Third Quarter"),
+        (("4Q",), "Fourth Quarter"),
+        (("PRA",), "Points + Rebounds + Assists"),
+        (("PTS", "POINTS"), "Points"),
+        (("REB",), "Rebounds"),
+        (("AST",), "Assists"),
+        (("3PT", "THREE"), "Three-Pointers"),
+        (("STL", "STEAL"), "Steals"),
+        (("BLK", "BLOCK"), "Blocks"),
+        (("DOUBLEDOUBLE", "DBLDBL"), "Double Double"),
+    )
+    for tokens, family in checks:
+        if _contains(series, *tokens):
+            return family
+    return f"Other {sport}"
+
+
+def _tennis_family(series: str) -> str:
+    checks = (
+        (("SETWINNER",), "Set Winner"),
+        (("GTOTAL", "GAMESTOTAL"), "Games Total"),
+        (("GSPREAD", "GAMESSPREAD"), "Games Spread"),
+        (("TOTALSETS",), "Total Sets"),
+        (("EXACTMATCH",), "Exact Match"),
+        (("DOUBLES",), "Doubles Match Winner"),
+        (("MATCH",), "Match Winner"),
+    )
+    for tokens, family in checks:
+        if _contains(series, *tokens):
+            return family
     return "Other Tennis"
 
 
 def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
+    """Classify any supported current-event market without requiring a whitelist.
+
+    Prefixes identify the sport; family parsing is best-effort. Unknown/new
+    market families remain visible as Other <sport> instead of disappearing.
+    """
     if looks_like_future(market):
         return None
 
     series = _series(market)
+    if series.startswith("KXMLB"):
+        return "MLB", _baseball_family(series)
+    if series.startswith("KXNBA"):
+        return "NBA", _basketball_family(series, "NBA")
+    if series.startswith("KXWNBA"):
+        return "WNBA", _basketball_family(series, "WNBA")
+    if series.startswith("KXNFL"):
+        return "NFL", _football_family(series)
+    if series.startswith(("KXATP", "KXWTA", "KXITF")):
+        return "Tennis", _tennis_family(series)
 
-    tennis_family = _tennis_family_from_series(series)
-    if tennis_family is not None:
-        return "Tennis", tennis_family
-
-    for sport, prefixes in ALL_PREFIXES.items():
-        for prefix, family in prefixes:
-            if series.startswith(prefix):
-                return sport, family
-
-    # Conservative fallback for newly introduced series. Require explicit sport
-    # text plus game/prop wording; do not classify generic "sports" markets.
+    # Metadata fallback for future ticker changes. This is intentionally
+    # conservative and only applies when sport identity is explicit.
     text = _text(market)
-    if any(x in text for x in ("professional baseball", "pro baseball", "mlb")):
-        if any(x in text for x in (" vs ", " hit", "home run", "strikeout", "total base", "rbi", "spread", "total")):
-            return "MLB", "Other"
-    if "nfl" in text or "pro football" in text:
-        if any(x in text for x in (" vs ", "passing", "rushing", "receiving", "touchdown", "spread", "total")):
-            return "NFL", "Other"
-    if any(x in text for x in ("tennis", " atp ", " wta ", " itf ")):
-        if any(x in text for x in (" vs ", "match", "set", "games total", "games spread")):
-            return "Tennis", "Other"
+    if any(x in text for x in (" major league baseball ", " mlb ", " pro baseball ")):
+        return "MLB", "Other MLB"
+    if any(x in text for x in (" national basketball association ", " nba ", " pro basketball ")):
+        return "NBA", "Other NBA"
+    if any(x in text for x in (" wnba ", " women's national basketball association ")):
+        return "WNBA", "Other WNBA"
+    if any(x in text for x in (" nfl ", " pro football ", " national football league ")):
+        return "NFL", "Other NFL"
+    if any(x in text for x in (" tennis ", " atp ", " wta ", " itf ", " challenger ")):
+        return "Tennis", "Other Tennis"
 
     return None
 
 
 def group_kalshi_sports(markets: Iterable[dict]) -> dict[str, list[KalshiSportMarket]]:
-    grouped: dict[str, list[KalshiSportMarket]] = {"MLB": [], "NFL": [], "Tennis": []}
+    grouped: dict[str, list[KalshiSportMarket]] = {sport: [] for sport in SUPPORTED_SPORTS}
     for market in markets:
         classification = classify_kalshi_market(market)
         if classification is None:
@@ -214,20 +209,50 @@ def group_kalshi_sports(markets: Iterable[dict]) -> dict[str, list[KalshiSportMa
     return grouped
 
 
+def catalog_diagnostics(markets: Iterable[dict]) -> CatalogDiagnostics:
+    rows = list(markets)
+    counts = {sport: 0 for sport in SUPPORTED_SPORTS}
+    classified = 0
+    unknown_prefixes: set[str] = set()
+
+    for market in rows:
+        classification = classify_kalshi_market(market)
+        if classification is not None:
+            classified += 1
+            counts[classification[0]] += 1
+            continue
+
+        series = _series(market)
+        if series.startswith(("KXMLB", "KXNBA", "KXWNBA", "KXNFL", "KXATP", "KXWTA", "KXITF")):
+            unknown_prefixes.add(series)
+
+    return CatalogDiagnostics(
+        total_open_markets=len(rows),
+        classified_markets=classified,
+        unclassified_supported_prefixes=tuple(sorted(unknown_prefixes)),
+        counts_by_sport=counts,
+    )
+
+
 def prop_families(sport: str) -> set[str]:
     if sport == "MLB":
-        return {"Hits", "Home Runs", "Total Bases", "RBIs"}
+        return {"Hits", "Home Runs", "Total Bases", "RBIs", "Strikeouts", "Other MLB"}
     if sport == "NFL":
-        return {"Passing TDs", "Passing Yards", "Player Touchdowns", "Team TDs", "Field Goals"}
+        return {
+            "Passing TDs", "Passing Yards", "Rushing Yards", "Receiving Yards",
+            "Receptions", "Player Touchdowns", "First Touchdown", "Field Goals",
+            "Other NFL",
+        }
+    if sport in {"NBA", "WNBA"}:
+        return {
+            "Points", "Rebounds", "Assists", "Three-Pointers",
+            "Points + Rebounds + Assists", "Steals", "Blocks",
+            "Double Double", f"Other {sport}",
+        }
     if sport == "Tennis":
         return {
-            "Match Winner",
-            "Doubles Match Winner",
-            "Set Winner",
-            "Games Total",
-            "Games Spread",
-            "Total Sets",
-            "Exact Match",
+            "Match Winner", "Doubles Match Winner", "Set Winner",
+            "Games Total", "Games Spread", "Total Sets", "Exact Match",
             "Other Tennis",
         }
     return set()
@@ -244,7 +269,6 @@ def parlay_pool(
         return rows
     allowed = {"Moneyline", "Spread", "Game Total", "Match Winner"}
     return [row for row in rows if row.family in allowed]
-
 
 
 @dataclass(frozen=True)
@@ -320,14 +344,13 @@ def choose_kalshi_ticket(
     target_legs: int,
     max_per_event: int = 1,
 ) -> list[KalshiSideCandidate]:
-    """Build a distinct Kalshi-first ticket pool.
+    """Build distinct Kalshi-first ticket profiles.
 
-    Longshot mode deliberately targets 7-35c sides. Best mode avoids that band
-    and favors stronger market probabilities. Neither mode claims price edge
-    until sportsbook/model enrichment is available.
+    Longshot is only a candidate profile until independent fair value exists;
+    it must not be presented as positive EV merely because the price is low.
     """
     if mode == "longshot":
-        pool = [candidate for candidate in candidates if 0.07 <= candidate.price <= 0.35]
+        pool = [candidate for candidate in candidates if 0.05 <= candidate.price <= 0.35]
         pool.sort(
             key=lambda candidate: (
                 candidate.volume,
