@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import prod
 
+import numpy as np
+from scipy.stats import norm
+
 from sports_edge.models.live_board import LiveSignal
 
 
@@ -80,6 +83,53 @@ def _unique_event_signals(signals: list[LiveSignal], preset: str) -> list[LiveSi
         seen_events.add(event_key)
         out.append(signal)
     return out
+
+
+
+def independent_joint(probabilities: list[float] | tuple[float, ...]) -> float:
+    """Independence benchmark for a multi-leg ticket."""
+    if not probabilities:
+        return 0.0
+    vals = [float(p) for p in probabilities]
+    if any(p < 0.0 or p > 1.0 for p in vals):
+        raise ValueError("probabilities must be between 0 and 1")
+    return float(prod(vals))
+
+
+def correlated_joint_monte_carlo(
+    probabilities: list[float] | tuple[float, ...],
+    correlation_matrix: list[list[float]] | np.ndarray,
+    simulations: int = 50000,
+    seed: int = 7,
+) -> float:
+    """Gaussian-copula estimate of all-leg success probability.
+
+    This is a research primitive only. Callers must provide a validated
+    correlation matrix; the app must not invent correlation just to make a
+    parlay look better.
+    """
+    ps = np.asarray(probabilities, dtype=float)
+    corr = np.asarray(correlation_matrix, dtype=float)
+    n = len(ps)
+    if n == 0:
+        return 0.0
+    if corr.shape != (n, n):
+        raise ValueError("correlation matrix shape must match probabilities")
+    if np.any(ps <= 0.0) or np.any(ps >= 1.0):
+        raise ValueError("correlated simulation requires probabilities strictly between 0 and 1")
+    if not np.allclose(corr, corr.T, atol=1e-9):
+        raise ValueError("correlation matrix must be symmetric")
+    if not np.allclose(np.diag(corr), 1.0, atol=1e-9):
+        raise ValueError("correlation matrix diagonal must equal 1")
+    eig = np.linalg.eigvalsh(corr)
+    if np.min(eig) < -1e-8:
+        raise ValueError("correlation matrix must be positive semidefinite")
+
+    rng = np.random.default_rng(seed)
+    z = rng.multivariate_normal(np.zeros(n), corr, size=max(1, int(simulations)))
+    thresholds = norm.ppf(ps)
+    successes = z <= thresholds
+    return float(np.mean(np.all(successes, axis=1)))
 
 
 def build_parlay_research(
