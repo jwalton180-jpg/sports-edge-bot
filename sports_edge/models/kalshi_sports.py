@@ -56,22 +56,55 @@ NFL_PREFIXES: tuple[tuple[str, str], ...] = (
     ("KXNFLWINMARGIN", "Win Margin"),
 )
 
+TENNIS_SERIES: tuple[str, ...] = (
+    "KXATPMATCH",
+    "KXATPCHALLENGERMATCH",
+    "KXATPDOUBLES",
+    "KXATPSETWINNER",
+    "KXATPGTOTAL",
+    "KXWTAMATCH",
+    "KXWTACHALLENGERMATCH",
+    "KXWTADOUBLES",
+    "KXWTASETWINNER",
+    "KXITFMATCH",
+    "KXITFDOUBLES",
+    "KXITFWMATCH",
+    "KXITFWDOUBLES",
+)
+
 TENNIS_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("KXATPCHALLENGERMATCH", "Match Winner"),
+    ("KXWTACHALLENGERMATCH", "Match Winner"),
+    ("KXATPDOUBLES", "Doubles Match Winner"),
+    ("KXWTADOUBLES", "Doubles Match Winner"),
+    ("KXITFDOUBLES", "Doubles Match Winner"),
+    ("KXITFWDOUBLES", "Doubles Match Winner"),
+    ("KXITFWMATCH", "Match Winner"),
+    ("KXITFMATCH", "Match Winner"),
     ("KXATPMATCH", "Match Winner"),
     ("KXWTAMATCH", "Match Winner"),
-    ("KXITFMATCH", "Match Winner"),
     ("KXATPSETWINNER", "Set Winner"),
     ("KXWTASETWINNER", "Set Winner"),
     ("KXITFSETWINNER", "Set Winner"),
+    ("KXITFWSETWINNER", "Set Winner"),
     ("KXATPGTOTAL", "Games Total"),
     ("KXWTAGTOTAL", "Games Total"),
+    ("KXITFGTOTAL", "Games Total"),
+    ("KXITFWGTOTAL", "Games Total"),
     ("KXATPGSPREAD", "Games Spread"),
     ("KXWTAGSPREAD", "Games Spread"),
+    ("KXITFGSPREAD", "Games Spread"),
+    ("KXITFWGSPREAD", "Games Spread"),
     ("KXATPTOTALSETS", "Total Sets"),
     ("KXWTATOTALSETS", "Total Sets"),
+    ("KXITFTOTALSETS", "Total Sets"),
+    ("KXITFWTOTALSETS", "Total Sets"),
     ("KXATPEXACTMATCH", "Exact Match"),
     ("KXWTAEXACTMATCH", "Exact Match"),
+    ("KXITFEXACTMATCH", "Exact Match"),
+    ("KXITFWEXACTMATCH", "Exact Match"),
 )
+
 
 ALL_PREFIXES = {
     "MLB": MLB_PREFIXES,
@@ -107,11 +140,39 @@ def _text(market: dict) -> str:
     )
 
 
+def _tennis_family_from_series(series: str) -> str | None:
+    """Infer direct tennis market family from any ATP/WTA/ITF series ticker."""
+    if not series.startswith(("KXATP", "KXWTA", "KXITF")):
+        return None
+    if "SETWINNER" in series:
+        return "Set Winner"
+    if "GTOTAL" in series or "GAMESTOTAL" in series:
+        return "Games Total"
+    if "GSPREAD" in series or "GAMESSPREAD" in series:
+        return "Games Spread"
+    if "TOTALSETS" in series:
+        return "Total Sets"
+    if "EXACTMATCH" in series:
+        return "Exact Match"
+    if "DOUBLES" in series:
+        return "Doubles Match Winner"
+    if "MATCH" in series:
+        return "Match Winner"
+    # Keep newly introduced direct tennis series visible instead of silently
+    # dropping them. They remain labelled Other Tennis until explicitly mapped.
+    return "Other Tennis"
+
+
 def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
     if looks_like_future(market):
         return None
 
     series = _series(market)
+
+    tennis_family = _tennis_family_from_series(series)
+    if tennis_family is not None:
+        return "Tennis", tennis_family
+
     for sport, prefixes in ALL_PREFIXES.items():
         for prefix, family in prefixes:
             if series.startswith(prefix):
@@ -159,7 +220,16 @@ def prop_families(sport: str) -> set[str]:
     if sport == "NFL":
         return {"Passing TDs", "Passing Yards", "Player Touchdowns", "Team TDs", "Field Goals"}
     if sport == "Tennis":
-        return {"Set Winner", "Games Total", "Games Spread", "Total Sets", "Exact Match"}
+        return {
+            "Match Winner",
+            "Doubles Match Winner",
+            "Set Winner",
+            "Games Total",
+            "Games Spread",
+            "Total Sets",
+            "Exact Match",
+            "Other Tennis",
+        }
     return set()
 
 
