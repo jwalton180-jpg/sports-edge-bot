@@ -11,7 +11,7 @@ import streamlit as st
 
 from sports_edge.core.startup import deployment_mode
 from sports_edge.data.kalshi import KalshiPublicClient
-from sports_edge.data.kalshi_catalog import fetch_open_market_catalog
+from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
 from sports_edge.data.mlb import MLBClient
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
@@ -146,13 +146,19 @@ def _safe_error(exc: Exception) -> str:
 
 @st.cache_data(ttl=45, show_spinner=False)
 def get_kalshi_markets():
-    result = fetch_open_market_catalog(page_limit=250, page_size=200)
+    result = fetch_supported_sport_catalog(
+        page_limit_per_series=50,
+        page_size=200,
+        request_pause_s=0.08,
+    )
     return (
         list(result.markets),
         result.error,
         result.max_latency_ms,
         result.pages,
         result.cursor_exhausted,
+        result.relevant_series,
+        result.incomplete_series,
     )
 
 
@@ -793,7 +799,7 @@ if st.button("↻ Refresh live data", use_container_width=True):
     st.rerun()
 
 api_key = _secret("THE_ODDS_API_KEY")
-markets, kerr, klat, kpages, kcursor_exhausted = get_kalshi_markets()
+markets, kerr, klat, kpages, kcursor_exhausted, kseries, kincomplete = get_kalshi_markets()
 kalshi_grouped = group_kalshi_sports(markets)
 catalog_health = catalog_diagnostics(markets)
 kalshi_rows = _kalshi_rows_for_sport(kalshi_grouped, sport_filter)
@@ -831,10 +837,12 @@ if view == "Games":
         c2.metric("Kalshi markets", len(kalshi_rows))
         st.dataframe(event_df, use_container_width=True, hide_index=True)
     st.caption(
-        f"Catalog: {len(markets)} open markets · {kpages} page(s) · "
-        f"{'cursor exhausted' if kcursor_exhausted else 'INCOMPLETE'} · "
+        f"Catalog: {len(markets)} open markets · {kseries} relevant series · {kpages} market page(s) · "
+        f"{'complete' if kcursor_exhausted else 'INCOMPLETE'} · "
         + " · ".join(f"{sport} {catalog_health.counts_by_sport.get(sport, 0)}" for sport in SUPPORTED_SPORTS)
     )
+    if kincomplete:
+        st.warning("Incomplete Kalshi series: " + ", ".join(kincomplete[:12]))
     if catalog_health.unclassified_supported_prefixes:
         st.warning(
             "Supported-sport series reached the catalog but were not classified: "
@@ -1098,6 +1106,6 @@ with st.expander("System status / Model Trust"):
 
 st.divider()
 st.caption(
-    f"Dynamic Kalshi catalog · {len(markets)} open · {kpages} pages · Kalshi request max {f'{klat:.0f} ms' if klat else '—'} · "
+    f"Dynamic Kalshi catalog · {len(markets)} open · {kseries} series · {kpages} pages · Kalshi request max {f'{klat:.0f} ms' if klat else '—'} · "
     f"Deployment {deployment_mode().replace('_', ' ').title()}"
 )
