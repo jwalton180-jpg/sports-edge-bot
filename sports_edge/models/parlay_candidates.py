@@ -29,6 +29,12 @@ class ParlayCandidateLeg:
     kalshi_edge_points: float | None
     kalshi_status: str
     evidence_class: str
+    model_probability: float | None = None
+    model_confidence: float = 0.0
+    model_name: str | None = None
+    model_sample_size: int = 0
+    model_reasons: tuple[str, ...] = ()
+    model_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
