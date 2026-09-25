@@ -159,6 +159,10 @@ def test_mlb_hit_model_uses_player_performance_not_market_price(monkeypatch):
         "sports_edge.models.player_prop_models._mlb_index",
         lambda group, season: {"ben rice": row},
     )
+    monkeypatch.setattr(
+        "sports_edge.models.player_prop_models._mlb_recent_index",
+        lambda group, season, games: {},
+    )
     ev = mlb_prop_evidence("Ben Rice", "Hits", line=0.5, season=2026)
     assert ev is not None
     assert ev.usable
