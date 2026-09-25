@@ -19,6 +19,12 @@ from sports_edge.models.live_board import (
     unverified_underdog_watchlist,
 )
 from sports_edge.models.parlay import PRESETS, build_parlay_research, kalshi_copy_ticket
+from sports_edge.models.event_slate import (
+    PROP_PRESETS,
+    game_line_summary,
+    kalshi_markets_for_event,
+    prop_consensus_rows,
+)
 
 st.set_page_config(page_title="Sports Edge", page_icon="◈", layout="wide")
 
@@ -153,13 +159,30 @@ def get_odds_sports(api_key: str):
 @st.cache_data(ttl=20, show_spinner=False)
 def get_odds_for_key(api_key: str, sport_key: str):
     try:
-        r = OddsClient(api_key=api_key).odds(sport_key=sport_key, markets="h2h")
+        markets = "h2h" if sport_key.startswith("tennis_") else "h2h,spreads,totals"
+        r = OddsClient(api_key=api_key).odds(sport_key=sport_key, markets=markets)
         return (r.data if isinstance(r.data, list) else []), None, r.latency_ms
     except Exception as exc:
         msg = str(exc)
         if "apiKey=" in msg:
             msg = msg.split("apiKey=", 1)[0] + "apiKey=REDACTED"
         return [], msg, None
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def get_event_props(api_key: str, sport_key: str, event_id: str, market_keys: tuple[str, ...]):
+    try:
+        r = OddsClient(api_key=api_key).event_odds(
+            sport_key=sport_key,
+            event_id=event_id,
+            markets=",".join(market_keys),
+        )
+        return (r.data if isinstance(r.data, dict) else {}), None, r.latency_ms
+    except Exception as exc:
+        msg = str(exc)
+        if "apiKey=" in msg:
+            msg = msg.split("apiKey=", 1)[0] + "apiKey=REDACTED"
+        return {}, msg, None
 
 
 def infer_market_sport(market: dict) -> str:
@@ -229,10 +252,17 @@ def build_signal_bundle(markets: list[dict], sport: str, api_key: str | None):
         source_notes.append(f"{label}: {len(events)} event(s){f' · {latency:.0f} ms' if latency else ''}")
 
         signal_sport = "Tennis" if key.startswith("tennis_") else ("NFL" if "nfl" in key else "MLB")
-        relevant = filter_markets(markets, signal_sport)
-        all_signals.extend(build_live_signals(relevant, events, sport=signal_sport))
-        if signal_sport == "Tennis":
-            underdogs.extend(build_underdog_signals(relevant, events, sport="Tennis"))
+
+        # Event-first resolution: only Kalshi contracts attached to the same
+        # scheduled/live event can enter pricing. Futures/outrights never reach
+        # the signal engine.
+        for event in events:
+            relevant = kalshi_markets_for_event(event, markets)
+            if not relevant:
+                continue
+            all_signals.extend(build_live_signals(relevant, [event], sport=signal_sport))
+            if signal_sport == "Tennis":
+                underdogs.extend(build_underdog_signals(relevant, [event], sport="Tennis"))
 
     dedup: dict[tuple[str, str], LiveSignal] = {}
     for signal in all_signals:
@@ -278,10 +308,9 @@ def signal_table(signals: list[LiveSignal]) -> pd.DataFrame:
     )
 
 
-if "view" not in st.session_state:
-    st.session_state.view = "Home"
-
-views = ["Home", "Edge Board", "Underdog Radar", "Parlay Lab", "Live Games", "Market Tape", "Model Trust"]
+views = ["Games", "Props", "Edge Board", "Parlay Lab", "Underdog Radar", "Live Feed", "Market Tape", "Model Trust"]
+if st.session_state.get("view") not in views:
+    st.session_state.view = "Games"
 view = st.selectbox("Go to", views, index=views.index(st.session_state.view), key="view_selector")
 st.session_state.view = view
 
@@ -304,40 +333,132 @@ qualified = [s for s in signals if s.status == "QUALIFIED"]
 watches = [s for s in signals if s.status == "WATCH"]
 qualified_dogs = [s for s in underdogs if s.status == "QUALIFIED"]
 
-if view == "Home":
+if view == "Games":
     st.markdown(
-        '<div class="nav-hint"><b>Start here.</b> Qualified = fresh multi-book no-vig price gap that passed the current gates. '
-        'Watch = interesting but not strong enough. No signal is guaranteed.</div>',
+        '<div class="nav-hint"><b>Actual games only.</b> This slate comes from current live/upcoming sportsbook events. '
+        'Futures, championships, awards, season-long questions, and unrelated Kalshi markets are excluded.</div>',
         unsafe_allow_html=True,
     )
-    c1, c2 = st.columns(2)
-    c1.metric("Qualified signals", len(qualified))
-    c2.metric("Watch list", len(watches))
-    c3, c4 = st.columns(2)
-    c3.metric("Underdog qualified", len(qualified_dogs))
-    c4.metric("Kalshi scanned", len(markets))
 
     if not api_key:
-        st.warning("Sportsbook consensus is OFF. Add THE_ODDS_API_KEY in Streamlit → Manage app → Settings → Secrets to activate Edge Board, Underdog Radar qualification, and Parlay Lab.")
-    elif odds_errors and not odds_events:
-        st.warning("Sportsbook feed unavailable: " + " | ".join(odds_errors[:2]))
-    elif odds_notes:
-        st.caption("Sportsbook refresh: " + " • ".join(odds_notes))
-
-    if qualified:
-        st.markdown("### Best currently qualified")
-        st.dataframe(signal_table(qualified[:8]), use_container_width=True, hide_index=True)
+        st.warning("Add THE_ODDS_API_KEY in Streamlit Secrets to load the current game slate.")
+    elif not odds_events:
+        st.info("No current live/upcoming events were returned for this sport filter.")
     else:
-        st.info("No live opportunities currently pass every qualification gate for this filter.")
+        st.markdown("### Live & upcoming games")
+        events_sorted = sorted(odds_events, key=lambda e: str(e.get("commence_time") or ""))
+        for event in events_sorted[:40]:
+            event_sport = str(event.get("sport_key") or "")
+            display_sport = "NFL" if "nfl" in event_sport else ("MLB" if "mlb" in event_sport else "Tennis")
+            if sport != "All" and display_sport != sport:
+                continue
 
+            away = str(event.get("away_team") or "")
+            home = str(event.get("home_team") or "")
+            commence = str(event.get("commence_time") or "")
+            lines = game_line_summary(event)
+            matched_kalshi = kalshi_markets_for_event(event, markets)
+
+            with st.expander(f"{display_sport} · {away} @ {home}", expanded=False):
+                st.caption(f"Start: {commence}")
+                m1, m2 = st.columns(2)
+                m1.metric(f"{away} ML fair", f"{lines['away_fair']:.1%}" if lines["away_fair"] is not None else "—")
+                m2.metric(f"{home} ML fair", f"{lines['home_fair']:.1%}" if lines["home_fair"] is not None else "—")
+
+                s1, s2 = st.columns(2)
+                asp = lines["away_spread"]
+                hsp = lines["home_spread"]
+                s1.metric(f"{away} spread", f"{asp[0]:+g} ({asp[1]:+g})" if asp else "—")
+                s2.metric(f"{home} spread", f"{hsp[0]:+g} ({hsp[1]:+g})" if hsp else "—")
+
+                over = lines["total_over"]
+                under = lines["total_under"]
+                if over or under:
+                    st.write(
+                        f"**Total:** "
+                        f"{f'Over {over[0]:g} ({over[1]:+g})' if over else 'Over —'} · "
+                        f"{f'Under {under[0]:g} ({under[1]:+g})' if under else 'Under —'}"
+                    )
+
+                st.write(f"**Sportsbooks:** {lines['book_count']} · **Matched Kalshi game/prop markets:** {len(matched_kalshi)}")
+                if matched_kalshi:
+                    rows = []
+                    for km in matched_kalshi[:12]:
+                        rows.append({
+                            "Kalshi market": km.get("title") or km.get("subtitle") or km.get("ticker"),
+                            "YES": f"{market_yes_probability(km):.1%}" if market_yes_probability(km) is not None else "—",
+                            "Ticker": km.get("ticker", ""),
+                        })
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    if odds_notes:
+        st.caption("Feed refresh: " + " • ".join(odds_notes))
     if kerr:
         st.warning(f"Kalshi warning: {kerr[:220]}")
-    st.caption(f"Deployment: {deployment_mode().replace('_', ' ').title()} · Kalshi request time: {f'{klat:.0f} ms' if klat else '—'}")
+
+elif view == "Props":
+    st.header("Game & Player Props")
+    st.markdown(
+        '<div class="section-note">Choose a real game first, then load only that game’s current prop markets. '
+        'This avoids futures and saves free-tier API credits.</div>',
+        unsafe_allow_html=True,
+    )
+
+    prop_events = [
+        e for e in odds_events
+        if ("nfl" in str(e.get("sport_key") or "") or "mlb" in str(e.get("sport_key") or ""))
+        and (sport == "All" or ("NFL" if "nfl" in str(e.get("sport_key") or "") else "MLB") == sport)
+    ]
+    if not api_key:
+        st.warning("Sportsbook API key required for event props.")
+    elif not prop_events:
+        st.info("No NFL/MLB live or upcoming games are available for the current filter.")
+    else:
+        labels = {
+            f"{e.get('away_team','')} @ {e.get('home_team','')} · {e.get('commence_time','')}": e
+            for e in prop_events
+        }
+        selected_label = st.selectbox("Game", list(labels))
+        selected_event = labels[selected_label]
+        selected_sport = "NFL" if "nfl" in str(selected_event.get("sport_key") or "") else "MLB"
+        available_presets = [p for p in PROP_PRESETS if p.startswith(selected_sport)]
+        preset = st.selectbox("Prop category", available_presets)
+        st.caption("Props are fetched only for this selected game/category.")
+
+        payload, prop_err, prop_latency = get_event_props(
+            api_key,
+            str(selected_event.get("sport_key") or ""),
+            str(selected_event.get("id") or ""),
+            PROP_PRESETS[preset],
+        )
+        if prop_err:
+            st.warning("Prop feed: " + prop_err)
+        else:
+            prop_rows = prop_consensus_rows(payload, PROP_PRESETS[preset])
+            if prop_rows:
+                st.dataframe(pd.DataFrame(prop_rows), use_container_width=True, hide_index=True)
+                st.caption(f"{len(prop_rows)} current prop outcomes · {f'{prop_latency:.0f} ms' if prop_latency else 'fresh'}")
+            else:
+                st.info("No current bookmaker prices were returned for this game/category.")
+
+        matched = kalshi_markets_for_event(selected_event, markets)
+        if matched:
+            st.markdown("### Kalshi markets for this game")
+            kalshi_rows = []
+            for km in matched[:30]:
+                kalshi_rows.append({
+                    "Market": km.get("title") or km.get("subtitle") or km.get("ticker"),
+                    "YES": f"{market_yes_probability(km):.1%}" if market_yes_probability(km) is not None else "—",
+                    "Ticker": km.get("ticker", ""),
+                })
+            st.dataframe(pd.DataFrame(kalshi_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("No confidently matched Kalshi market was found for this exact game. Nothing unrelated will be substituted.")
 
 elif view == "Edge Board":
     st.header("Edge Board")
     st.markdown(
-        '<div class="section-note">Kalshi price versus fresh no-vig sportsbook consensus. Qualified rows passed edge, source-count, freshness, confidence, and data-quality gates.</div>',
+        '<div class="section-note">Only actual scheduled/live event markets. Kalshi price is compared with fresh no-vig sportsbook consensus after exact game identity is resolved; futures and season-long markets are excluded.</div>',
         unsafe_allow_html=True,
     )
     if not api_key:
@@ -430,7 +551,7 @@ elif view == "Parlay Lab":
     if not parlay.legs:
         st.info("No combination is shown because there are not enough independently qualified legs. The app does not fill space with forced picks.")
 
-elif view == "Live Games":
+elif view == "Live Feed":
     st.header("Live Games")
     st.markdown('<div class="section-note">Current public score/status feeds. Missing or unavailable data is shown explicitly.</div>', unsafe_allow_html=True)
 
