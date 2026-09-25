@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
+import unicodedata
 from typing import Any
 
 
@@ -30,7 +31,14 @@ def _parse_iso(value: Any) -> datetime | None:
 
 
 def normalize(value: str | None) -> str:
-    return " ".join(re.findall(r"[a-z0-9]+", (value or "").lower()))
+    raw = (value or "").lower()
+    raw = raw.translate(str.maketrans({
+        "ł": "l", "ø": "o", "đ": "d", "ð": "d", "þ": "th",
+        "æ": "ae", "œ": "oe", "ß": "ss",
+    }))
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
+    return " ".join(re.findall(r"[a-z0-9]+", raw))
 
 
 def team_aliases(name: str) -> tuple[str, ...]:
@@ -126,9 +134,37 @@ def build_game_events(
 
 
 def game_scoped_markets(markets: list[dict], games: list[GameEvent]) -> dict[str, list[dict]]:
+    """Map sportsbook games to exact Kalshi event markets.
+
+    Some Kalshi match-winner contracts name only the YES participant in each
+    individual market. Combine sibling markets sharing event_ticker before
+    applying the strict two-participant gate; this recovers legitimate Tennis
+    matches without relaxing cross-event identity.
+    """
     result: dict[str, list[dict]] = {g.event_id: [] for g in games}
+
+    event_contexts: dict[str, str] = {}
+    for market in markets:
+        event_ticker = str(market.get("event_ticker") or "").strip()
+        if not event_ticker:
+            continue
+        context = market_context(market)
+        if context:
+            event_contexts[event_ticker] = (event_contexts.get(event_ticker, "") + " " + context).strip()
+
     for game in games:
-        result[game.event_id] = [m for m in markets if market_matches_game(m, game)]
+        matched: list[dict] = []
+        for market in markets:
+            if market_matches_game(market, game):
+                matched.append(market)
+                continue
+
+            event_ticker = str(market.get("event_ticker") or "").strip()
+            combined = event_contexts.get(event_ticker, "") if event_ticker else ""
+            if combined and _contains_team(combined, game.home_team) and _contains_team(combined, game.away_team):
+                matched.append(market)
+
+        result[game.event_id] = matched
     return result
 
 
