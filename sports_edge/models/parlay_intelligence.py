@@ -5,6 +5,7 @@ from math import prod
 from typing import Iterable
 
 from sports_edge.core.math import clamp
+from sports_edge.models.model_evidence import ModelEvidence, model_dominant_fair
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 
 
@@ -35,46 +36,75 @@ class IntelligentParlay:
     warnings: tuple[str, ...]
 
 
-def _evidence_quality(leg: ParlayCandidateLeg) -> float:
-    books = clamp(float(leg.book_count) / 5.0)
-    freshness = clamp(1.0 - float(leg.source_age_s) / 120.0)
-    exact = 1.0 if leg.kalshi_ticker and leg.kalshi_price is not None else 0.0
-    qualified = 1.0 if leg.evidence_class == "EDGE-QUALIFIED" else 0.0
-    return clamp(0.34 * books + 0.26 * freshness + 0.22 * exact + 0.18 * qualified)
+def _model_evidence(leg: ParlayCandidateLeg) -> ModelEvidence | None:
+    if leg.model_probability is None or not leg.model_name:
+        return None
+    return ModelEvidence(
+        sport=leg.sport,
+        model_name=leg.model_name,
+        fair_probability=float(leg.model_probability),
+        confidence=float(leg.model_confidence),
+        sample_size=int(leg.model_sample_size),
+        factors=tuple(leg.model_reasons),
+        warnings=tuple(leg.model_warnings),
+    )
 
 
 def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
-    fair = clamp(float(leg.consensus_probability))
+    model = _model_evidence(leg)
     price = None if leg.kalshi_price is None else clamp(float(leg.kalshi_price))
+    failures: list[str] = []
+    warnings: list[str] = []
+
+    if model is None or not model.usable:
+        fair = clamp(float(leg.consensus_probability))
+        quality = 0.0
+        reasons = ["No usable sport-specific model probability"]
+        failures.append("sport-specific model evidence is required")
+    else:
+        book_probability = leg.consensus_probability if leg.book_count > 0 else None
+        book_age = leg.source_age_s if leg.book_count > 0 else None
+        fair, quality, reasons_tuple = model_dominant_fair(
+            model,
+            sportsbook_probability=book_probability,
+            sportsbook_book_count=leg.book_count,
+            sportsbook_age_s=book_age,
+        )
+        reasons = list(reasons_tuple)
+        warnings.extend(model.warnings)
+
+    if price is None or not leg.kalshi_ticker:
+        failures.append("no exact current Kalshi price match")
+
+    # Sportsbook evidence is secondary. Stale book data is ignored, not allowed
+    # to veto a valid model signal.
+    if leg.book_count > 0 and leg.source_age_s > 120:
+        warnings.append("sportsbook cross-check stale; excluded from fair-value blend")
+
     edge = None if price is None else 100.0 * (fair - price)
     ev = None if price is None else fair - price
     roi = None if price is None or price <= 0 else (fair - price) / price
     multiple = None if price is None or price <= 0 else fair / price
-    quality = _evidence_quality(leg)
-
-    reasons: list[str] = []
-    warnings: list[str] = []
-    failures: list[str] = []
-
-    if leg.book_count < 3:
-        failures.append("fewer than 3 fresh comparison books")
-    if leg.source_age_s > 120:
-        failures.append("sportsbook evidence older than 120s")
-    if price is None or not leg.kalshi_ticker:
-        failures.append("no exact current Kalshi price match")
-    if leg.evidence_class != "EDGE-QUALIFIED":
-        failures.append("Kalshi edge has not cleared the strict qualification gate")
 
     if edge is not None:
-        reasons.append(f"Independent fair {fair:.1%} vs Kalshi {price:.1%} = {edge:+.1f} pp")
-    reasons.append(f"{leg.book_count} fresh book(s); median source age {leg.source_age_s:.0f}s")
-    reasons.append(f"Evidence quality {quality:.0%}")
+        reasons.append(f"Model-first fair {fair:.1%} vs Kalshi {price:.1%} = {edge:+.1f} pp")
+    if leg.book_count > 0 and leg.source_age_s <= 120:
+        reasons.append(
+            f"Secondary sportsbook check: {leg.book_count} book(s), median age {leg.source_age_s:.0f}s"
+        )
+    elif leg.book_count == 0:
+        reasons.append("No sportsbook listing required for qualification")
+
+    if model is not None:
+        min_model_conf = 0.40 if mode == "longshot" else 0.45
+        if model.confidence < min_model_conf:
+            failures.append(f"model confidence below {min_model_conf:.0%}")
 
     if mode == "longshot":
         if price is not None and not (0.05 <= price <= 0.35):
             failures.append("Kalshi price is outside the 5–35¢ longshot band")
         if edge is None or edge < 4.0:
-            failures.append("longshot price edge below +4.0 pp")
+            failures.append("longshot model edge below +4.0 pp")
         if roi is None or roi < 0.15:
             failures.append("expected ROI on contract cost below +15%")
         if multiple is None or multiple < 1.15:
@@ -86,33 +116,30 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
         score = 100.0 * (
             0.36 * edge_score
             + 0.27 * roi_score
-            + 0.25 * quality
-            + 0.12 * fair_support
+            + 0.27 * quality
+            + 0.10 * fair_support
         )
-        if roi is not None:
-            reasons.append(f"Expected ROI on cost {roi:+.0%}; value multiple {multiple:.2f}x")
     else:
         if edge is None or edge < 3.0:
-            failures.append("price edge below +3.0 pp")
+            failures.append("model price edge below +3.0 pp")
         if multiple is None or multiple < 1.05:
             failures.append("fair/price value multiple below 1.05x")
         if fair < 0.45:
-            failures.append("fair probability below 45% for Best Available")
+            failures.append("model-first fair probability below 45% for Best Available")
 
         edge_score = clamp((edge or 0.0) / 10.0)
         fair_score = clamp((fair - 0.40) / 0.35)
         roi_score = clamp((roi or 0.0) / 0.30)
         score = 100.0 * (
-            0.38 * edge_score
-            + 0.27 * quality
-            + 0.22 * fair_score
+            0.37 * edge_score
+            + 0.30 * quality
+            + 0.20 * fair_score
             + 0.13 * roi_score
         )
-        if roi is not None:
-            reasons.append(f"Expected ROI on cost {roi:+.0%}; value multiple {multiple:.2f}x")
 
-    if failures:
-        warnings.extend(failures)
+    if roi is not None:
+        reasons.append(f"Expected ROI on cost {roi:+.0%}; value multiple {multiple:.2f}x")
+    warnings.extend(failures)
 
     return LegAssessment(
         leg=leg,
@@ -126,7 +153,7 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
         value_multiple=multiple,
         evidence_quality=quality,
         reasons=tuple(reasons),
-        warnings=tuple(warnings),
+        warnings=tuple(dict.fromkeys(warnings)),
     )
 
 
@@ -179,20 +206,26 @@ def build_intelligent_parlay(
             break
 
     fair_joint = prod(row.fair_probability for row in selected) if selected else 0.0
-    market_joint = prod(row.kalshi_probability for row in selected if row.kalshi_probability is not None) if selected else 0.0
+    market_joint = (
+        prod(row.kalshi_probability for row in selected if row.kalshi_probability is not None)
+        if selected else 0.0
+    )
     value_multiple = fair_joint / market_joint if market_joint > 0 else 0.0
 
     warnings: list[str] = []
     if len(selected) < target_legs:
         warnings.append(
-            f"Only {len(selected)} independently priced positive-EV leg(s) cleared the {mode} gates for a {target_legs}-leg target"
+            f"Only {len(selected)} model-qualified positive-EV leg(s) cleared the {mode} gates "
+            f"for a {target_legs}-leg target"
         )
 
     sports = [row.leg.sport for row in selected]
     correlation = "LOW"
     if len(selected) >= 5 or (len(set(sports)) == 1 and len(selected) >= 3):
         correlation = "MEDIUM"
-        warnings.append("Joint probability is an independence benchmark; same-sport/long-ticket dependence is not fully calibrated")
+        warnings.append(
+            "Joint probability is an independence benchmark; same-sport/long-ticket dependence is not fully calibrated"
+        )
 
     return IntelligentParlay(
         mode=mode,
