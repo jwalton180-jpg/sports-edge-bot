@@ -65,6 +65,74 @@ def _sport_for_series(row: dict[str, Any]) -> str | None:
     return None
 
 
+def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
+    """Keep actual game/match and player/game-stat templates; reject futures."""
+    ticker = str(row.get("ticker") or "").upper().strip()
+    title = str(row.get("title") or "").lower().strip()
+    text = f"{ticker} {title}"
+
+    reject_terms = (
+        "season", "award", "mvp", "rookie", "draft", "division",
+        "conference", "playoff", "series", "next team", "next club",
+        "retir", "hall of fame", "record", "leader", "qualifier",
+        "viewership", "stadium", "manager", "coach", "governor",
+        "apology", "all-star", "all star", "derby", "ranked", "ranking",
+        "tournament winner", "finals champion", "finals winner",
+        "win total", "exact wins", "most wins", "best record",
+        "worst record", "stage of", "round of elimination",
+        "player return", "return by date", "nationality of",
+        "field winner", "future",
+    )
+    if any(term in text.lower() for term in reject_terms):
+        return False
+
+    if sport == "Tennis":
+        if "table tennis" in title:
+            return False
+        tokens = (
+            "MATCH", "DOUBLES", "SETWINNER", "ANYSET", "GWINNER",
+            "GAME", "GSPREAD", "GAMESSPREAD", "SSPREAD", "GTOTAL",
+            "GAMETOTAL", "TOTALSETS", "EXACTMATCH", "EXACTSETS",
+            "TIEBREAK", "ACES", "FAULT", "SERVE", "BREAK",
+        )
+        return any(token in ticker for token in tokens)
+
+    if sport == "MLB":
+        tokens = (
+            "GAME", "SPREAD", "TEAMTOTAL", "TOTAL", "F1", "F2", "F3",
+            "F4", "F5", "F6", "F7", "F8", "F9", "INNING", "HIT",
+            "HRR", "RBI", "TOTALBASE", "OUTS", "RFI", "EXTRA",
+            "PITCH", "NEXTHR", "HITSALLOWED", "EARNEDRUN",
+        )
+        exact = {"KXMLBHR", "KXMLBTB", "KXMLBKS", "KXMLBWA"}
+        return ticker in exact or any(token in ticker for token in tokens)
+
+    if sport in {"NBA", "WNBA"}:
+        tokens = (
+            "GAME", "SPREAD", "TEAMTOTAL", "TOTAL", "1Q", "2Q", "3Q",
+            "4Q", "1H", "2H", "PTS", "REB", "AST", "3PT", "PRA",
+            "BLK", "STL", "FIRSTBASKET", "RACE", "WINMARGIN",
+            "BENCHPTS", "H2H", "DOUBLEDOUBLE",
+        )
+        exact_suffixes = ("2D",)
+        return any(token in ticker for token in tokens) or any(ticker.endswith(x) for x in exact_suffixes)
+
+    if sport == "NFL":
+        if " most " in f" {title} " or " weekly " in f" {title} ":
+            return False
+        tokens = (
+            "GAME", "SPREAD", "TEAMTOTAL", "TOTAL", "1Q", "2Q", "3Q",
+            "4Q", "1H", "2H", "PASS", "RSH", "RUSH", "REC", "TD",
+            "FG", "SACK", "INT", "SAFETY", "SFTY", "TURNOVER",
+            "2PT", "FIRSTDOWN", "LEAD", "BTTS", "FFPTS", "LADDER",
+            "ESCALATOR", "NEXTTD", "NEXTINT", "RRYDS", "LONGREC",
+            "LONGFG",
+        )
+        return any(token in ticker for token in tokens)
+
+    return False
+
+
 def _status_code(exc: Exception) -> int | None:
     response = getattr(exc, "response", None)
     try:
@@ -196,12 +264,12 @@ def fetch_supported_sport_catalog(
     relevant: list[tuple[dict, str]] = []
     for row in all_series:
         sport = _sport_for_series(row)
-        if sport is not None and row.get("ticker"):
+        if sport is not None and row.get("ticker") and _series_is_actionable(row, sport):
             relevant.append((row, sport))
 
     # A supplied client may be a deterministic fake or a caller-owned session;
     # keep that path sequential. Production creates one client per worker task.
-    workers = 1 if client is not None else max(1, min(int(max_workers), 6, len(relevant) or 1))
+    workers = 1 if client is not None else max(1, min(int(max_workers), 8, len(relevant) or 1))
 
     def run(item: tuple[dict, str]):
         series_row, sport = item
