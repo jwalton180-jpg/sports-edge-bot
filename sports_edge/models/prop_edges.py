@@ -45,6 +45,35 @@ def _has_player(text: str, player: str) -> bool:
 
 def _has_family(text: str, market_key: str) -> bool:
     raw = text.lower()
+
+    # Prevent semantically adjacent prop families from colliding.
+    if market_key in {"batter_hits", "batter_hits_alternate"}:
+        if any(x in raw for x in ("home run", "homer", "total base", "rbi", "strikeout")):
+            return False
+    if market_key in {"batter_home_runs", "batter_home_runs_alternate"}:
+        return any(x in raw for x in ("home run", "homer"))
+    if market_key in {"batter_total_bases", "batter_total_bases_alternate"}:
+        return "total base" in raw
+    if market_key in {"batter_rbis", "batter_rbis_alternate"}:
+        return "rbi" in raw
+    if market_key in {"pitcher_strikeouts", "pitcher_strikeouts_alternate"}:
+        return "strikeout" in raw
+
+    if market_key == "player_pass_yds":
+        return any(x in raw for x in ("passing yard", "pass yards"))
+    if market_key == "player_pass_tds":
+        return any(x in raw for x in ("passing touchdown", "pass touchdown"))
+    if market_key == "player_rush_yds":
+        return any(x in raw for x in ("rushing yard", "rush yards"))
+    if market_key == "player_reception_yds":
+        return any(x in raw for x in ("receiving yard", "reception yards"))
+    if market_key == "player_receptions":
+        return "reception" in raw and "yard" not in raw and "touchdown" not in raw
+    if market_key == "player_anytime_td":
+        return any(x in raw for x in ("touchdown", "score a td")) and "first touchdown" not in raw and "1st touchdown" not in raw
+    if market_key == "player_1st_td":
+        return any(x in raw for x in ("first touchdown", "1st touchdown"))
+
     return any(k in raw for k in _KEYWORDS.get(market_key, ()))
 
 
