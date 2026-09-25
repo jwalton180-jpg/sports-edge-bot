@@ -45,11 +45,21 @@ class PlayerState:
 
 
 class TennisResearchModel:
-    def __init__(self, gender: str, *, current_year: int | None = None):
+    def __init__(
+        self,
+        gender: str,
+        *,
+        current_year: int | None = None,
+        as_of: date | None = None,
+    ):
         self.gender = gender
-        year = current_year or datetime.now(timezone.utc).year
+        year = current_year or (as_of.year if as_of is not None else datetime.now(timezone.utc).year)
         self.start_year = max(2000, year - 1)
         self.end_year = year
+        # Match archives are date-granular. Excluding the entire as-of date is
+        # deliberately conservative: without a trustworthy match timestamp we
+        # cannot know which same-day results were available before prediction.
+        self.as_of = as_of
         self.players: dict[str, PlayerState] = defaultdict(PlayerState)
         self._fit()
 
@@ -82,6 +92,10 @@ class TennisResearchModel:
         rows.sort(key=lambda r: (str(r.get("tourney_date") or ""), str(r.get("match_num") or "")))
 
         for row in rows:
+            match_date = self._date(row)
+            if self.as_of is not None and (match_date is None or match_date >= self.as_of):
+                continue
+
             winner = self._name(row.get("winner_name"))
             loser = self._name(row.get("loser_name"))
             if not winner or not loser:
