@@ -54,7 +54,11 @@ catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diag
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_intelligence import build_intelligent_parlay
-from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context
+from sports_edge.models.kalshi_model_candidates import (
+    attach_sportsbook_context,
+    model_candidates_for_preset,
+    preset_contract_count,
+)
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
@@ -145,7 +149,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-model-first-all-sports-1")
+st.caption("Build: 2026-09-25-all-sports-parlays-1")
 
 
 def _secret(name: str) -> str | None:
@@ -665,30 +669,57 @@ def _generate_parlay_compat(
     return generate_candidate_parlay(working, **kwargs)
 
 
-def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
+def parlay_presets_for_sport(sport_filter_value: str, grouped=None) -> list[str]:
     if sport_filter_value == "Tennis":
-        return ["Tennis Moneyline", "Best Available"]
-    if sport_filter_value == "MLB":
-        return ["Best Available", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"]
-    if sport_filter_value == "NFL":
-        return ["Best Available", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns"]
-    if sport_filter_value == "NBA":
-        return ["Best Available", "NBA Points", "NBA Rebounds", "NBA Assists", "NBA Threes", "NBA PRA"]
-    if sport_filter_value == "WNBA":
-        return ["Best Available", "WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"]
-    return [
-        "Best Available",
-        "Mixed Sports",
-        "Tennis Moneyline",
-        "MLB Hits",
-        "MLB Home Runs",
-        "MLB Strikeouts",
-        "NFL Game Markets",
-        "NFL Passing",
-        "NFL Rushing",
-        "NFL Receiving",
-        "NFL Touchdowns",
-    ]
+        base = ["Tennis Moneyline", "Best Available"]
+    elif sport_filter_value == "MLB":
+        base = ["Best Available", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"]
+    elif sport_filter_value == "NFL":
+        base = ["Best Available", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns"]
+    elif sport_filter_value == "NBA":
+        base = ["Best Available", "NBA Points", "NBA Rebounds", "NBA Assists", "NBA Threes", "NBA PRA"]
+    elif sport_filter_value == "WNBA":
+        base = ["Best Available", "WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"]
+    else:
+        base = [
+            "Best Available",
+            "Mixed Sports",
+            "Tennis Moneyline",
+            "MLB Hits",
+            "MLB Home Runs",
+            "MLB Strikeouts",
+            "NFL Game Markets",
+            "NFL Passing",
+            "NFL Rushing",
+            "NFL Receiving",
+            "NFL Touchdowns",
+            "NBA Points",
+            "NBA Rebounds",
+            "NBA Assists",
+            "NBA Threes",
+            "NBA PRA",
+            "WNBA Points",
+            "WNBA Rebounds",
+            "WNBA Assists",
+            "WNBA Threes",
+            "WNBA PRA",
+        ]
+
+    if grouped is None:
+        return base
+
+    visible: list[str] = []
+    for preset_name in base:
+        if preset_name in {"Best Available", "Mixed Sports"}:
+            visible.append(preset_name)
+            continue
+        if preset_contract_count(
+            grouped,
+            sport_filter=sport_filter_value,
+            preset=preset_name,
+        ) > 0:
+            visible.append(preset_name)
+    return visible or ["Best Available"]
 
 
 def _round_robin_games(games_in: list[GameEvent], sports: list[str], limit: int) -> list[GameEvent]:
@@ -1053,7 +1084,7 @@ elif view == "Parlay Generator":
         key="intel_builder_v3",
     )
     mode = "longshot" if builder_label.startswith("Priced Longshot") else "best"
-    preset_options = parlay_presets_for_sport(sport_filter)
+    preset_options = parlay_presets_for_sport(sport_filter, kalshi_grouped)
     preset = st.selectbox("Analysis type", preset_options, key=f"intel_preset_v3_{sport_filter}")
 
     min_legs = 5 if mode == "longshot" else 2
@@ -1095,22 +1126,16 @@ elif view == "Parlay Generator":
 
     if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
         with st.spinner("Scoring current Kalshi markets with sport-specific models…"):
-            model_candidates = model_candidates_from_kalshi(
+            contract_count = preset_contract_count(
                 kalshi_grouped,
                 sport_filter=sport_filter,
+                preset=preset,
             )
-
-            # Preset controls which model families are allowed. Current direct
-            # model coverage is match/game winner. Player-prop presets fail
-            # closed until their own public feature models are available.
-            game_presets = {
-                "Best Available",
-                "Mixed Sports",
-                "Tennis Moneyline",
-                "NFL Game Markets",
-            }
-            if preset not in game_presets:
-                model_candidates = []
+            model_candidates = model_candidates_for_preset(
+                kalshi_grouped,
+                sport_filter=sport_filter,
+                preset=preset,
+            )
 
             active_err = None
             universe_errors: list[str] = []
@@ -1154,6 +1179,7 @@ elif view == "Parlay Generator":
                 "preset": preset,
                 "mode": mode,
                 "sport": sport_filter,
+                "contract_count": contract_count,
                 "model_candidates": len(model_candidates),
                 "model_covered": model_covered,
                 "book_confirmed": book_confirmed,
@@ -1224,18 +1250,27 @@ elif view == "Parlay Generator":
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets"}:
+            contracts = int(state.get("contract_count", 0))
+            modeled = int(state.get("model_candidates", 0))
+            if contracts == 0:
+                st.info(
+                    "There are no current Kalshi contracts for this analysis type. "
+                    "Sports Edge will not substitute a different market just to create a ticket."
+                )
+            elif modeled == 0:
                 st.warning(
-                    "This player-prop family does not yet have a production sport-specific model. "
-                    "Sports Edge is intentionally refusing book-only prop picks."
+                    f"Kalshi has {contracts} current contract(s) in this family, but the independent "
+                    "Sports Edge model does not have enough verified player/team evidence to price them safely. "
+                    "Sportsbook consensus will not be used as a replacement model."
                 )
             else:
                 st.warning(
-                    "No current leg cleared the model-first probability, confidence, and EV gates. "
-                    "Sports Edge will not manufacture a ticket from Kalshi favorites or sportsbook consensus."
+                    f"Sports Edge independently modeled {modeled} side candidate(s), but none cleared the "
+                    "model-confidence, executable-price, and positive-EV gates. No filler legs were added."
                 )
             st.caption(
-                f"Kalshi/model candidates: {state.get('model_candidates', 0)} · "
+                f"Current Kalshi contracts: {contracts} · "
+                f"model candidates: {state.get('model_candidates', 0)} · "
                 f"model-covered: {state.get('model_covered', 0)} · "
                 f"sportsbook-confirmed: {state.get('book_confirmed', 0)}."
             )
