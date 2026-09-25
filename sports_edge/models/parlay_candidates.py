@@ -19,7 +19,7 @@ class ParlayCandidateLeg:
     market_key: str
     market_label: str
     selection: str
-    fair_probability: float
+    consensus_probability: float
     book_count: int
     source_age_s: float
     median_odds: float | None
@@ -28,6 +28,7 @@ class ParlayCandidateLeg:
     kalshi_price: float | None
     kalshi_edge_points: float | None
     kalshi_status: str
+    evidence_class: str
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,14 @@ def _find_kalshi_match(
 
 
 
+def _evidence_class(match: LiveSignal | None) -> str:
+    if match is None:
+        return "CONSENSUS BASELINE"
+    if match.status == "QUALIFIED" and match.edge_points >= 3.0:
+        return "EDGE-QUALIFIED"
+    return "KALSHI MATCH"
+
+
 def candidate_legs_from_h2h(
     game: GameEvent,
     event_payload: dict,
@@ -80,10 +89,10 @@ def candidate_legs_from_h2h(
     if not quotes:
         return []
 
-    min_probability = 0.56 if mode == "high_confidence" else 0.36
+    min_probability = 0.05 if mode == "edge" else (0.56 if mode == "high_confidence" else 0.20)
     rows: list[ParlayCandidateLeg] = []
     for selection, quote in quotes.items():
-        if quote.warnings or quote.fair_probability < min_probability:
+        if quote.warnings or quote.consensus_probability < min_probability:
             continue
 
         matches = [
@@ -104,7 +113,7 @@ def candidate_legs_from_h2h(
                 market_key="h2h",
                 market_label="Moneyline",
                 selection=selection,
-                fair_probability=quote.fair_probability,
+                consensus_probability=quote.consensus_probability,
                 book_count=quote.book_count,
                 source_age_s=quote.median_age_s,
                 median_odds=None,
@@ -113,6 +122,7 @@ def candidate_legs_from_h2h(
                 kalshi_price=match.market_probability if match else None,
                 kalshi_edge_points=match.edge_points if match else None,
                 kalshi_status=match.status if match else "CONSENSUS ONLY",
+                evidence_class=_evidence_class(match),
             )
         )
 
@@ -120,9 +130,9 @@ def candidate_legs_from_h2h(
     return sorted(
         rows,
         key=lambda r: (
-            r.kalshi_status == "QUALIFIED",
+            r.evidence_class == "EDGE-QUALIFIED",
             r.kalshi_ticker is not None,
-            r.fair_probability,
+            r.consensus_probability,
             r.book_count,
         ),
         reverse=True,
@@ -135,7 +145,7 @@ def candidate_legs_from_props(
     *,
     mode: str = "high_confidence",
 ) -> list[ParlayCandidateLeg]:
-    min_probability = 0.56 if mode == "high_confidence" else 0.36
+    min_probability = 0.05 if mode == "edge" else (0.56 if mode == "high_confidence" else 0.20)
     rows: list[ParlayCandidateLeg] = []
 
     for quote in quotes:
@@ -143,7 +153,7 @@ def candidate_legs_from_props(
         # but we avoid duplicate opposite sides by taking the stronger side later.
         if quote.warnings:
             continue
-        if quote.book_count < 2 or quote.fair_probability < min_probability:
+        if quote.book_count < 2 or quote.consensus_probability < min_probability:
             continue
 
         match = _find_kalshi_match(game, quote, exact_signals)
@@ -155,7 +165,7 @@ def candidate_legs_from_props(
                 market_key=quote.market_key,
                 market_label=quote.market_label,
                 selection=_selection_text(quote),
-                fair_probability=quote.fair_probability,
+                consensus_probability=quote.consensus_probability,
                 book_count=quote.book_count,
                 source_age_s=quote.median_age_s,
                 median_odds=quote.median_price,
@@ -164,6 +174,7 @@ def candidate_legs_from_props(
                 kalshi_price=match.market_probability if match else None,
                 kalshi_edge_points=match.edge_points if match else None,
                 kalshi_status=match.status if match else "CONSENSUS ONLY",
+                evidence_class=_evidence_class(match),
             )
         )
 
@@ -175,15 +186,15 @@ def candidate_legs_from_props(
         player_key = row.selection.split(" Over", 1)[0].split(" Under", 1)[0].split(" Yes", 1)[0].split(" No", 1)[0]
         key = (row.event_id, row.market_key, player_key.lower())
         old = best.get(key)
-        if old is None or row.fair_probability > old.fair_probability:
+        if old is None or row.consensus_probability > old.consensus_probability:
             best[key] = row
 
     return sorted(
         best.values(),
         key=lambda r: (
-            r.kalshi_status == "QUALIFIED",
+            r.evidence_class == "EDGE-QUALIFIED",
             r.kalshi_ticker is not None,
-            r.fair_probability,
+            r.consensus_probability,
             r.book_count,
             -r.source_age_s,
         ),
@@ -197,12 +208,46 @@ def generate_candidate_parlay(
     target_legs: int,
     mode: str = "high_confidence",
     max_per_event: int = 2,
+    require_edge: bool = False,
+    diversify_sports: bool = False,
 ) -> GeneratedParlay:
+    pool = list(candidates)
+    if require_edge:
+        pool = [
+            row for row in pool
+            if row.evidence_class == "EDGE-QUALIFIED"
+            and row.kalshi_edge_points is not None
+            and row.kalshi_edge_points >= 3.0
+        ]
+
+    pool.sort(
+        key=lambda r: (
+            r.evidence_class == "EDGE-QUALIFIED",
+            r.kalshi_edge_points if r.kalshi_edge_points is not None else -999.0,
+            r.book_count,
+            -r.source_age_s,
+            r.consensus_probability,
+        ),
+        reverse=True,
+    )
+
+    if diversify_sports:
+        diversified: list[ParlayCandidateLeg] = []
+        remainder: list[ParlayCandidateLeg] = []
+        seen_sports: set[str] = set()
+        for row in pool:
+            if row.sport not in seen_sports:
+                diversified.append(row)
+                seen_sports.add(row.sport)
+            else:
+                remainder.append(row)
+        pool = diversified + remainder
+
     selected: list[ParlayCandidateLeg] = []
     per_event: dict[str, int] = {}
     seen_player_market: set[tuple[str, str, str]] = set()
 
-    for row in candidates:
+    for row in pool:
         player = row.selection.split(" Over", 1)[0].split(" Under", 1)[0].split(" Yes", 1)[0].split(" No", 1)[0]
         identity = (row.event_id, player.lower(), row.market_label.lower())
         if identity in seen_player_market:
@@ -217,7 +262,8 @@ def generate_candidate_parlay(
 
     warnings: list[str] = []
     if len(selected) < target_legs:
-        warnings.append(f"Only {len(selected)} usable current leg(s) found for a {target_legs}-leg target")
+        qualifier = "edge-qualified " if require_edge else ""
+        warnings.append(f"Only {len(selected)} usable current {qualifier}leg(s) found for a {target_legs}-leg target")
 
     repeated_events = sum(v > 1 for v in per_event.values())
     correlation_risk = "LOW"
@@ -228,7 +274,7 @@ def generate_candidate_parlay(
         correlation_risk = "MEDIUM"
         warnings.append("Long parlays magnify pricing/model error")
 
-    independent = prod(x.fair_probability for x in selected) if selected else 0.0
+    independent = prod(x.consensus_probability for x in selected) if selected else 0.0
     return GeneratedParlay(
         legs=tuple(selected),
         estimated_independent_probability=independent,
@@ -247,7 +293,7 @@ def combo_blueprint(legs: Iterable[ParlayCandidateLeg]) -> str:
             if leg.kalshi_ticker
             else "Find matching component in Kalshi Combo Builder"
         )
-        lines.append(f"{i}. {leg.event_title} | {leg.selection} | fair {leg.fair_probability:.1%} | {ready}")
+        lines.append(f"{i}. {leg.event_title} | {leg.selection} | consensus {leg.consensus_probability:.1%} | {leg.evidence_class} | {ready}")
     if not any_leg:
         lines.append("No current legs.")
     return "\n".join(lines)
