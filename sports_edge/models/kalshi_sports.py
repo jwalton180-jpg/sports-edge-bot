@@ -98,9 +98,10 @@ def _football_family(series: str) -> str:
         (("4Q",), "Fourth Quarter"),
         (("PASSYDS", "PASSYARD"), "Passing Yards"),
         (("PASSTDS", "PASSTD"), "Passing TDs"),
-        (("RUSHYDS", "RUSHYARD"), "Rushing Yards"),
+        (("RUSHYDS", "RUSHYARD", "RSHYDS"), "Rushing Yards"),
+        (("RSHATT", "RUSHATT"), "Rushing Attempts"),
         (("RECYDS", "RECEIVINGYDS", "RECYARD"), "Receiving Yards"),
-        (("RECEPTIONS", "RECPT"), "Receptions"),
+        (("RECEPTIONS", "RECPT", "KXNFLREC"), "Receptions"),
         (("FIRSTTD",), "First Touchdown"),
         (("TD",), "Player Touchdowns"),
         (("FG",), "Field Goals"),
@@ -267,8 +268,8 @@ def prop_families(sport: str) -> set[str]:
         return {"Hits", "Hits + Runs + RBIs", "Home Runs", "Total Bases", "RBIs", "Strikeouts", "Other MLB"}
     if sport == "NFL":
         return {
-            "Passing TDs", "Passing Yards", "Rushing Yards", "Receiving Yards",
-            "Receptions", "Player Touchdowns", "First Touchdown", "Field Goals",
+            "Passing TDs", "Passing Yards", "Rushing Yards", "Rushing Attempts",
+            "Receiving Yards", "Receptions", "Player Touchdowns", "First Touchdown", "Field Goals",
             "Other NFL",
         }
     if sport in {"NBA", "WNBA"}:
