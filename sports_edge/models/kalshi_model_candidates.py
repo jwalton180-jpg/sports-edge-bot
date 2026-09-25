@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from functools import lru_cache
+import re
 from typing import Iterable
 
 from sports_edge.data.public_team_data import team_game_model
@@ -13,7 +14,30 @@ from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_research import TennisResearchModel, tennis_level_from_series
 
 
+_TICKER_MONTHS = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+_TICKER_DATE_RE = re.compile(r"(?:^|-)(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})", re.I)
+
+
 def _parse_date(market: dict) -> date:
+    """Prefer Kalshi's event/ticker date over settlement timestamps.
+
+    Sports contracts often remain open/settle 1–3 days after the game. Using
+    close_time as the event date silently breaks public schedule joins.
+    """
+    for key in ("event_ticker", "ticker"):
+        raw = str(market.get(key) or "").upper()
+        match = _TICKER_DATE_RE.search(raw)
+        if not match:
+            continue
+        yy, mon, dd = match.groups()
+        try:
+            return date(2000 + int(yy), _TICKER_MONTHS[mon.upper()], int(dd))
+        except ValueError:
+            continue
+
     for key in ("close_time", "expected_expiration_time", "open_time"):
         raw = market.get(key)
         if not raw:
