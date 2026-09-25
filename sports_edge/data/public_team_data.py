@@ -21,8 +21,12 @@ NFLVERSE_SCHEDULE_URL = (
 
 BASKETBALL_SCHEDULE_URLS = {
     "NBA": "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json",
-    "WNBA": "https://cdn.wnba.com/static/json/staticData/scheduleLeagueV2.json",
 }
+
+WNBA_SCHEDULE_CSV_URL = (
+    "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/"
+    "espn_wnba_schedules/wnba_schedule_2026.csv"
+)
 
 NFL_TEAM_ALIASES: dict[str, tuple[str, ...]] = {
     "ARI": ("Arizona", "Arizona Cardinals", "Cardinals"),
@@ -382,6 +386,127 @@ def nfl_team_model(team_a: str, team_b: str, *, event_date: date) -> ModelEviden
         return None
 
 
+# WNBA — SportsDataverse GitHub release (cloud-safe public CSV)
+
+@lru_cache(maxsize=1)
+def _wnba_schedule_rows() -> tuple[dict, ...]:
+    r = requests.get(
+        WNBA_SCHEDULE_CSV_URL,
+        headers={"User-Agent": "SportsEdgeReadOnly/1.0", "Accept": "text/csv,*/*"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    return tuple(csv.DictReader(io.StringIO(r.text)))
+
+
+def _truthy(value) -> bool:
+    return str(value).strip().lower() in {"1", "true", "t", "yes"}
+
+
+def _wnba_team_index(rows: tuple[dict, ...]) -> dict[int, set[str]]:
+    out: dict[int, set[str]] = {}
+    for row in rows:
+        for side in ("home", "away"):
+            try:
+                tid = int(row.get(f"{side}_id"))
+            except (TypeError, ValueError):
+                continue
+            meta = {
+                "displayName": row.get(f"{side}_display_name"),
+                "shortDisplayName": row.get(f"{side}_short_display_name"),
+                "name": row.get(f"{side}_name"),
+                "abbreviation": row.get(f"{side}_abbreviation"),
+                "location": row.get(f"{side}_location"),
+            }
+            out.setdefault(tid, set()).update(_metadata_aliases(meta))
+    return out
+
+
+def wnba_team_model(
+    team_a: str,
+    team_b: str,
+    *,
+    event_date: date,
+) -> ModelEvidence | None:
+    try:
+        rows = _wnba_schedule_rows()
+        index = _wnba_team_index(rows)
+        aid = _resolve_team_id(team_a, index)
+        bid = _resolve_team_id(team_b, index)
+        if aid is None or bid is None or aid == bid:
+            return None
+
+        stats = {
+            aid: {"wins": 0, "losses": 0, "pf": 0.0, "pa": 0.0, "recent": []},
+            bid: {"wins": 0, "losses": 0, "pf": 0.0, "pa": 0.0, "recent": []},
+        }
+        home_a: bool | None = None
+
+        for row in rows:
+            raw_date = str(row.get("game_date") or row.get("start_date") or "")[:10]
+            try:
+                gd = date.fromisoformat(raw_date)
+            except ValueError:
+                continue
+
+            try:
+                home_id = int(row.get("home_id"))
+                away_id = int(row.get("away_id"))
+            except (TypeError, ValueError):
+                continue
+
+            if gd == event_date and {home_id, away_id} == {aid, bid}:
+                home_a = home_id == aid
+
+            if gd >= event_date:
+                continue
+            if str(row.get("season_type") or row.get("type_id") or "") not in {"2", "3"}:
+                continue
+            if not _truthy(row.get("status_type_completed")):
+                continue
+
+            hs = _safe_float(row.get("home_score"))
+            aws = _safe_float(row.get("away_score"))
+            if hs is None or aws is None:
+                continue
+
+            for tid in (aid, bid):
+                if tid not in {home_id, away_id}:
+                    continue
+                pf, pa = (hs, aws) if tid == home_id else (aws, hs)
+                won = pf > pa
+                stats[tid]["wins"] += int(won)
+                stats[tid]["losses"] += int(not won)
+                stats[tid]["pf"] += pf
+                stats[tid]["pa"] += pa
+                stats[tid]["recent"].append((gd, 1.0 if won else 0.0))
+
+        a, b = stats[aid], stats[bid]
+        ga = int(a["wins"] + a["losses"])
+        gb = int(b["wins"] + b["losses"])
+        if min(ga, gb) < 5:
+            return None
+
+        recent_a = [v for _, v in sorted(a["recent"], key=lambda x: x[0])[-10:]]
+        recent_b = [v for _, v in sorted(b["recent"], key=lambda x: x[0])[-10:]]
+        return team_record_model(
+            sport="WNBA",
+            team_a=team_a,
+            team_b=team_b,
+            win_pct_a=_pct(int(a["wins"]), int(a["losses"])),
+            win_pct_b=_pct(int(b["wins"]), int(b["losses"])),
+            games_a=ga,
+            games_b=gb,
+            home_a=home_a,
+            recent_pct_a=(sum(recent_a) / len(recent_a)) if recent_a else None,
+            recent_pct_b=(sum(recent_b) / len(recent_b)) if recent_b else None,
+            differential_per_game_a=(a["pf"] - a["pa"]) / ga,
+            differential_per_game_b=(b["pf"] - b["pa"]) / gb,
+        )
+    except (requests.RequestException, TypeError, ValueError, KeyError):
+        return None
+
+
 # NBA / WNBA — official league schedule/results JSON
 
 @lru_cache(maxsize=2)
@@ -523,6 +648,8 @@ def team_game_model(
         return mlb_team_model(team_a, team_b, event_date=event_date)
     if sport == "NFL":
         return nfl_team_model(team_a, team_b, event_date=event_date)
-    if sport in {"NBA", "WNBA"}:
+    if sport == "WNBA":
+        return wnba_team_model(team_a, team_b, event_date=event_date)
+    if sport == "NBA":
         return basketball_team_model(sport, team_a, team_b, event_date=event_date)
     return None
