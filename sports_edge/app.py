@@ -858,17 +858,9 @@ elif view == "Game Lines":
         '<div class="section-note">Direct from current Kalshi sport markets. Sportsbook data is enrichment, not the source of this list.</div>',
         unsafe_allow_html=True,
     )
-    line_families = {
-        "Moneyline", "Spread", "Game Total", "Match Winner",
-        "First 3 Innings", "First 5 Innings", "First 7 Innings",
-        "First Half", "Second Half", "First Quarter", "Second Quarter",
-        "Third Quarter", "Fourth Quarter", "Games Total", "Games Spread",
-    }
-    line_rows = (
-        list(kalshi_rows)
-        if sport_filter == "Tennis"
-        else [row for row in kalshi_rows if row.family in line_families]
-    )
+    # Markets is the complete current-event universe for the selected sport.
+    # Props is a focused view, but no current Kalshi family is hidden here.
+    line_rows = list(kalshi_rows)
     if not line_rows:
         st.info("No current Kalshi markets found for this sport.")
     else:
@@ -880,7 +872,7 @@ elif view == "Game Lines":
 elif view == "Player Props":
     st.header("Kalshi Props")
     st.markdown(
-        '<div class="section-note">Direct Kalshi prop markets first. MLB/NFL player props and tennis set/game props appear here even when sportsbook enrichment is unavailable.</div>',
+        '<div class="section-note">Direct Kalshi prop markets first. MLB/NBA/WNBA/NFL player props and Tennis match/set/game/stat props appear here even when sportsbook enrichment is unavailable.</div>',
         unsafe_allow_html=True,
     )
     sports_to_show = SUPPORTED_SPORTS if sport_filter == "All" else (sport_filter,)
