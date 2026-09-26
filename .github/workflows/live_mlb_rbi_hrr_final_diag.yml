@@ -38,18 +38,14 @@ jobs:
           candidates = model_candidates_from_kalshi(
               grouped,
               sport_filter="MLB",
-              include_mlb_hits=True,
-              max_mlb_hit_players=12,
-              include_mlb_home_runs=True,
-              max_mlb_hr_players=12,
-              include_mlb_total_bases=True,
-              max_mlb_tb_players=12,
+              include_mlb_hits=False,
+              include_mlb_home_runs=False,
+              include_mlb_total_bases=False,
               include_mlb_rbis=True,
               max_mlb_rbi_players=12,
               include_mlb_hrr=True,
               max_mlb_hrr_players=12,
-              include_mlb_strikeouts=True,
-              max_mlb_k_pitchers=8,
+              include_mlb_strikeouts=False,
           )
           assessments = [assess_leg(c, "best") for c in candidates]
           qualified = [a for a in assessments if a.qualified]
