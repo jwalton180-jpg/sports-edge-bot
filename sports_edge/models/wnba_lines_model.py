@@ -53,10 +53,12 @@ class _Matchup:
     home_abbr: str
     away_games: tuple[_TeamGame, ...]
     home_games: tuple[_TeamGame, ...]
+    venue_confirmed: bool
 
     @property
     def title(self) -> str:
-        return f"{self.away_name} @ {self.home_name}"
+        separator = " @ " if self.venue_confirmed else " vs "
+        return f"{self.away_name}{separator}{self.home_name}"
 
 
 def _f(value) -> float | None:
@@ -144,21 +146,60 @@ def _history_for_team(
     return tuple(sorted(out, key=lambda g: g.game_date))
 
 
+def _team_directory(rows: tuple[dict, ...]) -> dict[str, tuple[int, str]]:
+    out: dict[str, tuple[int, str]] = {}
+    for row in rows:
+        for side in ("away", "home"):
+            code = _clean_code(row.get(f"{side}_abbreviation"))
+            if not code or code == "TBD":
+                continue
+            try:
+                team_id = int(row.get(f"{side}_id"))
+            except (TypeError, ValueError):
+                continue
+            if team_id < 0:
+                continue
+            name = _team_display(row, side)
+            if name:
+                out.setdefault(code, (team_id, name))
+    return out
+
+
+def _ticker_matchup(rows: tuple[dict, ...], event_ticker: str) -> tuple[int, str, str, int, str, str] | None:
+    ticker = _clean_code(event_ticker)
+    directory = _team_directory(rows)
+    hits: list[tuple[int, str, str, int, str, str]] = []
+    for away_code, (away_id, away_name) in directory.items():
+        for home_code, (home_id, home_name) in directory.items():
+            if away_id == home_id:
+                continue
+            if away_code + home_code in ticker:
+                hits.append((away_id, away_name, away_code, home_id, home_name, home_code))
+    unique = list(dict.fromkeys(hits))
+    return unique[0] if len(unique) == 1 else None
+
+
 @lru_cache(maxsize=64)
 def _resolve_matchup(event_date: date, event_ticker: str) -> _Matchup | None:
     rows = _wnba_schedule_rows()
     event = _match_event_row(rows, event_date, event_ticker)
-    if event is None:
-        return None
-    try:
-        away_id = int(event.get("away_id"))
-        home_id = int(event.get("home_id"))
-    except (TypeError, ValueError):
-        return None
-    away_name = _team_display(event, "away")
-    home_name = _team_display(event, "home")
-    away_abbr = str(event.get("away_abbreviation") or "").strip()
-    home_abbr = str(event.get("home_abbreviation") or "").strip()
+    venue_confirmed = event is not None
+    if event is not None:
+        try:
+            away_id = int(event.get("away_id"))
+            home_id = int(event.get("home_id"))
+        except (TypeError, ValueError):
+            return None
+        away_name = _team_display(event, "away")
+        home_name = _team_display(event, "home")
+        away_abbr = str(event.get("away_abbreviation") or "").strip()
+        home_abbr = str(event.get("home_abbreviation") or "").strip()
+    else:
+        parsed = _ticker_matchup(rows, event_ticker)
+        if parsed is None:
+            return None
+        away_id, away_name, away_abbr, home_id, home_name, home_abbr = parsed
+
     if not away_name or not home_name:
         return None
     away_games = _history_for_team(rows, team_id=away_id, before=event_date)
@@ -174,6 +215,7 @@ def _resolve_matchup(event_date: date, event_ticker: str) -> _Matchup | None:
         home_abbr=home_abbr,
         away_games=away_games,
         home_games=home_games,
+        venue_confirmed=venue_confirmed,
     )
 
 
@@ -217,10 +259,12 @@ def _score_projection(matchup: _Matchup) -> tuple[float, float, float, float, fl
     away_score = 0.55 * away_pf + 0.45 * home_pa
     home_score = 0.55 * home_pf + 0.45 * away_pa
 
-    # Approx. 2.5-point WNBA home-court margin, applied symmetrically so the
-    # total expectation is not mechanically inflated.
-    away_score -= 1.25
-    home_score += 1.25
+    # Approx. 2.5-point WNBA home-court margin, applied only when the public
+    # schedule confirms venue. Playoff placeholder rows can be TBD even after
+    # Kalshi publishes the matchup, so those games remain venue-neutral.
+    if matchup.venue_confirmed:
+        away_score -= 1.25
+        home_score += 1.25
 
     margin_mean = home_score - away_score
     total_mean = home_score + away_score
@@ -284,7 +328,10 @@ def project_wnba_spread(
             confidence=_confidence(matchup, line_type="spread"),
             sample_size=min(len(matchup.away_games), len(matchup.home_games)),
             factors=factors,
-            warnings=("pregame model; injuries/confirmed rotations are not yet separately modeled",),
+            warnings=tuple([
+                "pregame model; injuries/confirmed rotations are not yet separately modeled",
+                *([] if matchup.venue_confirmed else ["public playoff schedule has TBD venue; home-court adjustment withheld"]),
+            ]),
         )
         return WNBALineProjection(
             evidence=evidence,
@@ -328,7 +375,10 @@ def project_wnba_game_total(
                 f"Total volatility {total_sd:.1f} points from recent team results",
                 f"History depth {len(matchup.away_games)} / {len(matchup.home_games)} games",
             ),
-            warnings=("pregame model; injuries/confirmed rotations are not yet separately modeled",),
+            warnings=tuple([
+                "pregame model; injuries/confirmed rotations are not yet separately modeled",
+                *([] if matchup.venue_confirmed else ["public playoff schedule has TBD venue; home-court adjustment withheld"]),
+            ]),
         )
         return WNBALineProjection(
             evidence=evidence,
@@ -381,7 +431,10 @@ def project_wnba_team_total(
                 f"{chosen_name} scoring volatility {score_sd:.1f} points",
                 f"History depth {len(matchup.away_games)} / {len(matchup.home_games)} games",
             ),
-            warnings=("pregame model; injuries/confirmed rotations are not yet separately modeled",),
+            warnings=tuple([
+                "pregame model; injuries/confirmed rotations are not yet separately modeled",
+                *([] if matchup.venue_confirmed else ["public playoff schedule has TBD venue; home-court adjustment withheld"]),
+            ]),
         )
         return WNBALineProjection(
             evidence=evidence,
