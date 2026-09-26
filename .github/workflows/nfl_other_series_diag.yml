@@ -1,0 +1,53 @@
+name: NFL uncategorized series diagnostic
+
+on:
+  push:
+    branches: [nfl-rushing-coverage-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect Other NFL series
+        run: |
+          python - <<'PY'
+          from collections import Counter, defaultdict
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          result = fetch_supported_sport_catalog(
+              sports=("NFL",),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped = group_kalshi_sports(result.markets)
+          rows = grouped.get("NFL", [])
+          other = [r for r in rows if r.family == "Other NFL"]
+          counts = Counter(str(r.market.get("series_ticker") or "") for r in other)
+          print("catalog_error", result.error)
+          print("other_nfl_count", len(other))
+          print("OTHER_SERIES_COUNTS", counts.most_common(80))
+
+          samples = defaultdict(list)
+          for r in other:
+              s = str(r.market.get("series_ticker") or "")
+              if len(samples[s]) < 3:
+                  m=r.market
+                  samples[s].append({
+                      "ticker":m.get("ticker"),
+                      "title":m.get("title"),
+                      "floor_strike":m.get("floor_strike"),
+                      "yes_ask_dollars":m.get("yes_ask_dollars"),
+                  })
+          for s,_ in counts.most_common(50):
+              print("OTHER_SAMPLE", s, samples[s])
+          PY
