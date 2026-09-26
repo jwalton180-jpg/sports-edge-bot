@@ -987,6 +987,14 @@ elif view == "Player Props":
             model_family_key = "batter_total_bases"
         elif sport_filter == "MLB" and family == "Strikeouts":
             model_family_key = "pitcher_strikeouts"
+        elif sport_filter == "NFL" and family == "Passing Yards":
+            model_family_key = "player_pass_yds"
+        elif sport_filter == "NFL" and family == "Passing TDs":
+            model_family_key = "player_pass_tds"
+        elif sport_filter == "NFL" and family == "Receiving Yards":
+            model_family_key = "player_reception_yds"
+        elif sport_filter == "NFL" and family == "Player Touchdowns":
+            model_family_key = "player_anytime_td"
 
         if model_family_key:
             st.success("Independent Sports Edge model available for this prop family.")
@@ -1008,6 +1016,13 @@ elif view == "Player Props":
                         max_mlb_tb_players=24 if model_family_key == "batter_total_bases" else None,
                         include_mlb_strikeouts=(model_family_key == "pitcher_strikeouts"),
                         max_mlb_k_pitchers=16 if model_family_key == "pitcher_strikeouts" else None,
+                        include_nfl_passing_yards=(model_family_key == "player_pass_yds"),
+                        max_nfl_passing_players=18 if model_family_key in {"player_pass_yds", "player_pass_tds"} else None,
+                        include_nfl_passing_tds=(model_family_key == "player_pass_tds"),
+                        include_nfl_receiving_yards=(model_family_key == "player_reception_yds"),
+                        max_nfl_receiving_players=24 if model_family_key == "player_reception_yds" else None,
+                        include_nfl_touchdowns=(model_family_key == "player_anytime_td"),
+                        max_nfl_td_players=24 if model_family_key == "player_anytime_td" else None,
                     )
                     prop_model_candidates = [
                         row for row in prop_model_candidates
@@ -1205,9 +1220,12 @@ elif view == "Parlay Generator":
     if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
         with st.spinner("Running sport models against current Kalshi markets…"):
             use_all_mlb_models = preset in {"Best Available", "Mixed Sports"}
+            use_all_nfl_models = preset in {"Best Available", "Mixed Sports"}
             focused_mlb_cap = max(12, min(24, target * 3))
             broad_mlb_cap = max(8, min(12, target * 2))
             pitcher_cap = max(8, min(16, target * 2))
+            focused_nfl_cap = max(12, min(24, target * 3))
+            broad_nfl_cap = max(8, min(14, target * 2))
 
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
@@ -1235,6 +1253,25 @@ elif view == "Parlay Generator":
                     pitcher_cap if (preset == "MLB Strikeouts" or use_all_mlb_models)
                     else None
                 ),
+                include_nfl_passing_yards=(preset == "NFL Passing" or use_all_nfl_models),
+                max_nfl_passing_players=(
+                    focused_nfl_cap if preset == "NFL Passing"
+                    else broad_nfl_cap if use_all_nfl_models
+                    else None
+                ),
+                include_nfl_passing_tds=(preset == "NFL Passing" or use_all_nfl_models),
+                include_nfl_receiving_yards=(preset == "NFL Receiving" or use_all_nfl_models),
+                max_nfl_receiving_players=(
+                    focused_nfl_cap if preset == "NFL Receiving"
+                    else broad_nfl_cap if use_all_nfl_models
+                    else None
+                ),
+                include_nfl_touchdowns=(preset == "NFL Touchdowns" or use_all_nfl_models),
+                max_nfl_td_players=(
+                    focused_nfl_cap if preset == "NFL Touchdowns"
+                    else broad_nfl_cap if use_all_nfl_models
+                    else None
+                ),
             )
 
             supported_model_presets = {
@@ -1242,6 +1279,9 @@ elif view == "Parlay Generator":
                 "Mixed Sports",
                 "Tennis Moneyline",
                 "NFL Game Markets",
+                "NFL Passing",
+                "NFL Receiving",
+                "NFL Touchdowns",
                 "MLB Hits",
                 "MLB Home Runs",
                 "MLB Total Bases",
@@ -1276,6 +1316,21 @@ elif view == "Parlay Generator":
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "NFL" and row.market_key == "model_h2h"
+                ]
+            elif preset == "NFL Passing":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "NFL" and row.market_key in {"player_pass_yds", "player_pass_tds"}
+                ]
+            elif preset == "NFL Receiving":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "NFL" and row.market_key == "player_reception_yds"
+                ]
+            elif preset == "NFL Touchdowns":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "NFL" and row.market_key == "player_anytime_td"
                 ]
             elif preset not in supported_model_presets:
                 model_candidates = []
@@ -1421,7 +1476,7 @@ elif view == "Parlay Generator":
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB Strikeouts"}:
+            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "NFL Passing", "NFL Receiving", "NFL Touchdowns", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB Strikeouts"}:
                 st.warning(
                     "This player-prop family does not yet have a production sport-specific model. "
                     "Sports Edge is intentionally refusing book-only prop picks."
@@ -1487,7 +1542,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; NFL Passing Yards, Passing TDs, Receiving Yards, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
