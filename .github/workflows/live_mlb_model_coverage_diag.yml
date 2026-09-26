@@ -1,0 +1,96 @@
+name: Live MLB model coverage diagnostic
+
+on:
+  push:
+    branches: [expand-mlb-model-coverage-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Audit live MLB model coverage
+        run: |
+          python - <<'PY'
+          from collections import Counter, defaultdict
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+          result = fetch_supported_sport_catalog(
+              sports=("MLB",),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped = group_kalshi_sports(result.markets)
+          rows = grouped.get("MLB", [])
+          family_counts = Counter(r.family for r in rows)
+
+          candidates = model_candidates_from_kalshi(
+              grouped,
+              sport_filter="MLB",
+              include_mlb_hits=True,
+              max_mlb_hit_players=12,
+              include_mlb_home_runs=True,
+              max_mlb_hr_players=12,
+              include_mlb_total_bases=True,
+              max_mlb_tb_players=12,
+              include_mlb_strikeouts=True,
+              max_mlb_k_pitchers=16,
+          )
+          assessments = [assess_leg(c, "best") for c in candidates]
+          by_key = Counter(c.market_key for c in candidates)
+          qualified_by_key = Counter(a.leg.market_key for a in assessments if a.qualified)
+          ticket = build_intelligent_parlay(
+              candidates,
+              mode="best",
+              target_legs=4,
+              max_per_event=1,
+          )
+
+          print("catalog_error", result.error)
+          print("catalog_complete", result.cursor_exhausted)
+          print("mlb_markets", len(rows))
+          print("family_counts", dict(family_counts))
+          print("model_candidates", len(candidates))
+          print("candidate_by_key", dict(by_key))
+          print("qualified_by_key", dict(qualified_by_key))
+          print("ticket_legs", len(ticket.legs))
+          print("ticket", [
+              (
+                  x.leg.market_key,
+                  x.leg.selection,
+                  x.leg.event_id,
+                  round(x.fair_probability, 4),
+                  round(x.kalshi_probability or 0, 4),
+                  round(x.edge_points or 0, 2),
+                  round(x.leg.model_confidence, 3),
+                  x.leg.model_sample_size,
+              )
+              for x in ticket.legs
+          ])
+          tb = [a for a in assessments if a.leg.market_key == "batter_total_bases"]
+          print("total_bases_assessments", len(tb))
+          print("total_bases_qualified", sum(a.qualified for a in tb))
+          print("top_total_bases", [
+              (
+                  a.leg.selection,
+                  round(a.fair_probability, 4),
+                  round(a.kalshi_probability or 0, 4),
+                  round(a.edge_points or 0, 2),
+                  round(a.leg.model_confidence, 3),
+                  a.leg.model_sample_size,
+                  a.qualified,
+              )
+              for a in sorted(tb, key=lambda x:x.score, reverse=True)[:10]
+          ])
+          PY
