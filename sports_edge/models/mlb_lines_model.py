@@ -180,12 +180,36 @@ def _warnings() -> tuple[str, ...]:
     )
 
 
+def _team_aliases(full_name: str, abbr: str) -> set[str]:
+    full = normalize(full_name)
+    parts = full.split()
+    aliases = {full, normalize(abbr), *[normalize(x) for x in _codes(abbr)]}
+    if not parts:
+        return {x for x in aliases if x}
+
+    # Kalshi commonly shortens MLB teams as city + mascot initial(s):
+    # "Chicago WS", "New York Y", "Los Angeles D", etc.
+    if len(parts) >= 3 and " ".join(parts[-2:]) in {"white sox", "red sox", "blue jays"}:
+        city = " ".join(parts[:-2])
+        nickname = parts[-2:]
+    else:
+        city = " ".join(parts[:-1])
+        nickname = parts[-1:]
+    if city:
+        aliases.add(city)
+        initials = "".join(word[0] for word in nickname if word)
+        if initials:
+            aliases.add(f"{city} {initials}")
+        aliases.add(f"{city} {nickname[-1]}")
+    return {x for x in aliases if x}
+
+
 def _team_side(matchup: _Matchup, team_name: str) -> str | None:
     q = normalize(team_name)
     if not q:
         return None
-    away_aliases = {normalize(matchup.away_name), normalize(matchup.away_abbr), *[normalize(x) for x in _codes(matchup.away_abbr)]}
-    home_aliases = {normalize(matchup.home_name), normalize(matchup.home_abbr), *[normalize(x) for x in _codes(matchup.home_abbr)]}
+    away_aliases = _team_aliases(matchup.away_name, matchup.away_abbr)
+    home_aliases = _team_aliases(matchup.home_name, matchup.home_abbr)
     away_hit = q in away_aliases or any(q.startswith(x + " ") for x in away_aliases if x)
     home_hit = q in home_aliases or any(q.startswith(x + " ") for x in home_aliases if x)
     if away_hit == home_hit:
