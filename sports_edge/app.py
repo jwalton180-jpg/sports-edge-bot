@@ -1225,7 +1225,7 @@ elif view == "Parlay Generator":
             broad_mlb_cap = max(8, min(12, target * 2))
             pitcher_cap = max(8, min(16, target * 2))
             focused_nfl_cap = max(12, min(24, target * 3))
-            broad_nfl_cap = max(8, min(14, target * 2))
+            broad_nfl_cap = max(12, min(18, target * 3))
 
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
