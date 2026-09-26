@@ -1,0 +1,91 @@
+name: Live WNBA corrected-line diagnostic
+
+on:
+  push:
+    branches: [finish-wnba-lines-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Audit corrected WNBA full-game model coverage
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+          result=fetch_supported_sport_catalog(
+              sports=("WNBA",),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped=group_kalshi_sports(result.markets)
+          rows=grouped.get("WNBA",[])
+          counts=Counter(r.family for r in rows)
+
+          totals=[]
+          for r in rows:
+              if r.family=="Game Total":
+                  try:
+                      totals.append(float(r.market.get("floor_strike")))
+                  except (TypeError,ValueError):
+                      pass
+
+          candidates=model_candidates_from_kalshi(
+              grouped,
+              sport_filter="WNBA",
+              include_wnba_game_lines=True,
+          )
+          keys={"model_h2h","wnba_spread","wnba_game_total","wnba_team_total"}
+          candidates=[c for c in candidates if c.market_key in keys]
+          assessments=[assess_leg(c,"best") for c in candidates]
+          qualified=[a for a in assessments if a.qualified]
+          ticket=build_intelligent_parlay(
+              candidates,mode="best",target_legs=4,max_per_event=1
+          )
+
+          print("catalog_error",result.error)
+          print("catalog_complete",result.cursor_exhausted)
+          print("wnba_markets",len(rows))
+          print("family_counts",dict(counts))
+          print("game_total_range",(min(totals),max(totals)) if totals else None)
+          print("candidate_by_key",dict(Counter(c.market_key for c in candidates)))
+          print("qualified_by_key",dict(Counter(a.leg.market_key for a in qualified)))
+          print("qualified_total",len(qualified))
+          print("ticket_legs",len(ticket.legs))
+          print("ticket",[
+              (
+                  x.leg.market_key,
+                  x.leg.selection,
+                  x.leg.event_title,
+                  round(x.fair_probability,4),
+                  round(x.kalshi_probability or 0,4),
+                  round(x.edge_points or 0,2),
+                  round(x.leg.model_confidence,3),
+                  x.leg.model_sample_size,
+              )
+              for x in ticket.legs
+          ])
+          for family in ("First Half","Second Half","Game Total"):
+              samples=[
+                  (
+                      r.market.get("series_ticker"),
+                      r.market.get("title"),
+                      r.market.get("floor_strike"),
+                  )
+                  for r in rows if r.family==family
+              ][:8]
+              print("SAMPLES",family,samples)
+          PY
