@@ -1,4 +1,4 @@
-name: Basketball prop schema diagnostic
+name: Live WNBA game-line model diagnostic
 
 on:
   push:
@@ -14,56 +14,78 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.txt pyarrow
-      - name: Inspect Kalshi basketball props and player-box schemas
+      - run: pip install -r requirements.txt pytest
+      - name: Audit live WNBA model-first game lines
         run: |
           python - <<'PY'
-          from collections import Counter, defaultdict
-          from io import BytesIO
-          import pandas as pd
-          import requests
+          from collections import Counter
           from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
           from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
 
           result = fetch_supported_sport_catalog(
-              sports=("NBA","WNBA"),
+              sports=("WNBA",),
               page_limit_per_series=50,
               page_size=1000,
               max_workers=6,
               request_interval_s=0.15,
           )
           grouped = group_kalshi_sports(result.markets)
-          print("catalog_error", result.error)
-          print("catalog_complete", result.cursor_exhausted)
-          for sport in ("NBA","WNBA"):
-              rows=grouped.get(sport,[])
-              counts=Counter(r.family for r in rows)
-              print("SPORT_COUNTS", sport, len(rows), dict(counts))
-              samples=defaultdict(list)
-              for r in rows:
-                  if len(samples[r.family])<3:
-                      m=r.market
-                      samples[r.family].append({
-                          "series":m.get("series_ticker"),
-                          "ticker":m.get("ticker"),
-                          "title":m.get("title"),
-                          "floor":m.get("floor_strike"),
-                          "yes":m.get("yes_ask_dollars"),
-                      })
-              for family,n in counts.most_common(25):
-                  print("SAMPLE",sport,family,n,samples[family])
+          rows = grouped.get("WNBA", [])
+          family_counts = Counter(r.family for r in rows)
 
-          sources={
-              "WNBA2026":"https://raw.githubusercontent.com/sportsdataverse/wehoop-wnba-data/main/wnba/player_box/parquet/player_box_2026.parquet",
-              "WNBA2025":"https://raw.githubusercontent.com/sportsdataverse/wehoop-wnba-data/main/wnba/player_box/parquet/player_box_2025.parquet",
-              "NBA2026":"https://raw.githubusercontent.com/sportsdataverse/hoopR-nba-data/main/nba/player_box/parquet/player_box_2026.parquet",
-              "NBA2025":"https://raw.githubusercontent.com/sportsdataverse/hoopR-nba-data/main/nba/player_box/parquet/player_box_2025.parquet",
-          }
-          for label,url in sources.items():
-              resp=requests.get(url,timeout=30); resp.raise_for_status()
-              df=pd.read_parquet(BytesIO(resp.content))
-              print("BOX_SCHEMA",label,len(df),list(df.columns))
-              print("BOX_DATES",label,[(c,str(df[c].min()),str(df[c].max())) for c in df.columns if "date" in c.lower()][:6])
-              keep=[c for c in ("game_id","game_date","athlete_id","athlete_display_name","team_id","team_name","opponent_team_id","opponent_team_name","minutes","field_goals_made","three_point_field_goals_made","rebounds","assists","points","steals","blocks","starter","did_not_play") if c in df.columns]
-              print("BOX_SAMPLE",label,df[keep].tail(3).to_dict("records"))
+          candidates = model_candidates_from_kalshi(
+              grouped,
+              sport_filter="WNBA",
+              include_wnba_game_lines=True,
+          )
+          keys={"model_h2h","wnba_spread","wnba_game_total","wnba_team_total"}
+          candidates=[c for c in candidates if c.market_key in keys]
+          assessments=[assess_leg(c,"best") for c in candidates]
+          qualified=[a for a in assessments if a.qualified]
+          ticket=build_intelligent_parlay(
+              candidates,
+              mode="best",
+              target_legs=4,
+              max_per_event=1,
+          )
+
+          print("catalog_error",result.error)
+          print("catalog_complete",result.cursor_exhausted)
+          print("wnba_markets",len(rows))
+          print("family_counts",dict(family_counts))
+          print("candidate_by_key",dict(Counter(c.market_key for c in candidates)))
+          print("qualified_by_key",dict(Counter(a.leg.market_key for a in qualified)))
+          print("qualified_total",len(qualified))
+          print("ticket_legs",len(ticket.legs))
+          event_ids=[x.leg.event_id for x in ticket.legs]
+          print("ticket_event_ids",event_ids)
+          assert len(event_ids)==len(set(event_ids)), "same-game WNBA legs bypassed max_per_event=1"
+          print("ticket",[
+              (
+                  x.leg.market_key,
+                  x.leg.selection,
+                  x.leg.event_title,
+                  round(x.fair_probability,4),
+                  round(x.kalshi_probability or 0,4),
+                  round(x.edge_points or 0,2),
+                  round(x.leg.model_confidence,3),
+                  x.leg.model_sample_size,
+              )
+              for x in ticket.legs
+          ])
+          for key in sorted(keys):
+              subset=[a for a in assessments if a.leg.market_key==key]
+              print("TOP",key,[
+                  (
+                      a.leg.selection,
+                      round(a.fair_probability,4),
+                      round(a.kalshi_probability or 0,4),
+                      round(a.edge_points or 0,2),
+                      round(a.leg.model_confidence,3),
+                      a.qualified,
+                  )
+                  for a in sorted(subset,key=lambda x:x.score,reverse=True)[:8]
+              ])
           PY
