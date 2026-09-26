@@ -96,6 +96,34 @@ def _patch_schedule(monkeypatch):
     wlm._resolve_matchup.cache_clear()
 
 
+def test_wnba_tbd_playoff_schedule_resolves_from_verified_ticker_codes(monkeypatch):
+    rows = list(_schedule())
+    rows[-1] = _row(
+        EVENT_DATE,
+        -1,
+        -2,
+        "TBD",
+        "TBD",
+        "TBD",
+        "TBD",
+        completed=False,
+    )
+    monkeypatch.setattr(wlm, "_wnba_schedule_rows", lambda: tuple(rows))
+    wlm._resolve_matchup.cache_clear()
+    matchup = wlm._resolve_matchup(EVENT_DATE, "KXWNBATOTAL-26SEP27WSHATL")
+    assert matchup is not None
+    assert {matchup.away_abbr, matchup.home_abbr} == {"WSH", "ATL"}
+    assert matchup.venue_confirmed is False
+    projection = project_wnba_game_total(
+        line=170.5,
+        event_date=EVENT_DATE,
+        event_ticker="KXWNBATOTAL-26SEP27WSHATL",
+    )
+    assert projection is not None
+    assert any("TBD venue" in warning for warning in projection.evidence.warnings)
+    wlm._resolve_matchup.cache_clear()
+
+
 def test_wnba_spread_probability_falls_as_margin_line_rises(monkeypatch):
     _patch_schedule(monkeypatch)
     low = project_wnba_spread(
