@@ -81,8 +81,8 @@ def _wr_context():
 
 def test_name_resolver_fails_closed_on_ambiguous_alias():
     current = (
-        {"player_id": "1", "player_display_name": "John Smith Jr.", "position": "WR"},
-        {"player_id": "2", "player_display_name": "John Smith", "position": "RB"},
+        {"player_id": "1", "player_display_name": "John Michael Smith", "position": "WR"},
+        {"player_id": "2", "player_display_name": "John Matthew Smith", "position": "RB"},
     )
     assert _resolve_player("John Smith", current, ()) is None
 
