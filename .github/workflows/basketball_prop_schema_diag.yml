@@ -51,6 +51,20 @@ jobs:
               max_per_event=1,
           )
 
+          from sports_edge.data.public_team_data import _wnba_schedule_rows
+          from sports_edge.models.wnba_lines_model import _match_event_row
+          sched=_wnba_schedule_rows()
+          for d in ("2026-09-26","2026-09-27","2026-09-28","2026-09-29","2026-09-30","2026-10-01"):
+              matches=[r for r in sched if str(r.get("game_date") or r.get("start_date") or "")[:10]==d]
+              if matches:
+                  print("SCHEDULE_DATE",d,[{k:r.get(k) for k in ("game_date","start_date","home_id","away_id","home_display_name","away_display_name","home_abbreviation","away_abbreviation")} for r in matches])
+          for row in rows:
+              if row.family in {"Spread","Game Total","Team Total"}:
+                  m=row.market
+                  print("LINE_MARKET_SAMPLE",row.family,{k:m.get(k) for k in ("event_ticker","ticker","title","floor_strike")})
+                  print("MATCH_RESULT",_match_event_row(sched,__import__("sports_edge.models.kalshi_model_candidates",fromlist=["_parse_date"])._parse_date(m),str(m.get("event_ticker") or "")))
+                  break
+
           print("catalog_error",result.error)
           print("catalog_complete",result.cursor_exhausted)
           print("wnba_markets",len(rows))
