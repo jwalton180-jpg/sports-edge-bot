@@ -37,6 +37,20 @@ def test_mlb_total_bases_long_series_is_not_misclassified_as_game_total():
     assert classify_kalshi_market(row) == ("MLB", "Total Bases")
 
 
+def test_period_series_are_not_misclassified_as_full_game_markets():
+    cases = [
+        ("KXWNBA1HTOTAL", "WNBA first-half total", ("WNBA", "First Half")),
+        ("KXNBA2HTOTAL", "NBA second-half total", ("NBA", "Second Half")),
+        ("KXNFL1HSPREAD", "NFL first-half spread", ("NFL", "First Half")),
+        ("KXNFL1QGAME", "NFL first-quarter game", ("NFL", "First Quarter")),
+        ("KXMLBF5TOTAL", "MLB first-five total", ("MLB", "First 5 Innings")),
+    ]
+    for idx, (series, title, expected) in enumerate(cases):
+        row = market(f"{series}-26SEP26-TEST-{idx}", title, event=f"PER{idx}")
+        row["series_ticker"] = series
+        assert classify_kalshi_market(row) == expected
+
+
 def test_nfl_live_rushing_yards_series_is_classified():
     row = market(
         "KXNFLRSHYDS-26SEP27LACBUF-PLAYER-50",
