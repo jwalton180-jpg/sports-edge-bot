@@ -18,8 +18,8 @@ def test_total_bases_milestone_probability_is_monotone():
 
 def test_more_extra_base_power_raises_multi_base_probability():
     contact_heavy = (0.20, 0.025, 0.002, 0.015)
-    power_heavy = (0.14, 0.06, 0.006, 0.05)
-    assert sum(contact_heavy) == sum(power_heavy)
+    power_heavy = (0.14, 0.052, 0.005, 0.045)
+    assert abs(sum(contact_heavy) - sum(power_heavy)) < 1e-12
     low = at_least_k_total_bases_probability(contact_heavy, 4.0, 2)
     high = at_least_k_total_bases_probability(power_heavy, 4.0, 2)
     assert high > low
