@@ -1,0 +1,48 @@
+name: Final current market coverage audit
+
+on:
+  push:
+    branches: [final-current-coverage-audit-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Audit current Kalshi sports families
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          result=fetch_supported_sport_catalog(
+              sports=("MLB","NFL","NBA","WNBA","Tennis"),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=8,
+              request_interval_s=0.15,
+          )
+          grouped=group_kalshi_sports(result.markets)
+          print("catalog_error",result.error)
+          print("catalog_complete",result.cursor_exhausted)
+          for sport,rows in grouped.items():
+              print("SPORT",sport,"TOTAL",len(rows),"FAMILIES",dict(Counter(r.family for r in rows)))
+              for family in sorted({r.family for r in rows}):
+                  samples=[
+                      (
+                          r.market.get("series_ticker"),
+                          r.market.get("title"),
+                          r.market.get("floor_strike"),
+                          r.market.get("status"),
+                      )
+                      for r in rows if r.family==family
+                  ][:3]
+                  print("SAMPLE",sport,family,samples)
+          PY
