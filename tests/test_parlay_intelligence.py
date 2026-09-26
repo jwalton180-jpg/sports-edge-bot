@@ -71,6 +71,35 @@ def test_best_available_is_not_just_high_probability():
     assert genuine_value.qualified is True
 
 
+def test_deep_model_evidence_can_qualify_smaller_positive_best_edge():
+    row = assess_leg(leg(fair=0.63, price=0.61, model_conf=0.78), "best")
+    assert row.qualified is True
+    assert row.edge_points > 0
+    assert any("Deep Evidence" in reason for reason in row.reasons)
+
+
+def test_low_confidence_model_keeps_standard_best_edge_gate():
+    row = assess_leg(leg(fair=0.63, price=0.61, model_conf=0.55), "best")
+    assert row.qualified is False
+    assert any("+3.0 pp" in warning for warning in row.warnings)
+
+
+def test_deep_model_never_qualifies_zero_or_negative_edge():
+    row = assess_leg(leg(fair=0.63, price=0.64, model_conf=0.80), "best")
+    assert row.qualified is False
+
+
+def test_best_builder_can_use_multiple_deep_evidence_positive_value_legs():
+    candidates = [
+        leg(event_id="E1", selection="A", fair=0.63, price=0.61, model_conf=0.78),
+        leg(event_id="E2", selection="B", fair=0.61, price=0.59, model_conf=0.76),
+        leg(event_id="E3", selection="C", fair=0.60, price=0.58, model_conf=0.75),
+    ]
+    result = build_intelligent_parlay(candidates, mode="best", target_legs=3)
+    assert len(result.legs) == 3
+    assert all(row.edge_points > 0 for row in result.legs)
+
+
 def test_builder_never_forces_filler_legs():
     candidates = [
         leg(event_id="E1", selection="A", fair=0.25, price=0.15),
