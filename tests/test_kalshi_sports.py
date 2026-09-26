@@ -57,6 +57,20 @@ def test_nfl_live_receptions_series_is_classified():
     assert classify_kalshi_market(row) == ("NFL", "Receptions")
 
 
+def test_nfl_volume_series_are_classified():
+    cases = [
+        ("KXNFLPASSATT", "QB: 33+ passing attempts", "Pass Attempts"),
+        ("KXNFLPASSCOMP", "QB: 22+ passing completions", "Pass Completions"),
+        ("KXNFLPASSINT", "QB: 1+ passing interceptions", "Pass Interceptions"),
+        ("KXNFLRSHATT", "RB: 18+ rushing attempts", "Rush Attempts"),
+        ("KXNFLRRYDS", "RB: 100+ rushing and receiving yards combined", "Rushing + Receiving Yards"),
+    ]
+    for idx, (series, title, family) in enumerate(cases):
+        row = market(f"{series}-26SEP27LACBUF-PLAYER-{idx}", title, event=f"NFV{idx}")
+        row["series_ticker"] = series
+        assert classify_kalshi_market(row) == ("NFL", family)
+
+
 def test_futures_are_excluded_even_with_sport_prefix():
     future = market("KXMLBGAME-CHAMP", "Will Los Angeles win the championship before 2030?")
     assert classify_kalshi_market(future) is None
