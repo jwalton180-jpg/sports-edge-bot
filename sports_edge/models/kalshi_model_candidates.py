@@ -800,8 +800,13 @@ def _mlb_run_candidates(
         out: list[ParlayCandidateLeg] = []
         valid_players = 0
         batch_size = max(1, max_workers)
-        for start in range(0, len(ranked), batch_size):
-            batch = ranked[start:start + batch_size]
+        # Bound live latency even when the highest-volume groups are already
+        # in-play/completed. We search past invalid groups, but fail closed
+        # after a finite 4x discovery window instead of walking the full slate.
+        scan_limit = min(len(ranked), max_players * 4)
+        ranked_scan = ranked[:scan_limit]
+        for start in range(0, len(ranked_scan), batch_size):
+            batch = ranked_scan[start:start + batch_size]
             worker_count = max(1, min(max_workers, len(batch)))
             batch_results: list[list[ParlayCandidateLeg]] = [[] for _ in batch]
             with ThreadPoolExecutor(max_workers=worker_count) as pool:
