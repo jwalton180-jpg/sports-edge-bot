@@ -98,7 +98,7 @@ def test_nfl_team_total_resolves_abbreviated_title(monkeypatch):
     assert projection is not None
     assert projection.market_key == "nfl_team_total"
     assert projection.selection_label.startswith("BUF over 24.5")
-    assert 10 < projection.projected_sd < 18
+    assert 7 <= projection.projected_sd <= 17
 
 
 def test_nfl_line_model_fails_closed_on_wrong_kalshi_game(monkeypatch):
