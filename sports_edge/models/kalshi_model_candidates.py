@@ -19,6 +19,8 @@ from sports_edge.models.nfl_prop_models import (
     project_nfl_passing_tds,
     project_nfl_passing_yards,
     project_nfl_receiving_yards,
+    project_nfl_receptions,
+    project_nfl_rushing_yards,
     project_nfl_touchdowns,
 )
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
@@ -800,10 +802,24 @@ def _nfl_prop_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandida
             event_date=event_date,
             event_ticker=str(market.get("event_ticker") or ""),
         )
+    elif row.family == "Rushing Yards":
+        projection = project_nfl_rushing_yards(
+            player_name=player_name,
+            milestone_yards=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
     elif row.family == "Receiving Yards":
         projection = project_nfl_receiving_yards(
             player_name=player_name,
             milestone_yards=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Receptions":
+        projection = project_nfl_receptions(
+            player_name=player_name,
+            milestone_receptions=milestone,
             event_date=event_date,
             event_ticker=str(market.get("event_ticker") or ""),
         )
@@ -935,7 +951,10 @@ def model_candidates_from_kalshi(
     include_nfl_passing_yards: bool = False,
     max_nfl_passing_players: int | None = None,
     include_nfl_passing_tds: bool = False,
+    include_nfl_rushing_yards: bool = False,
+    max_nfl_rushing_players: int | None = None,
     include_nfl_receiving_yards: bool = False,
+    include_nfl_receptions: bool = False,
     max_nfl_receiving_players: int | None = None,
     include_nfl_touchdowns: bool = False,
     max_nfl_td_players: int | None = None,
@@ -1018,11 +1037,29 @@ def model_candidates_from_kalshi(
                 )
             )
 
+        if sport == "NFL" and include_nfl_rushing_yards:
+            rushing_rows = [row for row in rows if row.family == "Rushing Yards"]
+            all_rows.extend(
+                _nfl_prop_candidates(
+                    rushing_rows,
+                    max_players=max_nfl_rushing_players,
+                )
+            )
+
         if sport == "NFL" and include_nfl_receiving_yards:
             receiving_rows = [row for row in rows if row.family == "Receiving Yards"]
             all_rows.extend(
                 _nfl_prop_candidates(
                     receiving_rows,
+                    max_players=max_nfl_receiving_players,
+                )
+            )
+
+        if sport == "NFL" and include_nfl_receptions:
+            reception_rows = [row for row in rows if row.family == "Receptions"]
+            all_rows.extend(
+                _nfl_prop_candidates(
+                    reception_rows,
                     max_players=max_nfl_receiving_players,
                 )
             )
