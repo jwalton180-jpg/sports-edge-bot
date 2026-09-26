@@ -1,0 +1,97 @@
+name: Live NFL game-line diagnostic
+
+on:
+  push:
+    branches: [finish-nfl-game-lines-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Audit live NFL full-game lines
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          import requests
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+          markets=[]
+          errors=[]
+          for series in ("KXNFLGAME","KXNFLSPREAD","KXNFLTOTAL","KXNFLTEAMTOTAL"):
+              try:
+                  r=requests.get(
+                      "https://external-api.kalshi.com/trade-api/v2/markets",
+                      params={"limit":1000,"status":"open","series_ticker":series},
+                      timeout=20,
+                  )
+                  r.raise_for_status()
+                  rows=r.json().get("markets",[]) or []
+                  markets.extend(rows)
+                  print("SERIES",series,len(rows))
+              except Exception as exc:
+                  errors.append(f"{series}: {exc}")
+
+          grouped=group_kalshi_sports(markets)
+          rows=grouped.get("NFL",[])
+          print("errors",errors)
+          print("family_counts",dict(Counter(r.family for r in rows)))
+
+          candidates=model_candidates_from_kalshi(
+              grouped,
+              sport_filter="NFL",
+              include_nfl_game_lines=True,
+          )
+          keys={"model_h2h","nfl_spread","nfl_game_total","nfl_team_total"}
+          candidates=[c for c in candidates if c.market_key in keys]
+          assessments=[assess_leg(c,"best") for c in candidates]
+          qualified=[a for a in assessments if a.qualified]
+          ticket=build_intelligent_parlay(
+              candidates,
+              mode="best",
+              target_legs=4,
+              max_per_event=1,
+          )
+
+          print("candidate_by_key",dict(Counter(c.market_key for c in candidates)))
+          print("qualified_by_key",dict(Counter(a.leg.market_key for a in qualified)))
+          print("qualified_total",len(qualified))
+          print("ticket_legs",len(ticket.legs))
+          event_ids=[x.leg.event_id for x in ticket.legs]
+          print("ticket_event_ids",event_ids)
+          assert len(event_ids)==len(set(event_ids)), "same-game NFL lines bypassed max_per_event=1"
+          print("ticket",[
+              (
+                  x.leg.market_key,
+                  x.leg.selection,
+                  x.leg.event_title,
+                  round(x.fair_probability,4),
+                  round(x.kalshi_probability or 0,4),
+                  round(x.edge_points or 0,2),
+                  round(x.leg.model_confidence,3),
+                  x.leg.model_sample_size,
+              )
+              for x in ticket.legs
+          ])
+          for key in sorted(keys):
+              subset=[a for a in assessments if a.leg.market_key==key]
+              print("TOP",key,[
+                  (
+                      a.leg.selection,
+                      round(a.fair_probability,4),
+                      round(a.kalshi_probability or 0,4),
+                      round(a.edge_points or 0,2),
+                      round(a.leg.model_confidence,3),
+                      a.qualified,
+                  )
+                  for a in sorted(subset,key=lambda x:x.score,reverse=True)[:8]
+              ])
+          PY
