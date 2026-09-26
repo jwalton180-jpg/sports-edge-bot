@@ -1,6 +1,7 @@
 from datetime import date
 
 from sports_edge.data.nfl_prop_data import NFLPlayerContext, _resolve_player
+import sports_edge.data.nfl_prop_data as npd
 from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.model_evidence import ModelEvidence
 from sports_edge.models.nfl_prop_models import (
@@ -85,6 +86,53 @@ def test_name_resolver_fails_closed_on_ambiguous_alias():
         {"player_id": "2", "player_display_name": "John Matthew Smith", "position": "RB"},
     )
     assert _resolve_player("John Smith", current, ()) is None
+
+
+def test_player_context_requires_exact_kalshi_matchup(monkeypatch):
+    current = (
+        {
+            "player_id": "p1",
+            "player_display_name": "Test Quarterback",
+            "position": "QB",
+            "season_type": "REG",
+            "week": "1",
+            "team": "LAC",
+        },
+    )
+    prior = (
+        {
+            "player_id": "p1",
+            "player_display_name": "Test Quarterback",
+            "position": "QB",
+            "season_type": "REG",
+            "week": "1",
+            "team": "LAC",
+        },
+    )
+    monkeypatch.setattr(npd, "player_week_rows", lambda season: current if season == 2026 else prior)
+    monkeypatch.setattr(
+        npd,
+        "schedule_rows",
+        lambda: ({
+            "season": "2026",
+            "game_type": "REG",
+            "gameday": "2026-09-27",
+            "home_team": "BUF",
+            "away_team": "LAC",
+        },),
+    )
+    npd.player_context.cache_clear()
+    good = npd.player_context(
+        "Test Quarterback", EVENT_DATE, "KXNFLPASSYDS-26SEP27LACBUF"
+    )
+    npd.player_context.cache_clear()
+    bad = npd.player_context(
+        "Test Quarterback", EVENT_DATE, "KXNFLPASSYDS-26SEP27KCMIA"
+    )
+    npd.player_context.cache_clear()
+    assert good is not None
+    assert good.opponent == "BUF"
+    assert bad is None
 
 
 def test_passing_yards_probability_falls_as_milestone_rises(monkeypatch):
