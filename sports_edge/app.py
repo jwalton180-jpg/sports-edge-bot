@@ -145,7 +145,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-mlb-prop-models-2")
+st.caption("Build: 2026-09-25-model-first-game-lines-final")
 
 
 def _secret(name: str) -> str | None:
