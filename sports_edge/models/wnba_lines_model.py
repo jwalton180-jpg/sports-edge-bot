@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 import math
 import re
 from statistics import mean, pstdev
@@ -143,6 +144,7 @@ def _history_for_team(
     return tuple(sorted(out, key=lambda g: g.game_date))
 
 
+@lru_cache(maxsize=64)
 def _resolve_matchup(event_date: date, event_ticker: str) -> _Matchup | None:
     rows = _wnba_schedule_rows()
     event = _match_event_row(rows, event_date, event_ticker)
