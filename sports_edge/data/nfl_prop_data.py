@@ -150,6 +150,7 @@ def _scheduled_opponent(team: str, event_date: date, season: int) -> tuple[str, 
     return matches[0] if len(matches) == 1 else None
 
 
+@lru_cache(maxsize=512)
 def player_context(player_name: str, event_date: date) -> NFLPlayerContext | None:
     season = nfl_season(event_date)
     try:
@@ -190,6 +191,7 @@ def player_context(player_name: str, event_date: date) -> NFLPlayerContext | Non
     )
 
 
+@lru_cache(maxsize=256)
 def defensive_week_values(
     *,
     season: int,
@@ -226,6 +228,7 @@ def defensive_week_values(
     return tuple(grouped[w] for w in sorted(grouped))
 
 
+@lru_cache(maxsize=32)
 def league_defensive_week_values(*, season: int, stat_key: str) -> tuple[float, ...]:
     """Return team-game allowed values across the league for a matchup prior."""
     try:
