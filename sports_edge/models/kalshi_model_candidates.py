@@ -16,10 +16,15 @@ from sports_edge.models.mlb_hr_model import project_mlb_home_runs
 from sports_edge.models.mlb_total_bases_model import project_mlb_total_bases
 from sports_edge.models.mlb_strikeouts_model import project_mlb_pitcher_strikeouts
 from sports_edge.models.nfl_prop_models import (
+    project_nfl_pass_attempts,
+    project_nfl_pass_completions,
+    project_nfl_pass_interceptions,
     project_nfl_passing_tds,
     project_nfl_passing_yards,
     project_nfl_receiving_yards,
     project_nfl_receptions,
+    project_nfl_rush_attempts,
+    project_nfl_rush_receiving_yards,
     project_nfl_rushing_yards,
     project_nfl_touchdowns,
 )
@@ -802,8 +807,43 @@ def _nfl_prop_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandida
             event_date=event_date,
             event_ticker=str(market.get("event_ticker") or ""),
         )
+    elif row.family == "Pass Attempts":
+        projection = project_nfl_pass_attempts(
+            player_name=player_name,
+            milestone_attempts=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Pass Completions":
+        projection = project_nfl_pass_completions(
+            player_name=player_name,
+            milestone_completions=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Pass Interceptions":
+        projection = project_nfl_pass_interceptions(
+            player_name=player_name,
+            milestone_interceptions=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
     elif row.family == "Rushing Yards":
         projection = project_nfl_rushing_yards(
+            player_name=player_name,
+            milestone_yards=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Rush Attempts":
+        projection = project_nfl_rush_attempts(
+            player_name=player_name,
+            milestone_attempts=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Rushing + Receiving Yards":
+        projection = project_nfl_rush_receiving_yards(
             player_name=player_name,
             milestone_yards=milestone,
             event_date=event_date,
@@ -951,7 +991,12 @@ def model_candidates_from_kalshi(
     include_nfl_passing_yards: bool = False,
     max_nfl_passing_players: int | None = None,
     include_nfl_passing_tds: bool = False,
+    include_nfl_pass_attempts: bool = False,
+    include_nfl_pass_completions: bool = False,
+    include_nfl_pass_interceptions: bool = False,
     include_nfl_rushing_yards: bool = False,
+    include_nfl_rush_attempts: bool = False,
+    include_nfl_rush_receiving_yards: bool = False,
     max_nfl_rushing_players: int | None = None,
     include_nfl_receiving_yards: bool = False,
     include_nfl_receptions: bool = False,
@@ -1037,6 +1082,18 @@ def model_candidates_from_kalshi(
                 )
             )
 
+        if sport == "NFL" and include_nfl_pass_attempts:
+            pass_attempt_rows = [row for row in rows if row.family == "Pass Attempts"]
+            all_rows.extend(_nfl_prop_candidates(pass_attempt_rows, max_players=max_nfl_passing_players))
+
+        if sport == "NFL" and include_nfl_pass_completions:
+            pass_completion_rows = [row for row in rows if row.family == "Pass Completions"]
+            all_rows.extend(_nfl_prop_candidates(pass_completion_rows, max_players=max_nfl_passing_players))
+
+        if sport == "NFL" and include_nfl_pass_interceptions:
+            pass_int_rows = [row for row in rows if row.family == "Pass Interceptions"]
+            all_rows.extend(_nfl_prop_candidates(pass_int_rows, max_players=max_nfl_passing_players))
+
         if sport == "NFL" and include_nfl_rushing_yards:
             rushing_rows = [row for row in rows if row.family == "Rushing Yards"]
             all_rows.extend(
@@ -1045,6 +1102,14 @@ def model_candidates_from_kalshi(
                     max_players=max_nfl_rushing_players,
                 )
             )
+
+        if sport == "NFL" and include_nfl_rush_attempts:
+            rush_attempt_rows = [row for row in rows if row.family == "Rush Attempts"]
+            all_rows.extend(_nfl_prop_candidates(rush_attempt_rows, max_players=max_nfl_rushing_players))
+
+        if sport == "NFL" and include_nfl_rush_receiving_yards:
+            rush_receive_rows = [row for row in rows if row.family == "Rushing + Receiving Yards"]
+            all_rows.extend(_nfl_prop_candidates(rush_receive_rows, max_players=max_nfl_rushing_players))
 
         if sport == "NFL" and include_nfl_receiving_yards:
             receiving_rows = [row for row in rows if row.family == "Receiving Yards"]
