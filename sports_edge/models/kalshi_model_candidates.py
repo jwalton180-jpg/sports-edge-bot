@@ -791,24 +791,28 @@ def _nfl_prop_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandida
             player_name=player_name,
             milestone_yards=milestone,
             event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
         )
     elif row.family == "Passing TDs":
         projection = project_nfl_passing_tds(
             player_name=player_name,
             milestone_tds=milestone,
             event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
         )
     elif row.family == "Receiving Yards":
         projection = project_nfl_receiving_yards(
             player_name=player_name,
             milestone_yards=milestone,
             event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
         )
     elif row.family == "Player Touchdowns":
         projection = project_nfl_touchdowns(
             player_name=player_name,
             milestone_tds=milestone,
             event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
         )
 
     if projection is None or not projection.evidence.usable:
