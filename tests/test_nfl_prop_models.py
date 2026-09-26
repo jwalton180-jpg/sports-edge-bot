@@ -120,6 +120,13 @@ def _rb_context():
     )
 
 
+def test_canonical_game_identity_collapses_prop_series_and_participant_order():
+    a = kmc._canonical_game_id("NFL", "NYJ @ DET", EVENT_DATE)
+    b = kmc._canonical_game_id("NFL", "DET vs NYJ", EVENT_DATE)
+    assert a == b
+    assert a.startswith("NFL:2026-09-27:")
+
+
 def test_name_resolver_fails_closed_on_ambiguous_alias():
     current = (
         {"player_id": "1", "player_display_name": "John Michael Smith", "position": "WR"},
