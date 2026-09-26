@@ -108,6 +108,72 @@ def test_rbi_and_hrr_models_use_game_log_dispersion(monkeypatch):
     assert any("game-log" in hrr.evidence.model_name.lower() for _ in [0])
 
 
+def test_run_candidate_cap_counts_valid_modeled_players_not_raw_groups(monkeypatch):
+    calls = []
+
+    def fake_candidate(row):
+        title = row.market["title"]
+        calls.append(title)
+        if title.startswith("Invalid"):
+            return []
+        evidence = ModelEvidence(
+            sport="MLB",
+            model_name="test",
+            fair_probability=0.60,
+            confidence=0.70,
+            sample_size=100,
+        )
+        return [
+            kmc.ParlayCandidateLeg(
+                sport="MLB",
+                event_id=row.market["event_ticker"],
+                event_title="Game",
+                market_key="batter_rbis",
+                market_label="RBIs",
+                selection=title,
+                consensus_probability=0.60,
+                book_count=0,
+                source_age_s=0.0,
+                median_odds=None,
+                kalshi_ticker=row.market["ticker"],
+                kalshi_side="YES",
+                kalshi_price=0.50,
+                kalshi_edge_points=10.0,
+                kalshi_status="MODEL",
+                evidence_class="MODEL",
+                model_probability=0.60,
+                model_confidence=0.70,
+                model_name="test",
+                model_sample_size=100,
+            )
+        ]
+
+    monkeypatch.setattr(kmc, "_mlb_run_candidate_for_market", fake_candidate)
+    rows = []
+    for idx, (name, volume) in enumerate(
+        [("Invalid One", 1000), ("Invalid Two", 900), ("Valid A", 800), ("Valid B", 700), ("Valid C", 600)]
+    ):
+        rows.append(
+            KalshiSportMarket(
+                sport="MLB",
+                family="RBIs",
+                market={
+                    "ticker": f"KX-{idx}",
+                    "event_ticker": f"EV-{idx}",
+                    "title": f"{name}: 1+ RBIs?",
+                    "volume": volume,
+                },
+            )
+        )
+
+    out = kmc._mlb_run_candidates(rows, max_players=2, max_workers=2)
+    assert [row.selection for row in out] == [
+        "Valid A: 1+ RBIs?",
+        "Valid B: 1+ RBIs?",
+    ]
+    assert "Valid C: 1+ RBIs?" not in calls
+
+
 def test_mlb_hrr_market_builds_yes_and_no_candidates(monkeypatch):
     evidence = ModelEvidence(
         sport="MLB",
