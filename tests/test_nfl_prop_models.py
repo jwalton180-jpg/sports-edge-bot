@@ -9,6 +9,8 @@ from sports_edge.models.nfl_prop_models import (
     project_nfl_passing_tds,
     project_nfl_passing_yards,
     project_nfl_receiving_yards,
+    project_nfl_receptions,
+    project_nfl_rushing_yards,
     project_nfl_touchdowns,
 )
 import sports_edge.models.kalshi_model_candidates as kmc
@@ -73,6 +75,36 @@ def _wr_context():
         position="WR",
         team="BUF",
         opponent="LAC",
+        event_date=EVENT_DATE,
+        game_title="LAC @ BUF",
+        current_rows=current,
+        prior_rows=prior,
+    )
+
+
+def _rb_context():
+    current = (
+        {"rushing_yards": "84", "carries": "17", "rushing_tds": "1", "receiving_tds": "0", "targets": "3", "receptions": "2"},
+        {"rushing_yards": "67", "carries": "15", "rushing_tds": "0", "receiving_tds": "0", "targets": "4", "receptions": "3"},
+        {"rushing_yards": "96", "carries": "19", "rushing_tds": "1", "receiving_tds": "0", "targets": "2", "receptions": "2"},
+    )
+    prior = tuple(
+        {
+            "rushing_yards": str(58 + (i % 5) * 6),
+            "carries": str(13 + (i % 4)),
+            "rushing_tds": str(i % 5 == 0 and 1 or 0),
+            "receiving_tds": "0",
+            "targets": "3",
+            "receptions": "2",
+        }
+        for i in range(12)
+    )
+    return NFLPlayerContext(
+        player_id="rb1",
+        player_name="Test Runner",
+        position="RB",
+        team="LAC",
+        opponent="BUF",
         event_date=EVENT_DATE,
         game_title="LAC @ BUF",
         current_rows=current,
@@ -169,6 +201,27 @@ def test_receiving_model_uses_target_role_and_prior(monkeypatch):
     assert any("target share" in factor.lower() for factor in projection.evidence.factors)
 
 
+def test_rushing_yards_probability_falls_as_milestone_rises(monkeypatch):
+    monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: _rb_context())
+    monkeypatch.setattr(npm, "_matchup_factor", lambda *args, **kwargs: (1.0, 3, 110.0))
+    low = project_nfl_rushing_yards(player_name="Test Runner", milestone_yards=50, event_date=EVENT_DATE)
+    high = project_nfl_rushing_yards(player_name="Test Runner", milestone_yards=100, event_date=EVENT_DATE)
+    assert low is not None and high is not None
+    assert low.evidence.fair_probability > high.evidence.fair_probability
+    assert low.market_key == "player_rush_yds"
+    assert low.projected_mean > 0
+
+
+def test_receptions_probability_falls_as_milestone_rises(monkeypatch):
+    monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: _wr_context())
+    low = project_nfl_receptions(player_name="Test Receiver", milestone_receptions=4, event_date=EVENT_DATE)
+    high = project_nfl_receptions(player_name="Test Receiver", milestone_receptions=8, event_date=EVENT_DATE)
+    assert low is not None and high is not None
+    assert low.evidence.fair_probability > high.evidence.fair_probability
+    assert low.market_key == "player_receptions"
+    assert any("catch rate" in factor.lower() for factor in low.evidence.factors)
+
+
 def test_player_touchdown_model_excludes_passing_tds(monkeypatch):
     ctx = _qb_context()
     monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: ctx)
@@ -224,6 +277,84 @@ def test_receiving_yards_kalshi_market_builds_yes_and_no_candidates(monkeypatch)
     assert abs(yes.model_probability - 0.62) < 1e-9
     assert no.selection == "Test Receiver Under 59.5 Receiving Yards"
     assert abs(no.model_probability - 0.38) < 1e-9
+
+
+def test_rushing_yards_kalshi_market_builds_model_candidates(monkeypatch):
+    evidence = ModelEvidence(
+        sport="NFL",
+        model_name="test NFL rushing",
+        fair_probability=0.64,
+        confidence=0.61,
+        sample_size=18,
+    )
+    projection = NFLPropProjection(
+        evidence=evidence,
+        player_name="Test Runner",
+        position="RB",
+        market_key="player_rush_yds",
+        market_label="Rushing Yards",
+        milestone=50,
+        line=49.5,
+        game_title="LAC @ BUF",
+        projected_mean=71.0,
+        projected_sd=27.0,
+    )
+    monkeypatch.setattr(kmc, "project_nfl_rushing_yards", lambda **kwargs: projection)
+    row = KalshiSportMarket(
+        sport="NFL",
+        family="Rushing Yards",
+        market={
+            "ticker": "KXNFLRSHYDS-26SEP27LACBUF-TEST-50",
+            "event_ticker": "KXNFLRSHYDS-26SEP27LACBUF",
+            "series_ticker": "KXNFLRSHYDS",
+            "title": "Test Runner: 50+ rushing yards",
+            "floor_strike": 49.5,
+            "yes_ask_dollars": "0.55",
+            "no_ask_dollars": "0.46",
+        },
+    )
+    out = kmc._nfl_prop_candidates([row])
+    assert len(out) == 2
+    assert any(x.market_key == "player_rush_yds" and x.selection == "Test Runner Over 49.5 Rushing Yards" for x in out)
+
+
+def test_receptions_kalshi_market_builds_model_candidates(monkeypatch):
+    evidence = ModelEvidence(
+        sport="NFL",
+        model_name="test NFL receptions",
+        fair_probability=0.59,
+        confidence=0.60,
+        sample_size=19,
+    )
+    projection = NFLPropProjection(
+        evidence=evidence,
+        player_name="Test Receiver",
+        position="WR",
+        market_key="player_receptions",
+        market_label="Receptions",
+        milestone=5,
+        line=4.5,
+        game_title="LAC @ BUF",
+        projected_mean=5.8,
+        projected_sd=2.0,
+    )
+    monkeypatch.setattr(kmc, "project_nfl_receptions", lambda **kwargs: projection)
+    row = KalshiSportMarket(
+        sport="NFL",
+        family="Receptions",
+        market={
+            "ticker": "KXNFLREC-26SEP27LACBUF-TEST-5",
+            "event_ticker": "KXNFLREC-26SEP27LACBUF",
+            "series_ticker": "KXNFLREC",
+            "title": "Test Receiver: 5+ receptions",
+            "floor_strike": 4.5,
+            "yes_ask_dollars": "0.52",
+            "no_ask_dollars": "0.49",
+        },
+    )
+    out = kmc._nfl_prop_candidates([row])
+    assert len(out) == 2
+    assert any(x.market_key == "player_receptions" and x.selection == "Test Receiver Over 4.5 Receptions" for x in out)
 
 
 def test_touchdown_candidate_rejects_defense_and_no_touchdown_pseudo_players(monkeypatch):

@@ -380,6 +380,174 @@ def project_nfl_receiving_yards(
     )
 
 
+def project_nfl_rushing_yards(
+    *,
+    player_name: str,
+    milestone_yards: int,
+    event_date,
+    event_ticker: str | None = None,
+) -> NFLPropProjection | None:
+    if milestone_yards < 5 or milestone_yards > 250:
+        return None
+    ctx = _context(player_name, event_date, event_ticker)
+    if ctx is None or ctx.position.upper() not in {"QB", "RB", "WR", "FB"}:
+        return None
+
+    cur_yards = _values(ctx.current_rows, "rushing_yards")
+    prior_yards = _values(ctx.prior_rows, "rushing_yards")
+    cur_carries = _values(ctx.current_rows, "carries")
+    prior_carries = _values(ctx.prior_rows, "carries")
+
+    base_yards, current_weight = _blend_mean(cur_yards, prior_yards)
+    expected_carries, _ = _blend_mean(cur_carries, prior_carries)
+
+    cur_carries_total = sum(cur_carries)
+    prior_carries_total = sum(prior_carries)
+    cur_ypc = sum(cur_yards) / cur_carries_total if cur_carries_total > 0 else 0.0
+    prior_ypc = sum(prior_yards) / prior_carries_total if prior_carries_total > 0 else 0.0
+    if prior_ypc > 0 and cur_ypc > 0:
+        ypc = current_weight * cur_ypc + (1.0 - current_weight) * prior_ypc
+    else:
+        ypc = cur_ypc or prior_ypc
+
+    opportunity_projection = expected_carries * ypc if ypc > 0 else base_yards
+    mean_yards = 0.55 * base_yards + 0.45 * opportunity_projection
+    matchup, matchup_games, opp_allowed = _matchup_factor(ctx, "rushing_yards")
+    projected = clamp(mean_yards * matchup, -5.0, 190.0)
+    sd = _weighted_sd(cur_yards, prior_yards, 16.0)
+    probability = normal_over_probability(projected, sd, float(milestone_yards) - 0.5)
+
+    recent_yards = _recent(cur_yards)
+    recent_carries = _recent(cur_carries)
+    factors = [
+        f"Current rushing yards {mean(cur_yards):.1f}/game over {len(cur_yards)} game(s)",
+        f"Expected carries {expected_carries:.1f}; blended yards/carry {ypc:.2f}",
+        f"Recent rushing yards {mean(recent_yards):.1f}/game on {mean(recent_carries):.1f} carries" if recent_yards and recent_carries else "Recent rushing sample unavailable",
+        f"Opponent rushing-yard factor {matchup:.3f} from {matchup_games} current game(s)",
+        f"Projected mean {projected:.1f} yards with {sd:.1f} yard weekly volatility",
+    ]
+    if ctx.prior_rows:
+        factors.append(f"Prior rushing baseline {mean(prior_yards):.1f}/game over {len(prior_yards)} game(s)")
+
+    sample, confidence = _sample_and_confidence(
+        ctx,
+        matchup_games=matchup_games,
+        role_signal=clamp(expected_carries / 15.0, 0.0, 1.0),
+    )
+    warnings = []
+    if len(ctx.current_rows) < 4:
+        warnings.append("early-season NFL sample; prior-year baseline receives material weight")
+    if expected_carries < 4.0:
+        warnings.append("low projected rushing volume")
+
+    evidence = ModelEvidence(
+        sport="NFL",
+        model_name="NFL Rushing Yards: carries + efficiency + prior + opponent defense",
+        fair_probability=probability,
+        confidence=confidence,
+        sample_size=sample,
+        factors=tuple(factors),
+        warnings=tuple(warnings),
+    )
+    return NFLPropProjection(
+        evidence=evidence,
+        player_name=ctx.player_name,
+        position=ctx.position,
+        market_key="player_rush_yds",
+        market_label="Rushing Yards",
+        milestone=milestone_yards,
+        line=float(milestone_yards) - 0.5,
+        game_title=ctx.game_title,
+        projected_mean=projected,
+        projected_sd=sd,
+    )
+
+
+def project_nfl_receptions(
+    *,
+    player_name: str,
+    milestone_receptions: int,
+    event_date,
+    event_ticker: str | None = None,
+) -> NFLPropProjection | None:
+    if milestone_receptions < 1 or milestone_receptions > 15:
+        return None
+    ctx = _context(player_name, event_date, event_ticker)
+    if ctx is None or ctx.position.upper() not in {"WR", "TE", "RB", "FB"}:
+        return None
+
+    cur_rec = _values(ctx.current_rows, "receptions")
+    prior_rec = _values(ctx.prior_rows, "receptions")
+    cur_targets = _values(ctx.current_rows, "targets")
+    prior_targets = _values(ctx.prior_rows, "targets")
+
+    base_rec, current_weight = _blend_mean(cur_rec, prior_rec)
+    expected_targets, _ = _blend_mean(cur_targets, prior_targets)
+
+    cur_targets_total = sum(cur_targets)
+    prior_targets_total = sum(prior_targets)
+    cur_catch = sum(cur_rec) / cur_targets_total if cur_targets_total > 0 else 0.0
+    prior_catch = sum(prior_rec) / prior_targets_total if prior_targets_total > 0 else 0.0
+    if prior_catch > 0 and cur_catch > 0:
+        catch_rate = current_weight * cur_catch + (1.0 - current_weight) * prior_catch
+    else:
+        catch_rate = cur_catch or prior_catch
+    catch_rate = clamp(catch_rate, 0.35, 0.90)
+
+    opportunity_projection = expected_targets * catch_rate
+    projected = clamp(0.55 * base_rec + 0.45 * opportunity_projection, 0.2, 12.0)
+    sd = _weighted_sd(cur_rec, prior_rec, 1.35)
+    probability = normal_over_probability(
+        projected,
+        sd,
+        float(milestone_receptions) - 0.5,
+    )
+
+    target_shares = [_f(r, "target_share") for r in ctx.current_rows if _f(r, "target_share") > 0]
+    factors = [
+        f"Current receptions {mean(cur_rec):.2f}/game over {len(cur_rec)} game(s)",
+        f"Expected targets {expected_targets:.1f}; blended catch rate {catch_rate:.1%}",
+        f"Projected mean {projected:.2f} receptions with {sd:.2f} weekly volatility",
+    ]
+    if target_shares:
+        factors.append(f"Current target share {mean(target_shares):.1%}")
+    if ctx.prior_rows:
+        factors.append(f"Prior receptions baseline {mean(prior_rec):.2f}/game over {len(prior_rec)} game(s)")
+
+    sample, confidence = _sample_and_confidence(
+        ctx,
+        matchup_games=0,
+        role_signal=clamp(expected_targets / 8.0, 0.0, 1.0),
+    )
+    warnings = []
+    if len(ctx.current_rows) < 4:
+        warnings.append("early-season NFL sample; prior-year baseline receives material weight")
+    if expected_targets < 3.0:
+        warnings.append("low projected target volume")
+
+    evidence = ModelEvidence(
+        sport="NFL",
+        model_name="NFL Receptions: targets + catch rate + prior-season role",
+        fair_probability=probability,
+        confidence=confidence,
+        sample_size=sample,
+        factors=tuple(factors),
+        warnings=tuple(warnings),
+    )
+    return NFLPropProjection(
+        evidence=evidence,
+        player_name=ctx.player_name,
+        position=ctx.position,
+        market_key="player_receptions",
+        market_label="Receptions",
+        milestone=milestone_receptions,
+        line=float(milestone_receptions) - 0.5,
+        game_title=ctx.game_title,
+        projected_mean=projected,
+        projected_sd=sd,
+    )
+
+
 def project_nfl_touchdowns(
     *,
     player_name: str,

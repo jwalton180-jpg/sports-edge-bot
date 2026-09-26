@@ -37,6 +37,26 @@ def test_mlb_total_bases_long_series_is_not_misclassified_as_game_total():
     assert classify_kalshi_market(row) == ("MLB", "Total Bases")
 
 
+def test_nfl_live_rushing_yards_series_is_classified():
+    row = market(
+        "KXNFLRSHYDS-26SEP27LACBUF-PLAYER-50",
+        "Player A: 50+ rushing yards",
+        event="NFLRUSH1",
+    )
+    row["series_ticker"] = "KXNFLRSHYDS"
+    assert classify_kalshi_market(row) == ("NFL", "Rushing Yards")
+
+
+def test_nfl_live_receptions_series_is_classified():
+    row = market(
+        "KXNFLREC-26SEP27LACBUF-PLAYER-5",
+        "Player A: 5+ receptions",
+        event="NFLREC1",
+    )
+    row["series_ticker"] = "KXNFLREC"
+    assert classify_kalshi_market(row) == ("NFL", "Receptions")
+
+
 def test_futures_are_excluded_even_with_sport_prefix():
     future = market("KXMLBGAME-CHAMP", "Will Los Angeles win the championship before 2030?")
     assert classify_kalshi_market(future) is None
