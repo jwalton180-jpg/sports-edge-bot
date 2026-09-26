@@ -1232,7 +1232,7 @@ elif view == "Parlay Generator":
             use_all_mlb_models = preset in {"Best Available", "Mixed Sports"}
             use_all_nfl_models = preset in {"Best Available", "Mixed Sports"}
             focused_mlb_cap = max(12, min(24, target * 3))
-            broad_mlb_cap = max(8, min(12, target * 2))
+            broad_mlb_cap = max(10, min(16, target * 3))
             pitcher_cap = max(8, min(16, target * 2))
             focused_nfl_cap = max(12, min(24, target * 3))
             broad_nfl_cap = max(12, min(18, target * 3))
