@@ -747,20 +747,57 @@ def _mlb_run_candidates(
         key=lambda group: max((_market_volume(r.market) for r in group), default=0.0),
         reverse=True,
     )
-    if max_players is not None and max_players > 0:
-        ranked = ranked[:max_players]
+    if not ranked:
+        return []
 
+    def build_group(group: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
+        group_rows: list[ParlayCandidateLeg] = []
+        for row in group:
+            group_rows.extend(_mlb_run_candidate_for_market(row))
+        return group_rows
+
+    # max_players means valid modeled players, not raw high-volume groups.
+    # Live/completed/unresolvable groups can sit at the top of Kalshi volume;
+    # applying the cap before model eligibility can hide valid pregame players.
+    if max_players is not None and max_players > 0:
+        out: list[ParlayCandidateLeg] = []
+        valid_players = 0
+        batch_size = max(1, max_workers)
+        for start in range(0, len(ranked), batch_size):
+            batch = ranked[start:start + batch_size]
+            worker_count = max(1, min(max_workers, len(batch)))
+            batch_results: list[list[ParlayCandidateLeg]] = [[] for _ in batch]
+            with ThreadPoolExecutor(max_workers=worker_count) as pool:
+                future_to_index = {
+                    pool.submit(build_group, group): idx
+                    for idx, group in enumerate(batch)
+                }
+                for future in as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    try:
+                        batch_results[idx] = future.result()
+                    except Exception:
+                        batch_results[idx] = []
+
+            for group_rows in batch_results:
+                if not group_rows:
+                    continue
+                out.extend(group_rows)
+                valid_players += 1
+                if valid_players >= max_players:
+                    return out
+        return out
+
+    # Unbounded research calls retain event grouping so schedule/context cache
+    # work is shared within a game instead of fanning out duplicate requests.
     by_event: dict[str, list[list[KalshiSportMarket]]] = {}
     for group in ranked:
         by_event.setdefault(_event_key(group[0].market), []).append(group)
-    if not by_event:
-        return []
 
     def build_event(player_groups: list[list[KalshiSportMarket]]) -> list[ParlayCandidateLeg]:
         event_rows: list[ParlayCandidateLeg] = []
         for group in player_groups:
-            for row in group:
-                event_rows.extend(_mlb_run_candidate_for_market(row))
+            event_rows.extend(build_group(group))
         return event_rows
 
     out: list[ParlayCandidateLeg] = []
