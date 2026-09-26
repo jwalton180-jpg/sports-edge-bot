@@ -13,6 +13,7 @@ from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.live_board import market_side_probability
 from sports_edge.models.mlb_hits_model import project_mlb_hits
 from sports_edge.models.mlb_hr_model import project_mlb_home_runs
+from sports_edge.models.mlb_run_production_model import project_mlb_hrr, project_mlb_rbis
 from sports_edge.models.mlb_total_bases_model import project_mlb_total_bases
 from sports_edge.models.mlb_strikeouts_model import project_mlb_pitcher_strikeouts
 from sports_edge.models.nfl_prop_models import (
@@ -670,6 +671,182 @@ def _mlb_tb_candidates(
     return out
 
 
+def _mlb_run_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
+    market = row.market
+    title = str(market.get("title") or "")
+    player_name = title.split(":", 1)[0].strip()
+    if not player_name:
+        return []
+
+    floor = market.get("floor_strike")
+    try:
+        milestone = int(float(floor) + 0.5)
+    except (TypeError, ValueError):
+        match = re.search(r":\s*(\d+)\+", title)
+        if not match:
+            return []
+        milestone = int(match.group(1))
+
+    event_date = _parse_date(market)
+    if row.family == "RBIs":
+        projection = project_mlb_rbis(
+            player_name=player_name,
+            milestone_rbis=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Hits + Runs + RBIs":
+        projection = project_mlb_hrr(
+            player_name=player_name,
+            milestone_hrr=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    else:
+        return []
+
+    if projection is None or not projection.evidence.usable:
+        return []
+
+    yes_price = market_side_probability(market, "YES")
+    no_price = market_side_probability(market, "NO")
+    base = projection.evidence
+    no_evidence = replace(
+        base,
+        fair_probability=1.0 - base.fair_probability,
+        factors=tuple([
+            f"Complement of {projection.player_name} {milestone}+ {projection.market_label} model probability",
+            *base.factors,
+        ]),
+    )
+
+    out: list[ParlayCandidateLeg] = []
+    for side, price, evidence, selection_side in (
+        ("YES", yes_price, base, "Over"),
+        ("NO", no_price, no_evidence, "Under"),
+    ):
+        if price is None:
+            continue
+        selection = (
+            f"{projection.player_name} {selection_side} "
+            f"{projection.line:g} {projection.market_label}"
+        )
+        out.append(
+            ParlayCandidateLeg(
+                sport="MLB",
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    event_date,
+                ),
+                event_title=projection.game_title,
+                market_key=projection.market_key,
+                market_label=projection.market_label,
+                selection=selection,
+                consensus_probability=evidence.fair_probability,
+                book_count=0,
+                source_age_s=0.0,
+                median_odds=None,
+                kalshi_ticker=str(market.get("ticker") or ""),
+                kalshi_side=side,
+                kalshi_price=price,
+                kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                kalshi_status="MODEL",
+                evidence_class="MODEL",
+                model_probability=evidence.fair_probability,
+                model_confidence=evidence.confidence,
+                model_name=evidence.model_name,
+                model_sample_size=evidence.sample_size,
+                model_reasons=evidence.factors,
+                model_warnings=evidence.warnings,
+            )
+        )
+    return out
+
+
+def _mlb_run_candidates(
+    rows: list[KalshiSportMarket],
+    *,
+    max_players: int | None = None,
+    max_workers: int = 4,
+) -> list[ParlayCandidateLeg]:
+    groups: dict[tuple[str, str], list[KalshiSportMarket]] = {}
+    for row in rows:
+        market = row.market
+        title = str(market.get("title") or "")
+        player_name = title.split(":", 1)[0].strip()
+        if not player_name:
+            continue
+        groups.setdefault((_event_key(market), normalize(player_name)), []).append(row)
+
+    ranked = sorted(
+        groups.values(),
+        key=lambda group: max((_market_volume(r.market) for r in group), default=0.0),
+        reverse=True,
+    )
+    if not ranked:
+        return []
+
+    def build_group(group: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
+        group_rows: list[ParlayCandidateLeg] = []
+        for row in group:
+            group_rows.extend(_mlb_run_candidate_for_market(row))
+        return group_rows
+
+    # The cap counts valid modeled players, not raw high-volume player groups.
+    # Completed/live/unresolvable groups often lead the volume ranking and must
+    # not prevent the scan from reaching eligible pregame players behind them.
+    if max_players is not None and max_players > 0:
+        out: list[ParlayCandidateLeg] = []
+        valid_players = 0
+        batch_size = max(1, max_workers)
+        for start in range(0, len(ranked), batch_size):
+            batch = ranked[start:start + batch_size]
+            worker_count = max(1, min(max_workers, len(batch)))
+            batch_results: list[list[ParlayCandidateLeg]] = [[] for _ in batch]
+            with ThreadPoolExecutor(max_workers=worker_count) as pool:
+                future_to_index = {
+                    pool.submit(build_group, group): idx
+                    for idx, group in enumerate(batch)
+                }
+                for future in as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    try:
+                        batch_results[idx] = future.result()
+                    except Exception:
+                        batch_results[idx] = []
+
+            for group_rows in batch_results:
+                if not group_rows:
+                    continue
+                out.extend(group_rows)
+                valid_players += 1
+                if valid_players >= max_players:
+                    return out
+        return out
+
+    by_event: dict[str, list[list[KalshiSportMarket]]] = {}
+    for group in ranked:
+        by_event.setdefault(_event_key(group[0].market), []).append(group)
+
+    def build_event(player_groups: list[list[KalshiSportMarket]]) -> list[ParlayCandidateLeg]:
+        event_rows: list[ParlayCandidateLeg] = []
+        for group in player_groups:
+            event_rows.extend(build_group(group))
+        return event_rows
+
+    out: list[ParlayCandidateLeg] = []
+    worker_count = max(1, min(max_workers, len(by_event)))
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        futures = [pool.submit(build_event, groups) for groups in by_event.values()]
+        for future in as_completed(futures):
+            try:
+                out.extend(future.result())
+            except Exception:
+                continue
+    return out
+
+
 def _mlb_k_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
     market = row.market
     title = str(market.get("title") or "")
@@ -1020,6 +1197,10 @@ def model_candidates_from_kalshi(
     max_mlb_hr_players: int | None = None,
     include_mlb_total_bases: bool = False,
     max_mlb_tb_players: int | None = None,
+    include_mlb_rbis: bool = False,
+    max_mlb_rbi_players: int | None = None,
+    include_mlb_hrr: bool = False,
+    max_mlb_hrr_players: int | None = None,
     include_mlb_strikeouts: bool = False,
     max_mlb_k_pitchers: int | None = None,
     include_nfl_passing_yards: bool = False,
@@ -1086,6 +1267,24 @@ def model_candidates_from_kalshi(
                 _mlb_tb_candidates(
                     tb_rows,
                     max_players=max_mlb_tb_players,
+                )
+            )
+
+        if sport == "MLB" and include_mlb_rbis:
+            rbi_rows = [row for row in rows if row.family == "RBIs"]
+            all_rows.extend(
+                _mlb_run_candidates(
+                    rbi_rows,
+                    max_players=max_mlb_rbi_players,
+                )
+            )
+
+        if sport == "MLB" and include_mlb_hrr:
+            hrr_rows = [row for row in rows if row.family == "Hits + Runs + RBIs"]
+            all_rows.extend(
+                _mlb_run_candidates(
+                    hrr_rows,
+                    max_players=max_mlb_hrr_players,
                 )
             )
 
