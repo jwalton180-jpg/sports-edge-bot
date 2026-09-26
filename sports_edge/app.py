@@ -679,7 +679,7 @@ def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
     if sport_filter_value == "NBA":
         return ["Best Available", "NBA Points", "NBA Rebounds", "NBA Assists", "NBA Threes", "NBA PRA"]
     if sport_filter_value == "WNBA":
-        return ["Best Available", "WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"]
+        return ["Best Available", "WNBA Game Markets", "WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"]
     return [
         "Best Available",
         "Mixed Sports",
@@ -1256,6 +1256,7 @@ elif view == "Parlay Generator":
         with st.spinner("Running sport models against current Kalshi markets…"):
             use_all_mlb_models = preset in {"Best Available", "Mixed Sports"}
             use_all_nfl_models = preset in {"Best Available", "Mixed Sports"}
+            use_wnba_game_lines = preset in {"Best Available", "Mixed Sports", "WNBA Game Markets"}
             focused_mlb_cap = max(12, min(24, target * 3))
             broad_mlb_cap = max(10, min(16, target * 3))
             pitcher_cap = max(8, min(16, target * 2))
@@ -1331,6 +1332,7 @@ elif view == "Parlay Generator":
                     else broad_nfl_cap if use_all_nfl_models
                     else None
                 ),
+                include_wnba_game_lines=use_wnba_game_lines,
             )
 
             supported_model_presets = {
@@ -1342,6 +1344,7 @@ elif view == "Parlay Generator":
                 "NFL Rushing",
                 "NFL Receiving",
                 "NFL Touchdowns",
+                "WNBA Game Markets",
                 "MLB Hits",
                 "MLB Home Runs",
                 "MLB Total Bases",
@@ -1408,6 +1411,11 @@ elif view == "Parlay Generator":
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "NFL" and row.market_key == "player_anytime_td"
+                ]
+            elif preset == "WNBA Game Markets":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "WNBA" and row.market_key in {"model_h2h", "wnba_spread", "wnba_game_total", "wnba_team_total"}
                 ]
             elif preset not in supported_model_presets:
                 model_candidates = []
@@ -1553,7 +1561,7 @@ elif view == "Parlay Generator":
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB RBIs", "MLB H+R+RBI", "MLB Strikeouts"}:
+            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns", "WNBA Game Markets", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB RBIs", "MLB H+R+RBI", "MLB Strikeouts"}:
                 st.warning(
                     "This player-prop family does not yet have a production sport-specific model. "
                     "Sports Edge is intentionally refusing book-only prop picks."
@@ -1619,7 +1627,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, RBIs, H+R+RBI, and Pitcher Strikeouts use player/recent/game-log/opponent/probable-starter context; NFL Passing Yards/TDs/Attempts/Completions/Interceptions, Rushing Yards/Attempts, Rushing + Receiving Yards, Receiving Yards, Receptions, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, RBIs, H+R+RBI, and Pitcher Strikeouts use player/recent/game-log/opponent/probable-starter context; NFL Passing Yards/TDs/Attempts/Completions/Interceptions, Rushing Yards/Attempts, Rushing + Receiving Yards, Receiving Yards, Receptions, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines; WNBA spreads/totals add scoring, defense, recent form, home court, and empirical game volatility. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
