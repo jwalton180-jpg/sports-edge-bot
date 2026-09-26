@@ -42,9 +42,9 @@ jobs:
               include_mlb_home_runs=False,
               include_mlb_total_bases=False,
               include_mlb_rbis=True,
-              max_mlb_rbi_players=8,
+              max_mlb_rbi_players=24,
               include_mlb_hrr=True,
-              max_mlb_hrr_players=8,
+              max_mlb_hrr_players=24,
               include_mlb_strikeouts=False,
           )
           assessments = [assess_leg(c, "best") for c in candidates]
@@ -54,6 +54,19 @@ jobs:
           print("mlb_markets", len(rows))
           print("rbi_markets", family_counts.get("RBIs", 0))
           print("hrr_markets", family_counts.get("Hits + Runs + RBIs", 0))
+          for family_name in ("RBIs", "Hits + Runs + RBIs"):
+              samples = [r for r in rows if r.family == family_name][:8]
+              for sample in samples:
+                  m = sample.market
+                  print("SAMPLE", family_name, {
+                      "title": m.get("title"),
+                      "ticker": m.get("ticker"),
+                      "event_ticker": m.get("event_ticker"),
+                      "series_ticker": m.get("series_ticker"),
+                      "floor_strike": m.get("floor_strike"),
+                      "yes_sub_title": m.get("yes_sub_title"),
+                      "subtitle": m.get("subtitle"),
+                  })
           print("model_candidates", len(candidates))
           print("candidate_by_key", dict(Counter(c.market_key for c in candidates)))
           print("qualified_by_key", dict(Counter(a.leg.market_key for a in qualified)))
