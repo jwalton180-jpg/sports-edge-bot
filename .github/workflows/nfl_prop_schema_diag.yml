@@ -40,11 +40,11 @@ jobs:
               sport_filter="NFL",
               include_nfl_passing_yards=True,
               include_nfl_passing_tds=True,
-              max_nfl_passing_players=14,
+              max_nfl_passing_players=12,
               include_nfl_receiving_yards=True,
-              max_nfl_receiving_players=24,
+              max_nfl_receiving_players=12,
               include_nfl_touchdowns=True,
-              max_nfl_td_players=24,
+              max_nfl_td_players=12,
           )
           assessments = [assess_leg(c, "best") for c in candidates]
           qualified = [a for a in assessments if a.qualified]
