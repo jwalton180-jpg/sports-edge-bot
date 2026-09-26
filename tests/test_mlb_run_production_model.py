@@ -108,6 +108,54 @@ def test_rbi_and_hrr_models_use_game_log_dispersion(monkeypatch):
     assert any("game-log" in hrr.evidence.model_name.lower() for _ in [0])
 
 
+def test_mlb_hrr_market_builds_yes_and_no_candidates(monkeypatch):
+    evidence = ModelEvidence(
+        sport="MLB",
+        model_name="test MLB H+R+RBI",
+        fair_probability=0.61,
+        confidence=0.70,
+        sample_size=150,
+        factors=("game-log dispersion",),
+    )
+    projection = MLBRunProductionProjection(
+        evidence=evidence,
+        player_name="Test Hitter",
+        market_key="batter_hrr",
+        market_label="Hits + Runs + RBIs",
+        milestone=2,
+        line=1.5,
+        game_title="Home vs Away",
+        probable_pitcher_name="Starter",
+        expected_plate_appearances=4.3,
+        projected_mean=2.2,
+        projected_variance=3.4,
+    )
+    monkeypatch.setattr(kmc, "project_mlb_hrr", lambda **kwargs: projection)
+
+    row = KalshiSportMarket(
+        sport="MLB",
+        family="Hits + Runs + RBIs",
+        market={
+            "ticker": "KXMLBHRR-26SEP26HOMEAWAY-TEST-2",
+            "event_ticker": "KXMLBHRR-26SEP26HOMEAWAY",
+            "series_ticker": "KXMLBHRR",
+            "title": "Test Hitter: 2+ hits + runs + RBIs?",
+            "floor_strike": 1.5,
+            "yes_ask_dollars": "0.54",
+            "no_ask_dollars": "0.47",
+        },
+    )
+    out = kmc._mlb_run_candidates([row])
+    assert len(out) == 2
+    yes = next(x for x in out if x.kalshi_side == "YES")
+    no = next(x for x in out if x.kalshi_side == "NO")
+    assert yes.selection == "Test Hitter Over 1.5 Hits + Runs + RBIs"
+    assert yes.market_key == "batter_hrr"
+    assert abs(yes.model_probability - 0.61) < 1e-9
+    assert no.selection == "Test Hitter Under 1.5 Hits + Runs + RBIs"
+    assert abs(no.model_probability - 0.39) < 1e-9
+
+
 def test_mlb_rbi_market_builds_yes_and_no_candidates(monkeypatch):
     evidence = ModelEvidence(
         sport="MLB",
