@@ -27,6 +27,16 @@ def test_kalshi_sport_classification_by_series():
     assert classify_kalshi_market(market("KXATPMATCH-26SEP24-AB", "Player A vs Player B")) == ("Tennis", "Match Winner")
 
 
+def test_mlb_total_bases_long_series_is_not_misclassified_as_game_total():
+    row = market(
+        "KXMLBTOTALBASE-26SEP25-PLAYER-2",
+        "Player A: 2+ total bases?",
+        event="MLBTB1",
+    )
+    row["series_ticker"] = "KXMLBTOTALBASE"
+    assert classify_kalshi_market(row) == ("MLB", "Total Bases")
+
+
 def test_futures_are_excluded_even_with_sport_prefix():
     future = market("KXMLBGAME-CHAMP", "Will Los Angeles win the championship before 2030?")
     assert classify_kalshi_market(future) is None

@@ -670,7 +670,7 @@ def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
     if sport_filter_value == "Tennis":
         return ["Tennis Moneyline", "Best Available"]
     if sport_filter_value == "MLB":
-        return ["Best Available", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"]
+        return ["Best Available", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB Strikeouts"]
     if sport_filter_value == "NFL":
         return ["Best Available", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns"]
     if sport_filter_value == "NBA":
@@ -683,6 +683,7 @@ def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
         "Tennis Moneyline",
         "MLB Hits",
         "MLB Home Runs",
+        "MLB Total Bases",
         "MLB Strikeouts",
         "NFL Game Markets",
         "NFL Passing",
@@ -982,6 +983,8 @@ elif view == "Player Props":
             model_family_key = "batter_hits"
         elif sport_filter == "MLB" and family == "Home Runs":
             model_family_key = "batter_home_runs"
+        elif sport_filter == "MLB" and family == "Total Bases":
+            model_family_key = "batter_total_bases"
         elif sport_filter == "MLB" and family == "Strikeouts":
             model_family_key = "pitcher_strikeouts"
 
@@ -1001,6 +1004,8 @@ elif view == "Player Props":
                         max_mlb_hit_players=24 if model_family_key == "batter_hits" else None,
                         include_mlb_home_runs=(model_family_key == "batter_home_runs"),
                         max_mlb_hr_players=24 if model_family_key == "batter_home_runs" else None,
+                        include_mlb_total_bases=(model_family_key == "batter_total_bases"),
+                        max_mlb_tb_players=24 if model_family_key == "batter_total_bases" else None,
                         include_mlb_strikeouts=(model_family_key == "pitcher_strikeouts"),
                         max_mlb_k_pitchers=16 if model_family_key == "pitcher_strikeouts" else None,
                     )
@@ -1199,25 +1204,35 @@ elif view == "Parlay Generator":
 
     if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
         with st.spinner("Running sport models against current Kalshi markets…"):
+            use_all_mlb_models = preset in {"Best Available", "Mixed Sports"}
+            focused_mlb_cap = max(12, min(24, target * 3))
+            broad_mlb_cap = max(8, min(12, target * 2))
+            pitcher_cap = max(8, min(16, target * 2))
+
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
                 sport_filter=sport_filter,
-                include_mlb_hits=(preset == "MLB Hits"),
+                include_mlb_hits=(preset == "MLB Hits" or use_all_mlb_models),
                 max_mlb_hit_players=(
-                    max(12, min(24, target * 3))
-                    if preset == "MLB Hits"
+                    focused_mlb_cap if preset == "MLB Hits"
+                    else broad_mlb_cap if use_all_mlb_models
                     else None
                 ),
-                include_mlb_home_runs=(preset == "MLB Home Runs"),
+                include_mlb_home_runs=(preset == "MLB Home Runs" or use_all_mlb_models),
                 max_mlb_hr_players=(
-                    max(12, min(24, target * 3))
-                    if preset == "MLB Home Runs"
+                    focused_mlb_cap if preset == "MLB Home Runs"
+                    else broad_mlb_cap if use_all_mlb_models
                     else None
                 ),
-                include_mlb_strikeouts=(preset == "MLB Strikeouts"),
+                include_mlb_total_bases=(preset == "MLB Total Bases" or use_all_mlb_models),
+                max_mlb_tb_players=(
+                    focused_mlb_cap if preset == "MLB Total Bases"
+                    else broad_mlb_cap if use_all_mlb_models
+                    else None
+                ),
+                include_mlb_strikeouts=(preset == "MLB Strikeouts" or use_all_mlb_models),
                 max_mlb_k_pitchers=(
-                    max(8, min(16, target * 2))
-                    if preset == "MLB Strikeouts"
+                    pitcher_cap if (preset == "MLB Strikeouts" or use_all_mlb_models)
                     else None
                 ),
             )
@@ -1229,6 +1244,7 @@ elif view == "Parlay Generator":
                 "NFL Game Markets",
                 "MLB Hits",
                 "MLB Home Runs",
+                "MLB Total Bases",
                 "MLB Strikeouts",
             }
             if preset == "MLB Hits":
@@ -1240,6 +1256,11 @@ elif view == "Parlay Generator":
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "MLB" and row.market_key == "batter_home_runs"
+                ]
+            elif preset == "MLB Total Bases":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "MLB" and row.market_key == "batter_total_bases"
                 ]
             elif preset == "MLB Strikeouts":
                 model_candidates = [
@@ -1400,7 +1421,7 @@ elif view == "Parlay Generator":
             st.markdown("### Kalshi combo blueprint")
             st.code(combo_blueprint([row.leg for row in result.legs]), language=None)
         else:
-            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "MLB Hits", "MLB Home Runs", "MLB Strikeouts"}:
+            if preset not in {"Best Available", "Mixed Sports", "Tennis Moneyline", "NFL Game Markets", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB Strikeouts"}:
                 st.warning(
                     "This player-prop family does not yet have a production sport-specific model. "
                     "Sports Edge is intentionally refusing book-only prop picks."
@@ -1466,7 +1487,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
