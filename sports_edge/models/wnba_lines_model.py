@@ -193,8 +193,10 @@ def _which_team(matchup: _Matchup, name: str) -> str | None:
         return None
     away_aliases = _team_aliases(matchup.away_name, matchup.away_abbr)
     home_aliases = _team_aliases(matchup.home_name, matchup.home_abbr)
-    away_hit = q in away_aliases or any(q == x for x in away_aliases)
-    home_hit = q in home_aliases or any(q == x for x in home_aliases)
+    away_full = normalize(matchup.away_name)
+    home_full = normalize(matchup.home_name)
+    away_hit = q in away_aliases or away_full.startswith(q + " ") or q.startswith(away_full + " ")
+    home_hit = q in home_aliases or home_full.startswith(q + " ") or q.startswith(home_full + " ")
     if away_hit == home_hit:
         return None
     return "away" if away_hit else "home"
