@@ -1,0 +1,88 @@
+name: NFL prop schema diagnostic
+
+on:
+  push:
+    branches: [nfl-prop-models-20260925]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect current Kalshi NFL props and nflverse player schema
+        run: |
+          python - <<'PY'
+          import csv, io, requests
+          from collections import Counter
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          result = fetch_supported_sport_catalog(
+              sports=("NFL",),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped = group_kalshi_sports(result.markets)
+          rows = grouped.get("NFL", [])
+          print("catalog_error", result.error)
+          print("catalog_complete", result.cursor_exhausted)
+          print("nfl_markets", len(rows))
+          print("family_counts", dict(Counter(r.family for r in rows)))
+
+          wanted = {
+              "Passing Yards", "Passing TDs", "Rushing Yards", "Receiving Yards",
+              "Receptions", "Player Touchdowns", "First Touchdown",
+          }
+          seen = Counter()
+          for row in rows:
+              if row.family not in wanted or seen[row.family] >= 5:
+                  continue
+              m = row.market
+              print("KALSHI_SAMPLE", row.family, {
+                  "ticker": m.get("ticker"),
+                  "event_ticker": m.get("event_ticker"),
+                  "series_ticker": m.get("series_ticker"),
+                  "title": m.get("title"),
+                  "subtitle": m.get("subtitle"),
+                  "event_title": m.get("event_title"),
+                  "yes_sub_title": m.get("yes_sub_title"),
+                  "no_sub_title": m.get("no_sub_title"),
+                  "floor_strike": m.get("floor_strike"),
+                  "cap_strike": m.get("cap_strike"),
+                  "yes_ask_dollars": m.get("yes_ask_dollars"),
+                  "no_ask_dollars": m.get("no_ask_dollars"),
+              })
+              seen[row.family] += 1
+
+          url = "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_2026.csv"
+          resp = requests.get(url, timeout=30)
+          resp.raise_for_status()
+          reader = csv.DictReader(io.StringIO(resp.text))
+          player_rows = list(reader)
+          print("NFLVERSE_FIELDS", reader.fieldnames)
+          print("NFLVERSE_ROWS", len(player_rows))
+          weeks = sorted({int(float(r["week"])) for r in player_rows if r.get("week")})
+          print("NFLVERSE_WEEKS", weeks)
+          offense = [
+              r for r in player_rows
+              if r.get("position") in {"QB","RB","WR","TE"}
+              and any(float(r.get(k) or 0) > 0 for k in ("attempts","carries","targets","receptions"))
+          ]
+          for r in offense[:8]:
+              print("NFLVERSE_SAMPLE", {
+                  k:r.get(k) for k in (
+                      "player_id","player_display_name","position","week","team","opponent_team",
+                      "completions","attempts","passing_yards","passing_tds","carries","rushing_yards",
+                      "rushing_tds","targets","receptions","receiving_yards","receiving_tds",
+                      "passing_epa","passing_cpoe","receiving_air_yards","receiving_yards_after_catch",
+                  )
+              })
+          PY
