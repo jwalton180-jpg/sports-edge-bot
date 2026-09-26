@@ -8,21 +8,26 @@ on:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt pytest
-      - name: Audit live production-depth MLB RBI and H+R+RBI
+      - name: Audit live MLB run-prop slate state
         run: |
           python - <<'PY'
           from collections import Counter
+          from datetime import datetime, timezone
           from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.data.mlb_prop_data import (
+              find_player_game,
+              game_context_for_hitter,
+              resolve_player,
+          )
           from sports_edge.models.kalshi_sports import group_kalshi_sports
-          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
-          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+          from sports_edge.models.kalshi_model_candidates import _parse_date
 
           result = fetch_supported_sport_catalog(
               sports=("MLB",),
@@ -31,91 +36,74 @@ jobs:
               max_workers=6,
               request_interval_s=0.15,
           )
-          grouped = group_kalshi_sports(result.markets)
-          rows = grouped.get("MLB", [])
-          family_counts = Counter(r.family for r in rows)
+          rows = group_kalshi_sports(result.markets).get("MLB", [])
+          target = [r for r in rows if r.family in {"RBIs", "Hits + Runs + RBIs"}]
 
-          candidates = model_candidates_from_kalshi(
-              grouped,
-              sport_filter="MLB",
-              include_mlb_hits=False,
-              include_mlb_home_runs=False,
-              include_mlb_total_bases=False,
-              include_mlb_rbis=True,
-              max_mlb_rbi_players=12,
-              include_mlb_hrr=True,
-              max_mlb_hrr_players=12,
-              include_mlb_strikeouts=False,
-          )
-          assessments = [assess_leg(c, "best") for c in candidates]
-          qualified = [a for a in assessments if a.qualified]
-          new_keys = {"batter_rbis", "batter_hrr"}
-          new_candidates = [c for c in candidates if c.market_key in new_keys]
-          new_assessments = [a for a in assessments if a.leg.market_key in new_keys]
-          new_qualified = [a for a in new_assessments if a.qualified]
-
-          full_ticket = build_intelligent_parlay(
-              candidates,
-              mode="best",
-              target_legs=4,
-              max_per_event=1,
-          )
-          new_ticket = build_intelligent_parlay(
-              new_candidates,
-              mode="best",
-              target_legs=4,
-              max_per_event=1,
-          )
-
+          print("now_utc", datetime.now(timezone.utc).isoformat())
           print("catalog_error", result.error)
           print("catalog_complete", result.cursor_exhausted)
-          print("mlb_markets", len(rows))
-          print("rbi_markets", family_counts.get("RBIs", 0))
-          print("hrr_markets", family_counts.get("Hits + Runs + RBIs", 0))
-          print("candidate_by_key", dict(Counter(c.market_key for c in candidates)))
-          print("qualified_by_key", dict(Counter(a.leg.market_key for a in qualified)))
-          print("new_candidates", len(new_candidates))
-          print("new_qualified", len(new_qualified))
-          print("full_ticket_legs", len(full_ticket.legs))
-          print("new_family_ticket_legs", len(new_ticket.legs))
-          print("full_ticket", [
-              (
-                  x.leg.market_key,
-                  x.leg.selection,
-                  x.leg.event_title,
-                  round(x.fair_probability, 4),
-                  round(x.kalshi_probability or 0, 4),
-                  round(x.edge_points or 0, 2),
-                  round(x.leg.model_confidence, 3),
-                  x.leg.model_sample_size,
-              )
-              for x in full_ticket.legs
-          ])
-          print("new_ticket", [
-              (
-                  x.leg.market_key,
-                  x.leg.selection,
-                  x.leg.event_title,
-                  round(x.fair_probability, 4),
-                  round(x.kalshi_probability or 0, 4),
-                  round(x.edge_points or 0, 2),
-                  round(x.leg.model_confidence, 3),
-                  x.leg.model_sample_size,
-              )
-              for x in new_ticket.legs
-          ])
-          for key in ("batter_rbis", "batter_hrr"):
-              subset = [a for a in new_assessments if a.leg.market_key == key]
-              print("TOP", key, [
-                  (
-                      a.leg.selection,
-                      round(a.fair_probability, 4),
-                      round(a.kalshi_probability or 0, 4),
-                      round(a.edge_points or 0, 2),
-                      round(a.leg.model_confidence, 3),
-                      a.leg.model_sample_size,
-                      a.qualified,
+          print("family_counts", dict(Counter(r.family for r in target)))
+          print("date_counts", {
+              family: dict(Counter(str(_parse_date(r.market)) for r in target if r.family == family))
+              for family in ("RBIs", "Hits + Runs + RBIs")
+          })
+          print("market_status_counts", {
+              family: dict(Counter(str(r.market.get("status") or "missing") for r in target if r.family == family))
+              for family in ("RBIs", "Hits + Runs + RBIs")
+          })
+
+          # Inspect actual MLB game status for the highest-volume unique players.
+          for family in ("RBIs", "Hits + Runs + RBIs"):
+              groups = {}
+              for row in target:
+                  if row.family != family:
+                      continue
+                  title = str(row.market.get("title") or "")
+                  player_name = title.split(":", 1)[0].strip()
+                  if not player_name:
+                      continue
+                  key = (str(row.market.get("event_ticker") or ""), player_name)
+                  groups.setdefault(key, []).append(row)
+              ranked = sorted(
+                  groups.values(),
+                  key=lambda group: max(float(r.market.get("volume") or 0) for r in group),
+                  reverse=True,
+              )[:16]
+
+              statuses = Counter()
+              samples = []
+              for group in ranked:
+                  market = group[0].market
+                  title = str(market.get("title") or "")
+                  player_name = title.split(":", 1)[0].strip()
+                  event_date = _parse_date(market)
+                  player = resolve_player(player_name, event_date.year)
+                  if player is None:
+                      statuses["player_unresolved"] += 1
+                      continue
+                  team = player.get("currentTeam") or {}
+                  team_id = team.get("id")
+                  if not team_id:
+                      statuses["team_unresolved"] += 1
+                      continue
+                  game = find_player_game(
+                      team_id=int(team_id),
+                      event_date=event_date,
+                      event_ticker=str(market.get("event_ticker") or ""),
                   )
-                  for a in sorted(subset, key=lambda x:x.score, reverse=True)[:10]
-              ])
+                  if game is None:
+                      statuses["game_unresolved"] += 1
+                      continue
+                  context = game_context_for_hitter(player, game)
+                  status = str((context or {}).get("game_status") or "context_unresolved")
+                  statuses[status] += 1
+                  if len(samples) < 8:
+                      samples.append((
+                          player_name,
+                          str(event_date),
+                          str(market.get("event_ticker") or ""),
+                          status,
+                      ))
+              print("game_status_counts", family, dict(statuses))
+              print("game_status_samples", family, samples)
           PY
