@@ -12,6 +12,11 @@ from sports_edge.models.game_scope import normalize
 from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.live_board import market_side_probability
 from sports_edge.models.mlb_hits_model import project_mlb_hits
+from sports_edge.models.mlb_lines_model import (
+    project_mlb_game_total,
+    project_mlb_spread,
+    project_mlb_team_total,
+)
 from sports_edge.models.mlb_hr_model import project_mlb_home_runs
 from sports_edge.models.mlb_run_production_model import project_mlb_hrr, project_mlb_rbis
 from sports_edge.models.mlb_total_bases_model import project_mlb_total_bases
@@ -994,6 +999,121 @@ def _mlb_k_candidates(
     return out
 
 
+def _mlb_line_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
+    market = row.market
+    title = str(market.get("title") or "").strip()
+    event_title = str(market.get("event_title") or "")
+    try:
+        line = float(market.get("floor_strike"))
+    except (TypeError, ValueError):
+        match = re.search(r"(\d+(?:\.\d+)?)", title)
+        if not match:
+            return []
+        line = float(match.group(1))
+
+    event_date = _parse_date(market)
+    event_ticker = str(market.get("event_ticker") or "")
+    projection = None
+
+    if row.family == "Spread":
+        match = re.match(r"(.+?)\s+wins(?:\s+the\s+game)?\s+by\s+over\s+", title, re.I)
+        if not match:
+            return []
+        projection = project_mlb_spread(
+            team_name=match.group(1).strip(),
+            line=line,
+            event_date=event_date,
+            event_ticker=event_ticker,
+            event_title=event_title,
+        )
+    elif row.family == "Game Total":
+        projection = project_mlb_game_total(
+            line=line,
+            event_date=event_date,
+            event_ticker=event_ticker,
+            event_title=event_title,
+        )
+    elif row.family == "Team Total":
+        match = re.match(r"(?:Will\s+)?(.+?)\s+(?:score\s+)?over\s+", title, re.I)
+        if not match:
+            return []
+        projection = project_mlb_team_total(
+            team_name=match.group(1).strip(),
+            line=line,
+            event_date=event_date,
+            event_ticker=event_ticker,
+            event_title=event_title,
+        )
+
+    if projection is None or not projection.evidence.usable:
+        return []
+
+    base = projection.evidence
+    no_evidence = replace(
+        base,
+        fair_probability=1.0 - base.fair_probability,
+        factors=tuple([
+            f"Complement of {projection.selection_label} model probability",
+            *base.factors,
+        ]),
+    )
+    yes_price = market_side_probability(market, "YES")
+    no_price = market_side_probability(market, "NO")
+
+    if projection.market_key == "mlb_spread":
+        yes_selection = projection.selection_label
+        no_selection = projection.selection_label.replace(" > ", " ≤ ")
+    elif projection.market_key == "mlb_game_total":
+        yes_selection = f"Over {line:g} Game Total"
+        no_selection = f"Under {line:g} Game Total"
+    else:
+        team_name = projection.selection_label.rsplit(" over ", 1)[0]
+        yes_selection = f"{team_name} Over {line:g} Team Total"
+        no_selection = f"{team_name} Under {line:g} Team Total"
+
+    out: list[ParlayCandidateLeg] = []
+    for side, price, evidence, selection in (
+        ("YES", yes_price, base, yes_selection),
+        ("NO", no_price, no_evidence, no_selection),
+    ):
+        if price is None:
+            continue
+        out.append(
+            ParlayCandidateLeg(
+                sport="MLB",
+                event_id=_canonical_game_id("MLB", projection.game_title, event_date),
+                event_title=projection.game_title,
+                market_key=projection.market_key,
+                market_label=projection.market_label,
+                selection=selection,
+                consensus_probability=evidence.fair_probability,
+                book_count=0,
+                source_age_s=0.0,
+                median_odds=None,
+                kalshi_ticker=str(market.get("ticker") or ""),
+                kalshi_side=side,
+                kalshi_price=price,
+                kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                kalshi_status="MODEL",
+                evidence_class="MODEL",
+                model_probability=evidence.fair_probability,
+                model_confidence=evidence.confidence,
+                model_name=evidence.model_name,
+                model_sample_size=evidence.sample_size,
+                model_reasons=evidence.factors,
+                model_warnings=evidence.warnings,
+            )
+        )
+    return out
+
+
+def _mlb_line_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
+    out: list[ParlayCandidateLeg] = []
+    for row in rows:
+        out.extend(_mlb_line_candidate_for_market(row))
+    return out
+
+
 def _nfl_line_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
     market = row.market
     title = str(market.get("title") or "").strip()
@@ -1440,6 +1560,7 @@ def model_candidates_from_kalshi(
     max_mlb_hrr_players: int | None = None,
     include_mlb_strikeouts: bool = False,
     max_mlb_k_pitchers: int | None = None,
+    include_mlb_game_lines: bool = False,
     include_nfl_passing_yards: bool = False,
     max_nfl_passing_players: int | None = None,
     include_nfl_passing_tds: bool = False,
@@ -1535,6 +1656,13 @@ def model_candidates_from_kalshi(
                     max_pitchers=max_mlb_k_pitchers,
                 )
             )
+
+        if sport == "MLB" and include_mlb_game_lines:
+            line_rows = [
+                row for row in rows
+                if row.family in {"Spread", "Game Total", "Team Total"}
+            ]
+            all_rows.extend(_mlb_line_candidates(line_rows))
 
         if sport == "NFL" and include_nfl_passing_yards:
             passing_rows = [row for row in rows if row.family == "Passing Yards"]
