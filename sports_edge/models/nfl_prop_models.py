@@ -135,8 +135,8 @@ def _poisson_at_least(lam: float, k: int) -> float:
     return clamp(1.0 - cdf, 0.005, 0.995)
 
 
-def _context(player_name: str, event_date) -> NFLPlayerContext | None:
-    ctx = player_context(player_name, event_date)
+def _context(player_name: str, event_date, event_ticker: str | None = None) -> NFLPlayerContext | None:
+    ctx = player_context(player_name, event_date, event_ticker)
     if ctx is None or len(ctx.current_rows) < 2:
         return None
     return ctx
@@ -147,10 +147,11 @@ def project_nfl_passing_yards(
     player_name: str,
     milestone_yards: int,
     event_date,
+    event_ticker: str | None = None,
 ) -> NFLPropProjection | None:
     if milestone_yards < 50 or milestone_yards > 500:
         return None
-    ctx = _context(player_name, event_date)
+    ctx = _context(player_name, event_date, event_ticker)
     if ctx is None or ctx.position.upper() != "QB":
         return None
 
@@ -229,10 +230,11 @@ def project_nfl_passing_tds(
     player_name: str,
     milestone_tds: int,
     event_date,
+    event_ticker: str | None = None,
 ) -> NFLPropProjection | None:
     if milestone_tds not in {1, 2, 3, 4, 5}:
         return None
-    ctx = _context(player_name, event_date)
+    ctx = _context(player_name, event_date, event_ticker)
     if ctx is None or ctx.position.upper() != "QB":
         return None
 
@@ -297,10 +299,11 @@ def project_nfl_receiving_yards(
     player_name: str,
     milestone_yards: int,
     event_date,
+    event_ticker: str | None = None,
 ) -> NFLPropProjection | None:
     if milestone_yards < 10 or milestone_yards > 250:
         return None
-    ctx = _context(player_name, event_date)
+    ctx = _context(player_name, event_date, event_ticker)
     if ctx is None or ctx.position.upper() not in {"WR", "TE", "RB", "FB"}:
         return None
 
@@ -382,10 +385,11 @@ def project_nfl_touchdowns(
     player_name: str,
     milestone_tds: int,
     event_date,
+    event_ticker: str | None = None,
 ) -> NFLPropProjection | None:
     if milestone_tds not in {1, 2, 3}:
         return None
-    ctx = _context(player_name, event_date)
+    ctx = _context(player_name, event_date, event_ticker)
     if ctx is None or ctx.position.upper() not in {"QB", "RB", "WR", "TE", "FB"}:
         return None
 
