@@ -16,10 +16,15 @@ from sports_edge.models.mlb_hr_model import project_mlb_home_runs
 from sports_edge.models.mlb_total_bases_model import project_mlb_total_bases
 from sports_edge.models.mlb_strikeouts_model import project_mlb_pitcher_strikeouts
 from sports_edge.models.nfl_prop_models import (
+    project_nfl_pass_attempts,
+    project_nfl_pass_completions,
+    project_nfl_pass_interceptions,
     project_nfl_passing_tds,
     project_nfl_passing_yards,
     project_nfl_receiving_yards,
     project_nfl_receptions,
+    project_nfl_rush_attempts,
+    project_nfl_rush_receiving_yards,
     project_nfl_rushing_yards,
     project_nfl_touchdowns,
 )
@@ -64,6 +69,20 @@ def _parse_date(market: dict) -> date:
 
 def _event_key(market: dict) -> str:
     return str(market.get("event_ticker") or market.get("ticker") or "").strip()
+
+
+def _canonical_game_id(sport: str, game_title: str, event_date: date) -> str:
+    """Stable game identity shared across Kalshi prop series for correlation control."""
+    parts = [
+        normalize(part)
+        for part in re.split(r"\s+(?:vs\.?|@)\s+", str(game_title or "").strip(), maxsplit=1, flags=re.I)
+        if normalize(part)
+    ]
+    if len(parts) == 2:
+        participants = "|".join(sorted(parts))
+    else:
+        participants = normalize(game_title) or "unknown"
+    return f"{sport.upper()}:{event_date.isoformat()}:{participants}"
 
 
 def _event_title(market: dict) -> str:
@@ -293,7 +312,11 @@ def _mlb_hit_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidat
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="batter_hits",
                 market_label="Hits",
@@ -432,7 +455,11 @@ def _mlb_hr_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidate
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="batter_home_runs",
                 market_label="Home Runs",
@@ -562,7 +589,11 @@ def _mlb_tb_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidate
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="batter_total_bases",
                 market_label="Total Bases",
@@ -690,7 +721,11 @@ def _mlb_k_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateL
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="pitcher_strikeouts",
                 market_label="Pitcher Strikeouts",
@@ -802,8 +837,43 @@ def _nfl_prop_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandida
             event_date=event_date,
             event_ticker=str(market.get("event_ticker") or ""),
         )
+    elif row.family == "Pass Attempts":
+        projection = project_nfl_pass_attempts(
+            player_name=player_name,
+            milestone_attempts=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Pass Completions":
+        projection = project_nfl_pass_completions(
+            player_name=player_name,
+            milestone_completions=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Pass Interceptions":
+        projection = project_nfl_pass_interceptions(
+            player_name=player_name,
+            milestone_interceptions=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
     elif row.family == "Rushing Yards":
         projection = project_nfl_rushing_yards(
+            player_name=player_name,
+            milestone_yards=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Rush Attempts":
+        projection = project_nfl_rush_attempts(
+            player_name=player_name,
+            milestone_attempts=milestone,
+            event_date=event_date,
+            event_ticker=str(market.get("event_ticker") or ""),
+        )
+    elif row.family == "Rushing + Receiving Yards":
+        projection = project_nfl_rush_receiving_yards(
             player_name=player_name,
             milestone_yards=milestone,
             event_date=event_date,
@@ -860,7 +930,11 @@ def _nfl_prop_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandida
         out.append(
             ParlayCandidateLeg(
                 sport="NFL",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key=projection.market_key,
                 market_label=projection.market_label,
@@ -951,7 +1025,12 @@ def model_candidates_from_kalshi(
     include_nfl_passing_yards: bool = False,
     max_nfl_passing_players: int | None = None,
     include_nfl_passing_tds: bool = False,
+    include_nfl_pass_attempts: bool = False,
+    include_nfl_pass_completions: bool = False,
+    include_nfl_pass_interceptions: bool = False,
     include_nfl_rushing_yards: bool = False,
+    include_nfl_rush_attempts: bool = False,
+    include_nfl_rush_receiving_yards: bool = False,
     max_nfl_rushing_players: int | None = None,
     include_nfl_receiving_yards: bool = False,
     include_nfl_receptions: bool = False,
@@ -1037,6 +1116,18 @@ def model_candidates_from_kalshi(
                 )
             )
 
+        if sport == "NFL" and include_nfl_pass_attempts:
+            pass_attempt_rows = [row for row in rows if row.family == "Pass Attempts"]
+            all_rows.extend(_nfl_prop_candidates(pass_attempt_rows, max_players=max_nfl_passing_players))
+
+        if sport == "NFL" and include_nfl_pass_completions:
+            pass_completion_rows = [row for row in rows if row.family == "Pass Completions"]
+            all_rows.extend(_nfl_prop_candidates(pass_completion_rows, max_players=max_nfl_passing_players))
+
+        if sport == "NFL" and include_nfl_pass_interceptions:
+            pass_int_rows = [row for row in rows if row.family == "Pass Interceptions"]
+            all_rows.extend(_nfl_prop_candidates(pass_int_rows, max_players=max_nfl_passing_players))
+
         if sport == "NFL" and include_nfl_rushing_yards:
             rushing_rows = [row for row in rows if row.family == "Rushing Yards"]
             all_rows.extend(
@@ -1045,6 +1136,14 @@ def model_candidates_from_kalshi(
                     max_players=max_nfl_rushing_players,
                 )
             )
+
+        if sport == "NFL" and include_nfl_rush_attempts:
+            rush_attempt_rows = [row for row in rows if row.family == "Rush Attempts"]
+            all_rows.extend(_nfl_prop_candidates(rush_attempt_rows, max_players=max_nfl_rushing_players))
+
+        if sport == "NFL" and include_nfl_rush_receiving_yards:
+            rush_receive_rows = [row for row in rows if row.family == "Rushing + Receiving Yards"]
+            all_rows.extend(_nfl_prop_candidates(rush_receive_rows, max_players=max_nfl_rushing_players))
 
         if sport == "NFL" and include_nfl_receiving_yards:
             receiving_rows = [row for row in rows if row.family == "Receiving Yards"]

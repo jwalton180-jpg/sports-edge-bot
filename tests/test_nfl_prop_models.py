@@ -6,10 +6,15 @@ from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.model_evidence import ModelEvidence
 from sports_edge.models.nfl_prop_models import (
     NFLPropProjection,
+    project_nfl_pass_attempts,
+    project_nfl_pass_completions,
+    project_nfl_pass_interceptions,
     project_nfl_passing_tds,
     project_nfl_passing_yards,
     project_nfl_receiving_yards,
     project_nfl_receptions,
+    project_nfl_rush_attempts,
+    project_nfl_rush_receiving_yards,
     project_nfl_rushing_yards,
     project_nfl_touchdowns,
 )
@@ -22,15 +27,17 @@ EVENT_DATE = date(2026, 9, 27)
 
 def _qb_context():
     current = (
-        {"passing_yards": "240", "attempts": "34", "passing_tds": "2", "rushing_tds": "0", "receiving_tds": "0", "carries": "3", "targets": "0"},
-        {"passing_yards": "275", "attempts": "38", "passing_tds": "1", "rushing_tds": "1", "receiving_tds": "0", "carries": "5", "targets": "0"},
-        {"passing_yards": "255", "attempts": "36", "passing_tds": "3", "rushing_tds": "0", "receiving_tds": "0", "carries": "4", "targets": "0"},
+        {"passing_yards": "240", "attempts": "34", "completions": "22", "passing_tds": "2", "passing_interceptions": "1", "rushing_tds": "0", "receiving_tds": "0", "carries": "3", "targets": "0"},
+        {"passing_yards": "275", "attempts": "38", "completions": "25", "passing_tds": "1", "passing_interceptions": "0", "rushing_tds": "1", "receiving_tds": "0", "carries": "5", "targets": "0"},
+        {"passing_yards": "255", "attempts": "36", "completions": "24", "passing_tds": "3", "passing_interceptions": "1", "rushing_tds": "0", "receiving_tds": "0", "carries": "4", "targets": "0"},
     )
     prior = tuple(
         {
             "passing_yards": str(230 + (i % 5) * 8),
             "attempts": str(32 + (i % 4)),
+            "completions": str(20 + (i % 4)),
             "passing_tds": str(1 + (i % 3 == 0)),
+            "passing_interceptions": str(i % 5 == 0 and 1 or 0),
             "rushing_tds": str(i % 6 == 0 and 1 or 0),
             "receiving_tds": "0",
             "carries": "4",
@@ -84,13 +91,14 @@ def _wr_context():
 
 def _rb_context():
     current = (
-        {"rushing_yards": "84", "carries": "17", "rushing_tds": "1", "receiving_tds": "0", "targets": "3", "receptions": "2"},
-        {"rushing_yards": "67", "carries": "15", "rushing_tds": "0", "receiving_tds": "0", "targets": "4", "receptions": "3"},
-        {"rushing_yards": "96", "carries": "19", "rushing_tds": "1", "receiving_tds": "0", "targets": "2", "receptions": "2"},
+        {"rushing_yards": "84", "receiving_yards": "24", "carries": "17", "rushing_tds": "1", "receiving_tds": "0", "targets": "3", "receptions": "2"},
+        {"rushing_yards": "67", "receiving_yards": "31", "carries": "15", "rushing_tds": "0", "receiving_tds": "0", "targets": "4", "receptions": "3"},
+        {"rushing_yards": "96", "receiving_yards": "18", "carries": "19", "rushing_tds": "1", "receiving_tds": "0", "targets": "2", "receptions": "2"},
     )
     prior = tuple(
         {
             "rushing_yards": str(58 + (i % 5) * 6),
+            "receiving_yards": str(18 + (i % 4) * 4),
             "carries": str(13 + (i % 4)),
             "rushing_tds": str(i % 5 == 0 and 1 or 0),
             "receiving_tds": "0",
@@ -110,6 +118,13 @@ def _rb_context():
         current_rows=current,
         prior_rows=prior,
     )
+
+
+def test_canonical_game_identity_collapses_prop_series_and_participant_order():
+    a = kmc._canonical_game_id("NFL", "NYJ @ DET", EVENT_DATE)
+    b = kmc._canonical_game_id("NFL", "DET vs NYJ", EVENT_DATE)
+    assert a == b
+    assert a.startswith("NFL:2026-09-27:")
 
 
 def test_name_resolver_fails_closed_on_ambiguous_alias():
@@ -178,6 +193,27 @@ def test_passing_yards_probability_falls_as_milestone_rises(monkeypatch):
     assert low.line == 224.5
 
 
+def test_pass_attempts_and_completions_are_monotone(monkeypatch):
+    monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: _qb_context())
+    a_low = project_nfl_pass_attempts(player_name="Test Quarterback", milestone_attempts=30, event_date=EVENT_DATE)
+    a_high = project_nfl_pass_attempts(player_name="Test Quarterback", milestone_attempts=40, event_date=EVENT_DATE)
+    c_low = project_nfl_pass_completions(player_name="Test Quarterback", milestone_completions=20, event_date=EVENT_DATE)
+    c_high = project_nfl_pass_completions(player_name="Test Quarterback", milestone_completions=28, event_date=EVENT_DATE)
+    assert a_low is not None and a_high is not None and c_low is not None and c_high is not None
+    assert a_low.evidence.fair_probability > a_high.evidence.fair_probability
+    assert c_low.evidence.fair_probability > c_high.evidence.fair_probability
+    assert c_low.market_key == "player_pass_completions"
+
+
+def test_pass_interceptions_probability_is_monotone(monkeypatch):
+    monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: _qb_context())
+    one = project_nfl_pass_interceptions(player_name="Test Quarterback", milestone_interceptions=1, event_date=EVENT_DATE)
+    two = project_nfl_pass_interceptions(player_name="Test Quarterback", milestone_interceptions=2, event_date=EVENT_DATE)
+    assert one is not None and two is not None
+    assert one.evidence.fair_probability > two.evidence.fair_probability
+    assert one.evidence.confidence <= 0.58
+
+
 def test_passing_td_probability_is_monotone(monkeypatch):
     monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: _qb_context())
     monkeypatch.setattr(npm, "_matchup_factor", lambda *args, **kwargs: (1.0, 3, 1.5))
@@ -210,6 +246,19 @@ def test_rushing_yards_probability_falls_as_milestone_rises(monkeypatch):
     assert low.evidence.fair_probability > high.evidence.fair_probability
     assert low.market_key == "player_rush_yds"
     assert low.projected_mean > 0
+
+
+def test_rush_attempts_and_combined_yards_are_monotone(monkeypatch):
+    monkeypatch.setattr(npm, "player_context", lambda *args, **kwargs: _rb_context())
+    monkeypatch.setattr(npm, "_matchup_factor", lambda ctx, key: (1.0, 3, 100.0))
+    a_low = project_nfl_rush_attempts(player_name="Test Runner", milestone_attempts=12, event_date=EVENT_DATE)
+    a_high = project_nfl_rush_attempts(player_name="Test Runner", milestone_attempts=20, event_date=EVENT_DATE)
+    y_low = project_nfl_rush_receiving_yards(player_name="Test Runner", milestone_yards=75, event_date=EVENT_DATE)
+    y_high = project_nfl_rush_receiving_yards(player_name="Test Runner", milestone_yards=125, event_date=EVENT_DATE)
+    assert a_low is not None and a_high is not None and y_low is not None and y_high is not None
+    assert a_low.evidence.fair_probability > a_high.evidence.fair_probability
+    assert y_low.evidence.fair_probability > y_high.evidence.fair_probability
+    assert y_low.market_key == "player_rush_reception_yds"
 
 
 def test_receptions_probability_falls_as_milestone_rises(monkeypatch):

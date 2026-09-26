@@ -991,8 +991,18 @@ elif view == "Player Props":
             model_family_key = "player_pass_yds"
         elif sport_filter == "NFL" and family == "Passing TDs":
             model_family_key = "player_pass_tds"
+        elif sport_filter == "NFL" and family == "Pass Attempts":
+            model_family_key = "player_pass_attempts"
+        elif sport_filter == "NFL" and family == "Pass Completions":
+            model_family_key = "player_pass_completions"
+        elif sport_filter == "NFL" and family == "Pass Interceptions":
+            model_family_key = "player_pass_interceptions"
         elif sport_filter == "NFL" and family == "Rushing Yards":
             model_family_key = "player_rush_yds"
+        elif sport_filter == "NFL" and family == "Rush Attempts":
+            model_family_key = "player_rush_attempts"
+        elif sport_filter == "NFL" and family == "Rushing + Receiving Yards":
+            model_family_key = "player_rush_reception_yds"
         elif sport_filter == "NFL" and family == "Receiving Yards":
             model_family_key = "player_reception_yds"
         elif sport_filter == "NFL" and family == "Receptions":
@@ -1021,10 +1031,15 @@ elif view == "Player Props":
                         include_mlb_strikeouts=(model_family_key == "pitcher_strikeouts"),
                         max_mlb_k_pitchers=16 if model_family_key == "pitcher_strikeouts" else None,
                         include_nfl_passing_yards=(model_family_key == "player_pass_yds"),
-                        max_nfl_passing_players=18 if model_family_key in {"player_pass_yds", "player_pass_tds"} else None,
+                        max_nfl_passing_players=18 if model_family_key in {"player_pass_yds", "player_pass_tds", "player_pass_attempts", "player_pass_completions", "player_pass_interceptions"} else None,
                         include_nfl_passing_tds=(model_family_key == "player_pass_tds"),
+                        include_nfl_pass_attempts=(model_family_key == "player_pass_attempts"),
+                        include_nfl_pass_completions=(model_family_key == "player_pass_completions"),
+                        include_nfl_pass_interceptions=(model_family_key == "player_pass_interceptions"),
                         include_nfl_rushing_yards=(model_family_key == "player_rush_yds"),
-                        max_nfl_rushing_players=24 if model_family_key == "player_rush_yds" else None,
+                        include_nfl_rush_attempts=(model_family_key == "player_rush_attempts"),
+                        include_nfl_rush_receiving_yards=(model_family_key == "player_rush_reception_yds"),
+                        max_nfl_rushing_players=24 if model_family_key in {"player_rush_yds", "player_rush_attempts", "player_rush_reception_yds"} else None,
                         include_nfl_receiving_yards=(model_family_key == "player_reception_yds"),
                         include_nfl_receptions=(model_family_key == "player_receptions"),
                         max_nfl_receiving_players=24 if model_family_key in {"player_reception_yds", "player_receptions"} else None,
@@ -1267,7 +1282,12 @@ elif view == "Parlay Generator":
                     else None
                 ),
                 include_nfl_passing_tds=(preset == "NFL Passing" or use_all_nfl_models),
+                include_nfl_pass_attempts=(preset == "NFL Passing" or use_all_nfl_models),
+                include_nfl_pass_completions=(preset == "NFL Passing" or use_all_nfl_models),
+                include_nfl_pass_interceptions=(preset == "NFL Passing" or use_all_nfl_models),
                 include_nfl_rushing_yards=(preset == "NFL Rushing" or use_all_nfl_models),
+                include_nfl_rush_attempts=(preset == "NFL Rushing" or use_all_nfl_models),
+                include_nfl_rush_receiving_yards=(preset == "NFL Rushing" or use_all_nfl_models),
                 max_nfl_rushing_players=(
                     focused_nfl_cap if preset == "NFL Rushing"
                     else broad_nfl_cap if use_all_nfl_models
@@ -1335,12 +1355,12 @@ elif view == "Parlay Generator":
             elif preset == "NFL Passing":
                 model_candidates = [
                     row for row in model_candidates
-                    if row.sport == "NFL" and row.market_key in {"player_pass_yds", "player_pass_tds"}
+                    if row.sport == "NFL" and row.market_key in {"player_pass_yds", "player_pass_tds", "player_pass_attempts", "player_pass_completions", "player_pass_interceptions"}
                 ]
             elif preset == "NFL Rushing":
                 model_candidates = [
                     row for row in model_candidates
-                    if row.sport == "NFL" and row.market_key == "player_rush_yds"
+                    if row.sport == "NFL" and row.market_key in {"player_rush_yds", "player_rush_attempts", "player_rush_reception_yds"}
                 ]
             elif preset == "NFL Receiving":
                 model_candidates = [
@@ -1562,7 +1582,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; NFL Passing Yards, Passing TDs, Rushing Yards, Receiving Yards, Receptions, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo/form/serve-return/workload; MLB Hits, Home Runs, Total Bases, and Pitcher Strikeouts use player/recent/opponent/probable-starter context; NFL Passing Yards/TDs/Attempts/Completions/Interceptions, Rushing Yards/Attempts, Rushing + Receiving Yards, Receiving Yards, Receptions, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB/NFL/NBA/WNBA game winners use public team-strength baselines. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
