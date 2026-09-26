@@ -71,6 +71,20 @@ def _event_key(market: dict) -> str:
     return str(market.get("event_ticker") or market.get("ticker") or "").strip()
 
 
+def _canonical_game_id(sport: str, game_title: str, event_date: date) -> str:
+    """Stable game identity shared across Kalshi prop series for correlation control."""
+    parts = [
+        normalize(part)
+        for part in re.split(r"\s+(?:vs\.?|@)\s+", str(game_title or "").strip(), maxsplit=1, flags=re.I)
+        if normalize(part)
+    ]
+    if len(parts) == 2:
+        participants = "|".join(sorted(parts))
+    else:
+        participants = normalize(game_title) or "unknown"
+    return f"{sport.upper()}:{event_date.isoformat()}:{participants}"
+
+
 def _event_title(market: dict) -> str:
     return str(market.get("event_title") or market.get("title") or _event_key(market)).strip()
 
@@ -298,7 +312,11 @@ def _mlb_hit_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidat
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="batter_hits",
                 market_label="Hits",
@@ -437,7 +455,11 @@ def _mlb_hr_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidate
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="batter_home_runs",
                 market_label="Home Runs",
@@ -567,7 +589,11 @@ def _mlb_tb_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidate
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="batter_total_bases",
                 market_label="Total Bases",
@@ -695,7 +721,11 @@ def _mlb_k_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateL
         out.append(
             ParlayCandidateLeg(
                 sport="MLB",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key="pitcher_strikeouts",
                 market_label="Pitcher Strikeouts",
@@ -900,7 +930,11 @@ def _nfl_prop_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandida
         out.append(
             ParlayCandidateLeg(
                 sport="NFL",
-                event_id=_event_key(market),
+                event_id=_canonical_game_id(
+                    projection.evidence.sport,
+                    projection.game_title,
+                    _parse_date(market),
+                ),
                 event_title=projection.game_title,
                 market_key=projection.market_key,
                 market_label=projection.market_label,
