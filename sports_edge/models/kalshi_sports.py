@@ -62,14 +62,15 @@ def _contains(series: str, *tokens: str) -> bool:
 
 def _baseball_family(series: str) -> str:
     checks = (
+        # Period-specific series must be classified before generic GAME/TOTAL.
+        (("F3",), "First 3 Innings"),
+        (("F5",), "First 5 Innings"),
+        (("F7",), "First 7 Innings"),
         (("GAME",), "Moneyline"),
         (("SPREAD",), "Spread"),
         (("TEAMTOTAL",), "Team Total"),
         (("TB", "TOTALBASE"), "Total Bases"),
         (("TOTAL",), "Game Total"),
-        (("F3",), "First 3 Innings"),
-        (("F5",), "First 5 Innings"),
-        (("F7",), "First 7 Innings"),
         (("HRR",), "Hits + Runs + RBIs"),
         (("HIT",), "Hits"),
         (("HR",), "Home Runs"),
@@ -86,16 +87,18 @@ def _baseball_family(series: str) -> str:
 
 def _football_family(series: str) -> str:
     checks = (
-        (("GAME",), "Moneyline"),
-        (("SPREAD",), "Spread"),
-        (("TEAMTOTAL",), "Team Total"),
-        (("TOTAL",), "Game Total"),
+        # Period-specific series can contain GAME/SPREAD/TOTAL in their names.
+        # Resolve the period first so a 1H total cannot become a full-game total.
         (("1H",), "First Half"),
         (("2H",), "Second Half"),
         (("1Q",), "First Quarter"),
         (("2Q",), "Second Quarter"),
         (("3Q",), "Third Quarter"),
         (("4Q",), "Fourth Quarter"),
+        (("GAME",), "Moneyline"),
+        (("SPREAD",), "Spread"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("TOTAL",), "Game Total"),
         (("PASSYDS", "PASSYARD"), "Passing Yards"),
         (("PASSTDS", "PASSTD"), "Passing TDs"),
         (("PASSATT",), "Pass Attempts"),
@@ -120,16 +123,17 @@ def _football_family(series: str) -> str:
 
 def _basketball_family(series: str, sport: str) -> str:
     checks = (
-        (("GAME",), "Moneyline"),
-        (("SPREAD",), "Spread"),
-        (("TEAMTOTAL",), "Team Total"),
-        (("TOTAL",), "Game Total"),
+        # Period-specific series must win over generic GAME/SPREAD/TOTAL tokens.
         (("1H",), "First Half"),
         (("2H",), "Second Half"),
         (("1Q",), "First Quarter"),
         (("2Q",), "Second Quarter"),
         (("3Q",), "Third Quarter"),
         (("4Q",), "Fourth Quarter"),
+        (("GAME",), "Moneyline"),
+        (("SPREAD",), "Spread"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("TOTAL",), "Game Total"),
         (("PRA",), "Points + Rebounds + Assists"),
         (("PTS", "POINTS"), "Points"),
         (("REB",), "Rebounds"),

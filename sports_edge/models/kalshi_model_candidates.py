@@ -31,6 +31,11 @@ from sports_edge.models.nfl_prop_models import (
 )
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_research import TennisResearchModel, tennis_level_from_series
+from sports_edge.models.wnba_lines_model import (
+    project_wnba_game_total,
+    project_wnba_spread,
+    project_wnba_team_total,
+)
 
 
 _TICKER_MONTHS = {
@@ -1192,6 +1197,117 @@ def _nfl_prop_candidates(
     return out
 
 
+def _wnba_line_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
+    market = row.market
+    title = str(market.get("title") or "").strip()
+    try:
+        line = float(market.get("floor_strike"))
+    except (TypeError, ValueError):
+        match = re.search(r"(\d+(?:\.\d+)?)", title)
+        if not match:
+            return []
+        line = float(match.group(1))
+
+    event_date = _parse_date(market)
+    event_ticker = str(market.get("event_ticker") or "")
+    projection = None
+
+    if row.family == "Spread":
+        match = re.match(r"(.+?)\s+wins the game by over\s+", title, re.I)
+        if not match:
+            return []
+        projection = project_wnba_spread(
+            team_name=match.group(1).strip(),
+            line=line,
+            event_date=event_date,
+            event_ticker=event_ticker,
+        )
+    elif row.family == "Game Total":
+        projection = project_wnba_game_total(
+            line=line,
+            event_date=event_date,
+            event_ticker=event_ticker,
+        )
+    elif row.family == "Team Total":
+        match = re.match(r"(.+?)\s+over\s+", title, re.I)
+        if not match:
+            return []
+        projection = project_wnba_team_total(
+            team_name=match.group(1).strip(),
+            line=line,
+            event_date=event_date,
+            event_ticker=event_ticker,
+        )
+
+    if projection is None or not projection.evidence.usable:
+        return []
+
+    base = projection.evidence
+    no_evidence = replace(
+        base,
+        fair_probability=1.0 - base.fair_probability,
+        factors=tuple([
+            f"Complement of {projection.selection_label} model probability",
+            *base.factors,
+        ]),
+    )
+    yes_price = market_side_probability(market, "YES")
+    no_price = market_side_probability(market, "NO")
+
+    if projection.market_key == "wnba_spread":
+        yes_selection = projection.selection_label
+        no_selection = projection.selection_label.replace(" > ", " ≤ ")
+    elif projection.market_key == "wnba_game_total":
+        yes_selection = f"Over {line:g} Game Total"
+        no_selection = f"Under {line:g} Game Total"
+    else:
+        team_name = projection.selection_label.rsplit(" over ", 1)[0]
+        yes_selection = f"{team_name} Over {line:g} Team Total"
+        no_selection = f"{team_name} Under {line:g} Team Total"
+
+    out: list[ParlayCandidateLeg] = []
+    for side, price, evidence, selection in (
+        ("YES", yes_price, base, yes_selection),
+        ("NO", no_price, no_evidence, no_selection),
+    ):
+        if price is None:
+            continue
+        out.append(
+            ParlayCandidateLeg(
+                sport="WNBA",
+                event_id=_canonical_game_id("WNBA", projection.game_title, event_date),
+                event_title=projection.game_title,
+                market_key=projection.market_key,
+                market_label=projection.market_label,
+                selection=selection,
+                consensus_probability=evidence.fair_probability,
+                book_count=0,
+                source_age_s=0.0,
+                median_odds=None,
+                kalshi_ticker=str(market.get("ticker") or ""),
+                kalshi_side=side,
+                kalshi_price=price,
+                kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                kalshi_status="MODEL",
+                evidence_class="MODEL",
+                model_probability=evidence.fair_probability,
+                model_confidence=evidence.confidence,
+                model_name=evidence.model_name,
+                model_sample_size=evidence.sample_size,
+                model_reasons=evidence.factors,
+                model_warnings=evidence.warnings,
+            )
+        )
+    return out
+
+
+def _wnba_line_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
+    out: list[ParlayCandidateLeg] = []
+    for row in rows:
+        out.extend(_wnba_line_candidate_for_market(row))
+    return out
+
+
 def model_candidates_from_kalshi(
     grouped: dict[str, list[KalshiSportMarket]],
     *,
@@ -1223,6 +1339,7 @@ def model_candidates_from_kalshi(
     max_nfl_receiving_players: int | None = None,
     include_nfl_touchdowns: bool = False,
     max_nfl_td_players: int | None = None,
+    include_wnba_game_lines: bool = False,
 ) -> list[ParlayCandidateLeg]:
     sports = (
         ("MLB", "NBA", "WNBA", "NFL", "Tennis")
@@ -1375,6 +1492,13 @@ def model_candidates_from_kalshi(
                     max_players=max_nfl_td_players,
                 )
             )
+
+        if sport == "WNBA" and include_wnba_game_lines:
+            line_rows = [
+                row for row in rows
+                if row.family in {"Spread", "Game Total", "Team Total"}
+            ]
+            all_rows.extend(_wnba_line_candidates(line_rows))
 
     # Model candidates are allowed to include both sides; the EV gate chooses.
     return all_rows
