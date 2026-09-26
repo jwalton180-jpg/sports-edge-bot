@@ -77,6 +77,9 @@ jobs:
           print("qualified_by_key", dict(Counter(a.leg.market_key for a in qualified)))
           print("qualified_total", len(qualified))
           print("ticket_legs", len(ticket.legs))
+          event_ids = [x.leg.event_id for x in ticket.legs]
+          print("ticket_event_ids", event_ids)
+          assert len(event_ids) == len(set(event_ids)), "max_per_event=1 admitted duplicate canonical game IDs"
           print("ticket", [
               (
                   x.leg.market_key,
