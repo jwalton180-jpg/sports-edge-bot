@@ -89,9 +89,16 @@ def _kalshi_team_code(code: str) -> str:
 
 
 def _aliases(code: str) -> set[str]:
-    vals = {normalize(code)}
+    kalshi_code = _kalshi_team_code(code)
+    vals = {normalize(code), normalize(kalshi_code)}
     for value in NFL_TEAM_ALIASES.get(code, ()):
-        vals.add(normalize(value))
+        normalized = normalize(value)
+        vals.add(normalized)
+        parts = normalized.split()
+        if parts:
+            mascot = parts[-1]
+            vals.add(normalize(f"{code} {mascot}"))
+            vals.add(normalize(f"{kalshi_code} {mascot}"))
     return {x for x in vals if x}
 
 
