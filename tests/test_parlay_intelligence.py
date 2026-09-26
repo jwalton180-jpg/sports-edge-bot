@@ -98,7 +98,7 @@ def test_extreme_model_market_gap_requires_secondary_confirmation():
     row = leg(fair=0.55, price=0.10, books=0)
     assessed = assess_leg(row, "longshot")
     assert assessed.qualified is False
-    assert any("extreme model-market dislocation" in warning for warning in assessed.warnings)
+    assert any("model-market dislocation" in warning for warning in assessed.warnings)
 
 
 def test_extreme_gap_with_conflicting_fresh_books_still_fails_closed():
@@ -123,4 +123,30 @@ def test_extreme_gap_can_pass_when_fresh_secondary_confirmation_agrees():
         }
     )
     assessed = assess_leg(row, "longshot")
+    assert assessed.qualified is True
+
+
+
+def test_low_confidence_model_needs_confirmation_at_15pp_gap():
+    row = leg(fair=0.58, price=0.42, books=0, model_conf=0.58)
+    assessed = assess_leg(row, "best")
+    assert assessed.qualified is False
+    assert any("at least 15 pp" in warning for warning in assessed.warnings)
+
+
+def test_high_confidence_model_keeps_25pp_confirmation_threshold():
+    row = leg(fair=0.58, price=0.42, books=0, model_conf=0.72)
+    assessed = assess_leg(row, "best")
+    assert assessed.qualified is True
+
+
+def test_low_confidence_large_gap_can_pass_with_fresh_agreeing_books():
+    row = leg(fair=0.58, price=0.42, books=4, age=20, model_conf=0.58)
+    row = ParlayCandidateLeg(
+        **{
+            **row.__dict__,
+            "consensus_probability": 0.55,
+        }
+    )
+    assessed = assess_leg(row, "best")
     assert assessed.qualified is True
