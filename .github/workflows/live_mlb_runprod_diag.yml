@@ -42,12 +42,13 @@ jobs:
               include_mlb_home_runs=False,
               include_mlb_total_bases=False,
               include_mlb_rbis=True,
-              max_mlb_rbi_players=24,
+              max_mlb_rbi_players=12,
               include_mlb_hrr=True,
-              max_mlb_hrr_players=24,
+              max_mlb_hrr_players=12,
               include_mlb_strikeouts=False,
           )
-          assessments = [assess_leg(c, "best") for c in candidates]
+          new_candidates = [c for c in candidates if c.market_key in {"batter_rbis", "batter_hrr"}]
+          assessments = [assess_leg(c, "best") for c in new_candidates]
           qualified = [a for a in assessments if a.qualified]
           print("catalog_error", result.error)
           print("catalog_complete", result.cursor_exhausted)
@@ -67,13 +68,13 @@ jobs:
                       "yes_sub_title": m.get("yes_sub_title"),
                       "subtitle": m.get("subtitle"),
                   })
-          print("model_candidates", len(candidates))
-          print("candidate_by_key", dict(Counter(c.market_key for c in candidates)))
+          print("model_candidates", len(new_candidates))
+          print("candidate_by_key", dict(Counter(c.market_key for c in new_candidates)))
           print("qualified_by_key", dict(Counter(a.leg.market_key for a in qualified)))
           print("qualified_total", len(qualified))
 
           ticket = build_intelligent_parlay(
-              candidates,
+              new_candidates,
               mode="best",
               target_legs=4,
               max_per_event=1,
