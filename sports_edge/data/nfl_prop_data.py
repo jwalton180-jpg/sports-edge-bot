@@ -21,6 +21,11 @@ _HEADERS = {
     "Accept": "text/csv,*/*",
 }
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
+_KALSHI_TEAM_CODES = {
+    "JAX": "JAC",
+    "LA": "LAR",
+    "WSH": "WAS",
+}
 
 
 @dataclass(frozen=True)
@@ -151,7 +156,11 @@ def _scheduled_opponent(team: str, event_date: date, season: int) -> tuple[str, 
 
 
 @lru_cache(maxsize=512)
-def player_context(player_name: str, event_date: date) -> NFLPlayerContext | None:
+def player_context(
+    player_name: str,
+    event_date: date,
+    event_ticker: str | None = None,
+) -> NFLPlayerContext | None:
     season = nfl_season(event_date)
     try:
         current_all = player_week_rows(season)
@@ -177,6 +186,13 @@ def player_context(player_name: str, event_date: date) -> NFLPlayerContext | Non
     if scheduled is None:
         return None
     opponent, game_title = scheduled
+
+    if event_ticker:
+        team_code = _KALSHI_TEAM_CODES.get(team, team)
+        opp_code = _KALSHI_TEAM_CODES.get(opponent, opponent)
+        ticker = str(event_ticker).upper()
+        if f"{team_code}{opp_code}" not in ticker and f"{opp_code}{team_code}" not in ticker:
+            return None
 
     return NFLPlayerContext(
         player_id=player_id,
