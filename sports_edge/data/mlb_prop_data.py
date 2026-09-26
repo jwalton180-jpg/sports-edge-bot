@@ -158,6 +158,39 @@ def season_stat(
     return dict(splits[0].get("stat") or {})
 
 
+@lru_cache(maxsize=1024)
+def game_log_stats(
+    player_id: int,
+    group: str,
+    season: int,
+) -> tuple[dict, ...]:
+    """Return per-game stats from the official MLB Stats API."""
+    response = requests.get(
+        f"{BASE}/people/{int(player_id)}/stats",
+        params={
+            "stats": "gameLog",
+            "group": group,
+            "season": int(season),
+        },
+        headers=_HEADERS,
+        timeout=15,
+    )
+    response.raise_for_status()
+    stats = response.json().get("stats", []) or []
+    if not stats:
+        return ()
+
+    out: list[dict] = []
+    for split in stats[0].get("splits", []) or []:
+        row = dict(split.get("stat") or {})
+        row["_date"] = split.get("date")
+        row["_game_pk"] = ((split.get("game") or {}).get("gamePk"))
+        row["_is_home"] = split.get("isHome")
+        row["_opponent"] = ((split.get("opponent") or {}).get("name"))
+        out.append(row)
+    return tuple(out)
+
+
 @lru_cache(maxsize=2048)
 def date_range_stat(
     player_id: int,
