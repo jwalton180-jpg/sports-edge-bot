@@ -1,0 +1,73 @@
+name: Inspect live Tennis event data
+
+on:
+  push:
+    branches: [adaptive-player-team-intelligence-20260929]
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect bounded live Tennis event payloads
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from sports_edge.data.kalshi import KalshiPublicClient
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          client=KalshiPublicClient()
+          result=fetch_supported_sport_catalog(
+              client=None,
+              sports=("Tennis",),
+              page_limit_per_series=15,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.12,
+          )
+          rows=group_kalshi_sports(result.markets).get("Tennis",[])
+          events={}
+          now=datetime.now(timezone.utc)
+          for row in rows:
+              m=row.market
+              et=str(m.get("event_ticker") or "")
+              if not et or et in events: continue
+              events[et]=m
+
+          print("event_count",len(events),"catalog_error",result.error)
+          checked=0
+          for et,m in list(events.items())[:40]:
+              try:
+                  payload=client.event_live_data(et)
+              except Exception as exc:
+                  print("LIVE_ERROR",et,type(exc).__name__,str(exc)[:180])
+                  continue
+              if not payload:
+                  continue
+              print("EVENT",et)
+              print("MARKET_TITLE",str(m.get("event_title") or m.get("title") or "")[:180])
+              if isinstance(payload,dict):
+                  print("TOP_KEYS",sorted(payload.keys()))
+                  compact={}
+                  for k,v in payload.items():
+                      if isinstance(v,(str,int,float,bool)) or v is None:
+                          compact[k]=v
+                      elif isinstance(v,list):
+                          compact[k]=v[:2]
+                      elif isinstance(v,dict):
+                          compact[k]={kk:vv for kk,vv in list(v.items())[:12] if isinstance(vv,(str,int,float,bool)) or vv is None}
+                  print("COMPACT",json.dumps(compact,default=str)[:4000])
+              else:
+                  print("TYPE",type(payload).__name__,str(payload)[:1000])
+              checked+=1
+              if checked>=6: break
+          print("checked",checked)
+          PY
