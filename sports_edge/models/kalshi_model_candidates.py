@@ -323,7 +323,12 @@ def _tennis_games_total_candidates(
         series = str(market.get("series_ticker") or "")
         gender, level = tennis_level_from_series(series)
         best_of = _tennis_best_of(market, gender)
-        if best_of is None:
+
+        # Production scope is deliberately narrower than the visible Kalshi
+        # family. The matchup-aware WTA challenger lost to a strength-blind
+        # chronological prior on the 2025 holdout, and BO5 totals have not yet
+        # passed a dedicated alternate-line validation. Fail closed on both.
+        if gender != "men" or "itf" in level.lower() or best_of != 3:
             continue
 
         model = _tennis_games_model(gender, start.date().year)
