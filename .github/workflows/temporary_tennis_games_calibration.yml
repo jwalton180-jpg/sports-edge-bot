@@ -36,7 +36,8 @@ jobs:
                       rows,
                       holdout_year=year,
                       alphas=(0.50, 0.60, 0.70, 0.75, 0.80, 0.90, 1.00),
-                      lines=(18.5, 20.5, 22.5, 24.5, 26.5),
+                      use_surface=False,
+                      best_of_filter=3,
                   )
                   print("GRID", gender, year, json.dumps(report, sort_keys=True))
           PY
