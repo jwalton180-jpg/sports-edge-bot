@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from sports_edge.models.kalshi_model_candidates import _tennis_games_total_candidates
+from sports_edge.models.kalshi_model_candidates import (
+    _tennis_best_of,
+    _tennis_games_total_candidates,
+)
 from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.model_evidence import ModelEvidence
 
@@ -128,3 +131,25 @@ def test_games_total_refuses_ambiguous_mens_match_format(monkeypatch):
         now=datetime(2099, 1, 1, 0, 0, tzinfo=timezone.utc),
     ) == []
     assert not called
+
+
+def test_mens_grand_slam_format_is_explicitly_best_of_five():
+    market = {
+        "rules_primary": (
+            "Professional tennis match in the 2099 Wimbledon Round Of 32."
+        )
+    }
+    assert _tennis_best_of(market, "men") == 5
+
+
+def test_mens_grand_slam_qualifying_stays_best_of_three():
+    market = {
+        "rules_primary": (
+            "Professional tennis match in the 2099 US Open Qualifying Round."
+        )
+    }
+    assert _tennis_best_of(market, "men") == 3
+
+
+def test_womens_match_format_is_best_of_three_without_extra_metadata():
+    assert _tennis_best_of({}, "women") == 3
