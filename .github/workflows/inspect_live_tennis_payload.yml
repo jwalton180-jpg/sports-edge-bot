@@ -1,4 +1,4 @@
-name: Inspect live Tennis event data
+name: Live Tennis reversal radar diagnostic
 
 on:
   push:
@@ -8,84 +8,67 @@ on:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Inspect bounded live Tennis event payloads
+      - name: Audit live Tennis market history and reversal radar
         run: |
           python - <<'PY'
-          import json
-          from datetime import datetime, timezone
-          from sports_edge.data.kalshi import KalshiPublicClient
-          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
-          from sports_edge.models.kalshi_sports import group_kalshi_sports
-
-          client=KalshiPublicClient()
-          result=fetch_supported_sport_catalog(
-              client=None,
-              sports=("Tennis",),
-              page_limit_per_series=15,
-              page_size=1000,
-              max_workers=6,
-              request_interval_s=0.12,
+          from collections import Counter
+          from sports_edge.data.tennis_live import (
+              fetch_open_tennis_match_markets,
+              fetch_tennis_candle_history,
           )
-          rows=group_kalshi_sports(result.markets).get("Tennis",[])
-          events={}
-          now=datetime.now(timezone.utc)
-          for row in rows:
-              m=row.market
-              et=str(m.get("event_ticker") or "")
-              if not et or et in events: continue
-              events[et]=m
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
 
-          print("event_count",len(events),"catalog_error",result.error)
-          checked=0
-          for et,m in list(events.items())[:40]:
-              try:
-                  payload=client.event_live_data(et)
-              except Exception as exc:
-                  print("LIVE_ERROR",et,type(exc).__name__,str(exc)[:180])
-                  continue
-              if not payload:
-                  continue
-              print("EVENT",et)
-              print("MARKET_TITLE",str(m.get("event_title") or m.get("title") or "")[:180])
-              if isinstance(payload,dict):
-                  print("TOP_KEYS",sorted(payload.keys()))
-                  compact={}
-                  for k,v in payload.items():
-                      if isinstance(v,(str,int,float,bool)) or v is None:
-                          compact[k]=v
-                      elif isinstance(v,list):
-                          compact[k]=v[:2]
-                      elif isinstance(v,dict):
-                          compact[k]={kk:vv for kk,vv in list(v.items())[:12] if isinstance(vv,(str,int,float,bool)) or vv is None}
-                  print("COMPACT",json.dumps(compact,default=str)[:4000])
-              else:
-                  print("TYPE",type(payload).__name__,str(payload)[:1000])
-              checked+=1
-              if checked>=6: break
-          print("checked",checked)
+          markets=list(fetch_open_tennis_match_markets())
+          grouped=group_kalshi_sports(markets)
+          candidates=[
+              c for c in model_candidates_from_kalshi(grouped,sport_filter="Tennis")
+              if c.sport=="Tennis" and c.market_key=="model_h2h" and c.kalshi_ticker
+          ]
+          tickers=tuple(sorted({str(c.kalshi_ticker) for c in candidates if c.kalshi_ticker}))
+          candles=fetch_tennis_candle_history(
+              tickers,
+              lookback_minutes=60,
+              period_interval=1,
+          )
+          radar=build_tennis_reversal_radar(
+              candidates,
+              candles,
+              confirmed_live_event_ids=set(),
+          )
 
-          # Probe current public 1-minute candlestick path on one Tennis market.
-          import time, requests
-          if rows:
-              m=rows[0].market
-              ticker=str(m.get("ticker") or "")
-              series=str(m.get("series_ticker") or "")
-              end=int(time.time()); start=end-3600
-              paths=[
-                  f"https://external-api.kalshi.com/trade-api/v2/series/{series}/markets/{ticker}/candlesticks",
-                  f"https://external-api.kalshi.com/trade-api/v2/markets/{ticker}/candlesticks",
-              ]
-              for url in paths:
-                  try:
-                      rr=requests.get(url,params={"start_ts":start,"end_ts":end,"period_interval":1},timeout=15)
-                      print("CANDLE_PROBE",url.split("/trade-api/v2/")[-1],"status",rr.status_code,"body",rr.text[:2000])
-                  except Exception as exc:
-                      print("CANDLE_ERROR",type(exc).__name__,str(exc)[:200])
+          candle_sizes=[len(v) for v in candles.values()]
+          print("open_match_markets",len(markets))
+          print("model_candidates",len(candidates))
+          print("canonical_matches",len({c.event_id for c in candidates}))
+          print("requested_tickers",len(tickers))
+          print("candle_tickers",len(candles))
+          print("candle_nonempty",sum(1 for v in candles.values() if v))
+          print("candle_points_total",sum(candle_sizes))
+          print("radar_by_status",dict(Counter(r.status for r in radar)))
+          print("radar_unique_events",len({r.event_id for r in radar}))
+          assert len(radar)==len({r.event_id for r in radar}), "duplicate physical match in radar"
+          assert all(r.status!="REVERSAL SIGNAL" for r in radar), "unconfirmed match promoted to strong signal"
+          print("RADAR_TOP",[
+              (
+                  r.status,
+                  r.selection,
+                  round(r.current_price,3),
+                  round(r.dip_points,1),
+                  round(r.rebound_points,1),
+                  round(r.prior_gap_points,1),
+                  round(r.score,1),
+                  r.h2h_context,
+                  r.trend_context,
+              )
+              for r in radar[:12]
+          ])
           PY
