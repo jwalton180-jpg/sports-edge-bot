@@ -449,6 +449,7 @@ def walkforward_games_total_report(
     holdout_year: int,
     alpha: float,
     lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+    use_surface: bool = False,
 ) -> dict:
     """Prequential score for a calibration alpha using only prior-date history."""
     ordered = sorted(
@@ -482,7 +483,10 @@ def walkforward_games_total_report(
                     continue
                 p_winner = _elo_probability(winner.elo, loser.elo)
                 level = _level_bucket(row.get("tourney_level"))
-                surface = str(row.get("surface") or "").strip().lower() or None
+                surface = (
+                    str(row.get("surface") or "").strip().lower() or None
+                    if use_surface else None
+                )
                 best_of = _best_of(row, score)
                 for line in lines:
                     estimate = _weighted_total_probability(
@@ -542,6 +546,7 @@ def walkforward_games_total_calibration_grid(
     holdout_year: int,
     alphas: tuple[float, ...] = (0.60, 0.75, 0.90, 1.00),
     lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+    use_surface: bool = False,
 ) -> dict[str, dict]:
     """Score several calibration alphas from one leakage-safe prequential pass."""
     ordered = sorted(
@@ -574,7 +579,10 @@ def walkforward_games_total_calibration_grid(
                     continue
                 p_winner = _elo_probability(winner.elo, loser.elo)
                 level = _level_bucket(row.get("tourney_level"))
-                surface = str(row.get("surface") or "").strip().lower() or None
+                surface = (
+                    str(row.get("surface") or "").strip().lower() or None
+                    if use_surface else None
+                )
                 best_of = _best_of(row, score)
                 for line in lines:
                     estimate = _weighted_total_probability(
@@ -624,6 +632,7 @@ def walkforward_games_total_benchmark(
     *,
     holdout_year: int,
     lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+    use_surface: bool = False,
 ) -> dict:
     """Compare the matchup model with a strength-blind chronological prior.
 
@@ -662,7 +671,10 @@ def walkforward_games_total_benchmark(
 
                 p_winner = _elo_probability(winner.elo, loser.elo)
                 level = _level_bucket(row.get("tourney_level"))
-                surface = str(row.get("surface") or "").strip().lower() or None
+                surface = (
+                    str(row.get("surface") or "").strip().lower() or None
+                    if use_surface else None
+                )
                 best_of = _best_of(row, score)
 
                 # Build the strength-blind prior once per target match, not once
