@@ -1951,6 +1951,7 @@ def model_candidates_from_kalshi(
     include_wnba_game_lines: bool = False,
     include_wnba_player_props: bool = False,
     max_wnba_players: int | None = None,
+    include_tennis_match_winner: bool = True,
     include_tennis_games_total: bool = False,
 ) -> list[ParlayCandidateLeg]:
     sports = (
@@ -1973,7 +1974,8 @@ def model_candidates_from_kalshi(
 
         for event_rows in events.values():
             if sport == "Tennis":
-                all_rows.extend(_tennis_event_candidates(event_rows))
+                if include_tennis_match_winner:
+                    all_rows.extend(_tennis_event_candidates(event_rows))
             else:
                 all_rows.extend(_team_event_candidates(sport, event_rows))
 
