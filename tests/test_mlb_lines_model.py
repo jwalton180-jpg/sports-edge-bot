@@ -1,3 +1,5 @@
+import pytest
+
 from datetime import date
 
 from sports_edge.models.kalshi_sports import KalshiSportMarket
@@ -5,6 +7,10 @@ from sports_edge.models.mlb_lines_model import (
     MLBLineProjection,
     _poisson_over,
     _margin_over,
+    _calibrated_probability,
+    MLB_SPREAD_CALIBRATION_ALPHA,
+    MLB_GAME_TOTAL_CALIBRATION_ALPHA,
+    MLB_TEAM_TOTAL_CALIBRATION_ALPHA,
 )
 from sports_edge.models.model_evidence import ModelEvidence
 import sports_edge.models.kalshi_model_candidates as kmc
@@ -20,6 +26,19 @@ def test_mlb_margin_probability_is_directional():
     favored = _margin_over(1.5, 5.3, 3.7)
     dog = _margin_over(1.5, 3.7, 5.3)
     assert favored > dog
+
+
+def test_mlb_probability_calibration_shrinks_extremes_monotonically():
+    assert _calibrated_probability(0.80, 0.75) == pytest.approx(0.725)
+    assert _calibrated_probability(0.20, 0.75) == pytest.approx(0.275)
+    assert _calibrated_probability(0.60, 0.70) < _calibrated_probability(0.70, 0.70)
+    assert _calibrated_probability(0.50, 0.70) == 0.50
+
+
+def test_mlb_forward_calibration_constants_are_conservative():
+    assert MLB_SPREAD_CALIBRATION_ALPHA == 0.75
+    assert MLB_GAME_TOTAL_CALIBRATION_ALPHA == 0.70
+    assert MLB_TEAM_TOTAL_CALIBRATION_ALPHA == 0.75
 
 
 def _projection(key, label, fair=0.61):
