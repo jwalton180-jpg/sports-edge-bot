@@ -165,10 +165,18 @@ def _tennis_games_model(gender: str, year: int) -> TennisGamesModel:
 
 
 def _tennis_event_signature(market: dict) -> str:
-    raw = str(market.get("event_ticker") or "").strip()
-    if "-" not in raw:
-        return raw
-    return raw.split("-", 1)[1]
+    raw = str(market.get("event_ticker") or "").strip().upper()
+    suffix = raw.split("-", 1)[1] if "-" in raw else raw
+    series = str(market.get("series_ticker") or raw.split("-", 1)[0]).upper()
+    if series.startswith("KXWTA"):
+        namespace = "WTA"
+    elif series.startswith("KXITF"):
+        namespace = "ITF"
+    elif series.startswith("KXATP"):
+        namespace = "ATP"
+    else:
+        namespace = "TENNIS"
+    return f"{namespace}:{suffix}" if suffix else ""
 
 
 def _tennis_matchups_by_signature(
