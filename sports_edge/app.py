@@ -61,7 +61,6 @@ from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context
 from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
-from sports_edge.models.tennis_reversal import scan_live_tennis_reversals
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
@@ -1769,95 +1768,6 @@ elif view == "Live Feed":
             st.divider()
     else:
         st.info(merr or "No MLB live events right now.")
-
-    st.subheader("Tennis reversal watch")
-    st.caption(
-        "Read-only reversal detector: independent Tennis model + H2H/trend evidence + "
-        "Kalshi 1-minute price history. It requires a major drawdown and confirmed recovery. "
-        "Kalshi's Tennis live-score endpoint is unavailable, so score/serve state is never fabricated."
-    )
-    if st.button("Scan live Tennis underdog reversals", use_container_width=True, key="live_tennis_reversal_scan"):
-        with st.spinner("Scanning active Tennis markets for major dip + recovery patterns…"):
-            tennis_grouped = kalshi_grouped
-            if sport_filter not in {"All", "Tennis"}:
-                (
-                    tennis_markets,
-                    tennis_err,
-                    _tennis_lat,
-                    _tennis_pages,
-                    _tennis_exhausted,
-                    _tennis_series,
-                    _tennis_incomplete,
-                ) = get_kalshi_markets("Tennis")
-                if tennis_err:
-                    st.session_state["tennis_reversal_state"] = ([], [str(tennis_err)])
-                    tennis_grouped = {"Tennis": []}
-                else:
-                    tennis_grouped = group_kalshi_sports(tennis_markets)
-
-            tennis_candidates = model_candidates_from_kalshi(
-                tennis_grouped,
-                sport_filter="Tennis",
-            )
-            reversal_signals, reversal_errors = scan_live_tennis_reversals(
-                grouped=tennis_grouped,
-                model_candidates=tennis_candidates,
-            )
-            st.session_state["tennis_reversal_state"] = (
-                reversal_signals,
-                reversal_errors,
-            )
-
-    reversal_signals, reversal_errors = st.session_state.get(
-        "tennis_reversal_state",
-        ([], []),
-    )
-    if reversal_signals:
-        for signal in reversal_signals[:12]:
-            pill = "edge-pill" if signal.status == "REVERSAL" else "watch-pill"
-            st.markdown(
-                f"""
-                <div class="market-card">
-                  <div class="market-card-top">
-                    <div>
-                      <div class="market-title">{signal.selection}</div>
-                      <div class="market-meta">{signal.event_title}</div>
-                    </div>
-                    <div class="market-price">{signal.current_price:.0%}</div>
-                  </div>
-                  <div style="margin-top:.55rem">
-                    <span class="{pill}">{signal.status}</span>
-                    <span class="edge-pill">dip {signal.drawdown_pp:.1f}pp</span>
-                    <span class="edge-pill">recovery +{signal.recovery_pp:.1f}pp</span>
-                    <span class="edge-pill">model edge +{signal.model_edge_pp:.1f}pp</span>
-                  </div>
-                  <div class="market-meta">
-                    Model fair {signal.model_fair:.1%} · confidence {signal.model_confidence:.0%} ·
-                    low {signal.dip_low:.1%} · prior peak {signal.pre_dip_peak:.1%} ·
-                    {signal.minutes_since_low}m since low · score {signal.score:.0f}
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            with st.expander(f"{signal.selection} — reversal evidence"):
-                for reason in signal.reasons:
-                    st.write("• " + reason)
-                for warning in signal.warnings:
-                    st.caption("⚠ " + warning)
-                st.code(
-                    f"{signal.ticker} | {signal.side} | current {round(signal.current_price * 100)}¢",
-                    language=None,
-                )
-    else:
-        st.info(
-            "No current Tennis underdog meets the strict major-dip + recovery + model-edge gate."
-        )
-    if reversal_errors:
-        with st.expander("Tennis reversal scan diagnostics"):
-            for error in reversal_errors[:8]:
-                st.caption("• " + str(error))
-
 
 with st.expander("System status / Model Trust"):
     st.write("**Futures:** excluded from the main workflow.")
