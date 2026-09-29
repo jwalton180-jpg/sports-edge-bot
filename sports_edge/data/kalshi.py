@@ -109,27 +109,6 @@ class KalshiPublicClient:
         params = {"depth": depth} if depth else None
         return self.http.get_json(f"{self.base}/markets/{ticker}/orderbook", params=params)
 
-    def market_candlesticks(
-        self,
-        series_ticker: str,
-        ticker: str,
-        *,
-        start_ts: int,
-        end_ts: int,
-        period_interval: int = 1,
-        include_latest_before_start: bool = True,
-    ):
-        params = {
-            "start_ts": int(start_ts),
-            "end_ts": int(end_ts),
-            "period_interval": int(period_interval),
-            "include_latest_before_start": str(bool(include_latest_before_start)).lower(),
-        }
-        return self.http.get_json(
-            f"{self.base}/series/{series_ticker}/markets/{ticker}/candlesticks",
-            params=params,
-        )
-
     def batch_market_candlesticks(
         self,
         market_tickers: list[str] | tuple[str, ...],
@@ -139,6 +118,8 @@ class KalshiPublicClient:
         period_interval: int = 1,
         include_latest_before_start: bool = True,
     ):
+        if int(period_interval) not in {1, 60, 1440}:
+            raise ValueError("period_interval must be 1, 60, or 1440 minutes")
         tickers = [str(x).strip() for x in market_tickers if str(x).strip()]
         if not tickers:
             return {"markets": []}
