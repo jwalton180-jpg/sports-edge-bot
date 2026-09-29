@@ -129,12 +129,7 @@ def test_unconfirmed_match_stays_watch_only():
 
 def test_radar_keeps_one_side_per_physical_match():
     a = _leg(ticker="KX-A", fair=.40)
-    b = ParlayCandidateLeg(
-        **{
-            **a.__dict__,
-            "ticker": "ignored",
-        }
-    ) if False else _leg(ticker="KX-B", fair=.35)
+    b = _leg(ticker="KX-B", fair=.35)
     hist = {"KX-A": _reversal_candles(), "KX-B": _reversal_candles()}
     rows = build_tennis_reversal_radar(
         [a, b],
