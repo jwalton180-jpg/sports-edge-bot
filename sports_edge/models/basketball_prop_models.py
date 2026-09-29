@@ -201,8 +201,11 @@ def _opponent_factor(
 
 def _pregame_only(event_date: date, event_ticker: str) -> bool:
     row = _match_event_row(_wnba_schedule_rows(), event_date, event_ticker)
+    # Fail closed when the exact scheduled event cannot be verified. Kalshi
+    # contracts can remain active after tip, so "market active" is not proof
+    # that a player prop is still pregame.
     if row is None:
-        return True
+        return False
     if _truthy(row.get("status_type_completed")):
         return False
     state = str(row.get("status_type_state") or "").strip().lower()
