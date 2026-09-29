@@ -124,10 +124,18 @@ def test_attach_books_enriches_model_leg_but_preserves_model_probability():
     assert row.evidence_class == "MODEL + BOOKS"
 
 
-def test_ambiguous_book_join_fails_closed_to_model_only():
+def test_ambiguous_same_event_book_join_fails_closed_to_model_only():
     model_leg = _leg()
     book_a = replace(_leg(fair=0.58, books=4), model_probability=None, model_name=None)
-    book_b = replace(book_a, event_id="E2", event_title="Other Event")
+    book_b = replace(book_a, median_odds=125.0)
     merged = attach_sportsbook_context([model_leg], [book_a, book_b])
     assert merged[0].book_count == 0
+
+
+def test_same_selection_from_other_event_does_not_make_join_ambiguous():
+    model_leg = _leg()
+    book_a = replace(_leg(fair=0.58, books=4), model_probability=None, model_name=None)
+    other_event = replace(book_a, event_id="E2", event_title="Other Event")
+    merged = attach_sportsbook_context([model_leg], [book_a, other_event])
+    assert merged[0].book_count == 4
     assert merged[0].evidence_class == "MODEL"
