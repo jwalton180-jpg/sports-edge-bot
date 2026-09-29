@@ -20,6 +20,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          from sports_edge.data.kalshi import KalshiPublicClient
           from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
           from sports_edge.models.kalshi_sports import group_kalshi_sports
 
@@ -38,17 +39,39 @@ jobs:
               "incomplete": result.incomplete_series,
           })
           grouped = group_kalshi_sports(result.markets)
-          targets = [
-              row for row in grouped["Tennis"]
-              if row.family in {"Games Total", "Games Spread"}
-          ]
+          tennis = grouped["Tennis"]
+          targets = [row for row in tennis if row.family in {"Games Total", "Games Spread"}]
           print("target_count", len(targets))
+
+          def sig(m):
+              raw = str(m.get("event_ticker") or "")
+              return raw.split("-", 1)[1] if "-" in raw else raw
+
           fields = (
               "ticker","event_ticker","series_ticker","title","subtitle","event_title",
               "yes_sub_title","no_sub_title","floor_strike","cap_strike","functional_strike",
               "yes_bid_dollars","yes_ask_dollars","no_bid_dollars","no_ask_dollars",
               "open_time","close_time","status"
           )
-          for row in targets[:30]:
-              print("ROW", row.family, json.dumps({k: row.market.get(k) for k in fields}, sort_keys=True))
+          totals = [row for row in targets if row.family == "Games Total"]
+          for row in totals[:8]:
+              market = row.market
+              signature = sig(market)
+              print("TOTAL", json.dumps({k: market.get(k) for k in fields}, sort_keys=True))
+              siblings = [
+                  sib for sib in tennis
+                  if sig(sib.market) == signature and sib.family in {"Match Winner", "Games Spread"}
+              ]
+              for sib in siblings[:8]:
+                  print("SIBLING", sib.family, json.dumps({k: sib.market.get(k) for k in fields}, sort_keys=True))
+
+          client = KalshiPublicClient()
+          for row in totals[:3]:
+              ticker = str(row.market.get("event_ticker") or "")
+              try:
+                  response = client.http.get_json(f"{client.base}/events/{ticker}")
+                  payload = response.data if isinstance(response.data, dict) else {}
+                  print("EVENT", ticker, json.dumps(payload, sort_keys=True)[:12000])
+              except Exception as exc:
+                  print("EVENT_ERROR", ticker, repr(exc))
           PY
