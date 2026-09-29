@@ -172,3 +172,62 @@ def test_games_total_does_not_use_expiration_as_pregame_proof(monkeypatch):
         rows,
         now=datetime(2099, 1, 1, 0, 0, tzinfo=timezone.utc),
     ) == []
+
+
+def test_games_total_refuses_wta_until_matchup_model_beats_prior(monkeypatch):
+    called = False
+
+    def fake_model(gender, year):
+        nonlocal called
+        called = True
+        return _FakeGamesModel()
+
+    monkeypatch.setattr(
+        "sports_edge.models.kalshi_model_candidates._tennis_games_model",
+        fake_model,
+    )
+    rows = [
+        _match_row("Alpha Player", "Beta Player"),
+        _match_row("Beta Player", "Alpha Player"),
+        _total_row(),
+    ]
+    for row in rows:
+        row.market["series_ticker"] = row.market["series_ticker"].replace("KXATP", "KXWTA")
+        row.market["event_ticker"] = row.market["event_ticker"].replace("KXATP", "KXWTA")
+        row.market["ticker"] = row.market["ticker"].replace("KXATP", "KXWTA")
+
+    assert _tennis_games_total_candidates(
+        rows,
+        now=datetime(2099, 1, 1, 0, 0, tzinfo=timezone.utc),
+    ) == []
+    assert not called
+
+
+def test_games_total_refuses_mens_best_of_five_until_separately_validated(monkeypatch):
+    called = False
+
+    def fake_model(gender, year):
+        nonlocal called
+        called = True
+        return _FakeGamesModel()
+
+    monkeypatch.setattr(
+        "sports_edge.models.kalshi_model_candidates._tennis_games_model",
+        fake_model,
+    )
+    total = _total_row()
+    total.market["rules_primary"] = (
+        "If the number of completed games is above 22.5 in the professional "
+        "tennis match in the 2099 Wimbledon Round Of 32."
+    )
+    rows = [
+        _match_row("Alpha Player", "Beta Player"),
+        _match_row("Beta Player", "Alpha Player"),
+        total,
+    ]
+
+    assert _tennis_games_total_candidates(
+        rows,
+        now=datetime(2099, 1, 1, 0, 0, tzinfo=timezone.utc),
+    ) == []
+    assert not called
