@@ -76,7 +76,8 @@ def _derived_aliases(
         parts = n.split()
         if len(parts) >= 2:
             # Derive Kalshi-style city + nickname initial(s), e.g.
-            # "Los Angeles D", "New York Y", "Chicago WS".
+            # "Los Angeles D", "New York Y", "Chicago WS", plus
+            # code + mascot forms such as "LAC Chargers" / "BUF Bills".
             if len(parts) >= 3 and " ".join(parts[-2:]) in {"white sox", "red sox", "blue jays"}:
                 city_parts = parts[:-2]
                 nick_parts = parts[-2:]
@@ -88,6 +89,12 @@ def _derived_aliases(
                 initials = "".join(x[0] for x in nick_parts if x)
                 if initials:
                     candidates.add(f"{city} {initials}")
+            mascot = " ".join(nick_parts)
+            if mascot:
+                candidates.add(f"{normalize(code)} {mascot}")
+                for extra in extra_codes:
+                    if extra:
+                        candidates.add(f"{normalize(extra)} {mascot}")
     return {x for x in candidates if x}
 
 
