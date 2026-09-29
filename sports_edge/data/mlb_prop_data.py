@@ -224,6 +224,39 @@ def date_range_stat(
     return dict((splits[0].get("stat") or {})) if splits else None
 
 
+@lru_cache(maxsize=1024)
+def team_date_range_stat(
+    team_id: int,
+    group: str,
+    start_iso: str,
+    end_iso: str,
+) -> dict | None:
+    """Return official MLB team stats for a bounded pregame date range."""
+    response = requests.get(
+        f"{BASE}/teams/{int(team_id)}/stats",
+        params={
+            "stats": "byDateRange",
+            "group": group,
+            "startDate": start_iso,
+            "endDate": end_iso,
+        },
+        headers=_HEADERS,
+        timeout=12,
+    )
+    response.raise_for_status()
+    stats = response.json().get("stats", []) or []
+    if not stats:
+        return None
+
+    for split in stats[0].get("splits", []) or []:
+        sport = split.get("sport") or {}
+        if int(sport.get("id") or 0) == 1:
+            return dict(split.get("stat") or {})
+
+    splits = stats[0].get("splits", []) or []
+    return dict((splits[0].get("stat") or {})) if splits else None
+
+
 @lru_cache(maxsize=256)
 def team_season_stat(
     team_id: int,
