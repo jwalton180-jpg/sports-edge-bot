@@ -17,6 +17,11 @@ from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
 from sports_edge.data.mlb import MLBClient
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
+from sports_edge.data.tennis_live import (
+    fetch_open_tennis_match_markets,
+    fetch_tennis_candle_history,
+)
+from sports_edge.models.event_identity import canonical_event_id_from_game
 from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets
 from sports_edge.models.intelligence import (
     PREMIUM_BOOKMAKER_KEYS,
@@ -55,6 +60,7 @@ from sports_edge.models.live_board import LiveSignal, build_live_signals, build_
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context
+from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
 from sports_edge.models.tennis_reversal import scan_live_tennis_reversals
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
@@ -146,7 +152,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-25-model-first-game-lines-final")
+st.caption("Build: 2026-09-29-adaptive-tennis-radar")
 
 
 def _secret(name: str) -> str | None:
@@ -254,6 +260,26 @@ def get_mlb_live():
         return r.data, None
     except Exception as exc:
         return {}, str(exc)
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def get_tennis_match_markets_live():
+    try:
+        return list(fetch_open_tennis_match_markets()), None
+    except Exception as exc:
+        return [], _safe_error(exc)
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def get_tennis_candles_live(tickers: tuple[str, ...]):
+    try:
+        return fetch_tennis_candle_history(
+            tickers,
+            lookback_minutes=60,
+            period_interval=1,
+        ), None
+    except Exception as exc:
+        return {}, _safe_error(exc)
 
 
 def _sport_from_odds_key(key: str) -> str | None:
@@ -1594,9 +1620,123 @@ elif view == "Parlay Generator":
 
 elif view == "Live Feed":
     st.header("Live Feed")
-    st.markdown('<div class="section-note">Fast official/public game-state feeds. This page is for what is happening now, not futures.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-note">Fast official/public game-state feeds plus Tennis price-path reversal intelligence. This page is for what is happening now, not futures.</div>', unsafe_allow_html=True)
     nfl, nerr = get_nfl_live()
     mlb, merr = get_mlb_live()
+
+    st.subheader("Tennis Live Reversal Radar")
+    st.caption(
+        "Scans all open ATP/WTA/Challenger/ITF match-winner contracts for a major executable-price dip followed by a real rebound. "
+        "Sports Edge's Tennis model is used as a pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H), not as a fake live-score fair."
+    )
+
+    def _render_tennis_reversal_radar():
+        live_tennis_markets, tennis_market_err = get_tennis_match_markets_live()
+        if tennis_market_err:
+            st.warning(tennis_market_err)
+        if not live_tennis_markets:
+            st.info("No open Tennis match-winner markets are available for the live radar.")
+            return
+
+        live_grouped = group_kalshi_sports(live_tennis_markets)
+        tennis_candidates = [
+            row for row in model_candidates_from_kalshi(
+                live_grouped,
+                sport_filter="Tennis",
+            )
+            if row.sport == "Tennis"
+            and row.market_key == "model_h2h"
+            and row.kalshi_ticker
+        ]
+
+        confirmed_live_ids: set[str] = set()
+        confirmed_live_pairs: set[str] = set()
+        live_game_count = 0
+        if api_key:
+            active, active_err = get_active_sports(api_key)
+            if not active_err:
+                tennis_games, _, _ = build_game_universe(api_key, active, "Tennis")
+                for game in tennis_games:
+                    if game.state != "LIVE":
+                        continue
+                    live_game_count += 1
+                    cid = canonical_event_id_from_game(game)
+                    confirmed_live_ids.add(cid)
+                    parts = cid.split(":", 2)
+                    if len(parts) == 3:
+                        confirmed_live_pairs.add(parts[2])
+
+        for row in tennis_candidates:
+            parts = row.event_id.split(":", 2)
+            if len(parts) == 3 and parts[2] in confirmed_live_pairs:
+                confirmed_live_ids.add(row.event_id)
+
+        tickers = tuple(sorted({
+            str(row.kalshi_ticker)
+            for row in tennis_candidates
+            if row.kalshi_ticker
+        }))
+        candles, candle_err = get_tennis_candles_live(tickers)
+        if candle_err:
+            st.warning(candle_err)
+
+        radar = build_tennis_reversal_radar(
+            tennis_candidates,
+            candles,
+            confirmed_live_event_ids=confirmed_live_ids,
+        )
+        strong = [row for row in radar if row.status == "REVERSAL SIGNAL"]
+        watch = [row for row in radar if row.status == "WATCH"]
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Modeled match sides", len(tennis_candidates))
+        c2.metric("Live matches confirmed", live_game_count)
+        c3.metric("Reversal signals", len(strong))
+        c4.metric("Watches", len(watch))
+
+        if not radar:
+            st.info(
+                "No Tennis underdog currently clears the dip + rebound + model-support gate. "
+                "The radar will not force a signal when the reversal is not there."
+            )
+            return
+
+        table = pd.DataFrame([
+            {
+                "Status": row.status,
+                "Player": row.selection,
+                "Match": row.event_title,
+                "Current": f"{row.current_price:.0%}",
+                "Peak": f"{row.local_peak:.0%}",
+                "Trough": f"{row.trough_price:.0%}",
+                "Dip": f"-{row.dip_points:.1f}pp",
+                "Rebound": f"+{row.rebound_points:.1f}pp",
+                "3m momentum": f"{row.recent_momentum_points:+.1f}pp",
+                "Pregame prior": f"{row.model_prior_probability:.0%}",
+                "Prior gap": f"{row.prior_gap_points:+.1f}pp",
+                "Model conf.": f"{row.model_confidence:.0%}",
+                "H2H": "yes" if row.h2h_context else "—",
+                "Score": f"{row.score:.0f}",
+            }
+            for row in radar[:25]
+        ])
+        st.dataframe(table, use_container_width=True, hide_index=True)
+
+        for row in radar[:10]:
+            label = f"{row.status} · {row.selection} · {row.current_price:.0%} · score {row.score:.0f}"
+            with st.expander(label):
+                st.write(f"**Match:** {row.event_title}")
+                st.write(f"**Kalshi contract:** {row.ticker}")
+                for reason in row.reasons:
+                    st.caption("• " + reason)
+                if row.warnings:
+                    st.warning(" · ".join(row.warnings))
+
+    _fragment = getattr(st, "fragment", None)
+    if _fragment is not None:
+        _fragment(run_every="30s")(_render_tennis_reversal_radar)()
+    else:
+        _render_tennis_reversal_radar()
 
     st.subheader("NFL")
     events = nfl.get("events", []) if isinstance(nfl, dict) else []
