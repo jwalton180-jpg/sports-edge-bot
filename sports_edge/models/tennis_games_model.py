@@ -483,15 +483,32 @@ class TennisGamesModel:
         )
 
 
+
+TENNIS_GAMES_VALIDATION_LINES: tuple[float, ...] = (
+    14.5, 15.5, 16.5, 17.5, 18.5, 19.5, 20.5, 21.5,
+    22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5,
+)
+
+
+def _eligible_validation_match(
+    row: dict,
+    score: _ScoreOutcome,
+    *,
+    best_of_filter: int | None,
+) -> bool:
+    return best_of_filter is None or _best_of(row, score) == best_of_filter
+
+
 def walkforward_games_total_report(
     rows: Iterable[dict],
     *,
     holdout_year: int,
     alpha: float,
-    lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+    lines: tuple[float, ...] = TENNIS_GAMES_VALIDATION_LINES,
     use_surface: bool = False,
+    best_of_filter: int | None = 3,
 ) -> dict:
-    """Prequential score for a calibration alpha using only prior-date history."""
+    """Prequential score for one calibration alpha using only prior-date history."""
     ordered = sorted(
         [row for row in rows if _date(row) is not None],
         key=lambda row: (
@@ -503,6 +520,7 @@ def walkforward_games_total_report(
     players: dict[str, _PlayerState] = {}
     samples: list[_HistoricalSample] = []
     scored: list[tuple[float, int, float]] = []
+    line_values = tuple(float(line) for line in lines)
 
     for day, day_iter in groupby(ordered, key=_date):
         day_rows = list(day_iter)
@@ -515,12 +533,22 @@ def walkforward_games_total_report(
                 winner_name = normalize(row.get("winner_name"))
                 loser_name = normalize(row.get("loser_name"))
                 score = parse_completed_score(row.get("score"))
-                if not winner_name or not loser_name or score is None:
+                if (
+                    not winner_name
+                    or not loser_name
+                    or score is None
+                    or not _eligible_validation_match(
+                        row,
+                        score,
+                        best_of_filter=best_of_filter,
+                    )
+                ):
                     continue
                 winner = players.get(winner_name)
                 loser = players.get(loser_name)
                 if winner is None or loser is None or min(winner.matches, loser.matches) < 5:
                     continue
+
                 p_winner = _elo_probability(winner.elo, loser.elo)
                 level = _level_bucket(row.get("tourney_level"))
                 surface = (
@@ -528,24 +556,23 @@ def walkforward_games_total_report(
                     if use_surface else None
                 )
                 best_of = _best_of(row, score)
-                for line in lines:
-                    estimate = _weighted_total_probability(
-                        samples=samples,
-                        player_a=winner,
-                        player_b=loser,
-                        target_probability_a=p_winner,
-                        target_date=day,
-                        target_level=level,
-                        target_surface=surface,
-                        best_of=best_of,
-                        line=line,
-                    )
-                    if estimate is None:
-                        continue
-                    raw = estimate[0]
-                    probability = _calibrated_probability(raw, alpha)
-                    outcome = int(score.total_games > line)
-                    scored.append((probability, outcome, line))
+                estimate = _weighted_total_probabilities(
+                    samples=samples,
+                    player_a=winner,
+                    player_b=loser,
+                    target_probability_a=p_winner,
+                    target_date=day,
+                    target_level=level,
+                    target_surface=surface,
+                    best_of=best_of,
+                    lines=line_values,
+                )
+                if estimate is None:
+                    continue
+                probabilities = estimate[0]
+                for line in line_values:
+                    probability = _calibrated_probability(probabilities[line], alpha)
+                    scored.append((probability, int(score.total_games > line), line))
 
         for row in day_rows:
             _apply_row(row, players=players, samples=samples)
@@ -561,7 +588,7 @@ def walkforward_games_total_report(
     ) / len(scored)
     accuracy = sum(int((p >= 0.5) == bool(y)) for p, y, _ in scored) / len(scored)
     by_line: dict[str, dict] = {}
-    for line in lines:
+    for line in line_values:
         subset = [(p, y) for p, y, ln in scored if ln == line]
         if not subset:
             continue
@@ -585,8 +612,9 @@ def walkforward_games_total_calibration_grid(
     *,
     holdout_year: int,
     alphas: tuple[float, ...] = (0.60, 0.75, 0.90, 1.00),
-    lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+    lines: tuple[float, ...] = TENNIS_GAMES_VALIDATION_LINES,
     use_surface: bool = False,
+    best_of_filter: int | None = 3,
 ) -> dict[str, dict]:
     """Score several calibration alphas from one leakage-safe prequential pass."""
     ordered = sorted(
@@ -600,6 +628,7 @@ def walkforward_games_total_calibration_grid(
     players: dict[str, _PlayerState] = {}
     samples: list[_HistoricalSample] = []
     raw_scores: list[tuple[float, int, float]] = []
+    line_values = tuple(float(line) for line in lines)
 
     for day, day_iter in groupby(ordered, key=_date):
         day_rows = list(day_iter)
@@ -611,12 +640,22 @@ def walkforward_games_total_calibration_grid(
                 winner_name = normalize(row.get("winner_name"))
                 loser_name = normalize(row.get("loser_name"))
                 score = parse_completed_score(row.get("score"))
-                if not winner_name or not loser_name or score is None:
+                if (
+                    not winner_name
+                    or not loser_name
+                    or score is None
+                    or not _eligible_validation_match(
+                        row,
+                        score,
+                        best_of_filter=best_of_filter,
+                    )
+                ):
                     continue
                 winner = players.get(winner_name)
                 loser = players.get(loser_name)
                 if winner is None or loser is None or min(winner.matches, loser.matches) < 5:
                     continue
+
                 p_winner = _elo_probability(winner.elo, loser.elo)
                 level = _level_bucket(row.get("tourney_level"))
                 surface = (
@@ -624,21 +663,24 @@ def walkforward_games_total_calibration_grid(
                     if use_surface else None
                 )
                 best_of = _best_of(row, score)
-                for line in lines:
-                    estimate = _weighted_total_probability(
-                        samples=samples,
-                        player_a=winner,
-                        player_b=loser,
-                        target_probability_a=p_winner,
-                        target_date=day,
-                        target_level=level,
-                        target_surface=surface,
-                        best_of=best_of,
-                        line=line,
+                estimate = _weighted_total_probabilities(
+                    samples=samples,
+                    player_a=winner,
+                    player_b=loser,
+                    target_probability_a=p_winner,
+                    target_date=day,
+                    target_level=level,
+                    target_surface=surface,
+                    best_of=best_of,
+                    lines=line_values,
+                )
+                if estimate is None:
+                    continue
+                probabilities = estimate[0]
+                for line in line_values:
+                    raw_scores.append(
+                        (probabilities[line], int(score.total_games > line), line)
                     )
-                    if estimate is None:
-                        continue
-                    raw_scores.append((estimate[0], int(score.total_games > line), line))
 
         for row in day_rows:
             _apply_row(row, players=players, samples=samples)
@@ -666,17 +708,17 @@ def walkforward_games_total_calibration_grid(
     return reports
 
 
-
 def walkforward_games_total_benchmark(
     rows: Iterable[dict],
     *,
     holdout_year: int,
-    lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+    lines: tuple[float, ...] = TENNIS_GAMES_VALIDATION_LINES,
     use_surface: bool = False,
+    best_of_filter: int | None = 3,
 ) -> dict:
     """Compare the matchup model with a strength-blind chronological prior.
 
-    The benchmark knows the line, best-of format, level bucket and recency, but
+    The benchmark knows line, best-of format, level bucket and recency, but
     deliberately ignores player identity, Elo strength, surface and player
     recent-total history. Both probabilities are formed only from earlier dates.
     """
@@ -690,7 +732,8 @@ def walkforward_games_total_benchmark(
     )
     players: dict[str, _PlayerState] = {}
     samples: list[_HistoricalSample] = []
-    scored: list[tuple[float, float, int]] = []
+    scored: list[tuple[float, float, int, float]] = []
+    line_values = tuple(float(line) for line in lines)
 
     for day, day_iter in groupby(ordered, key=_date):
         day_rows = list(day_iter)
@@ -702,7 +745,16 @@ def walkforward_games_total_benchmark(
                 winner_name = normalize(row.get("winner_name"))
                 loser_name = normalize(row.get("loser_name"))
                 score = parse_completed_score(row.get("score"))
-                if not winner_name or not loser_name or score is None:
+                if (
+                    not winner_name
+                    or not loser_name
+                    or score is None
+                    or not _eligible_validation_match(
+                        row,
+                        score,
+                        best_of_filter=best_of_filter,
+                    )
+                ):
                     continue
                 winner = players.get(winner_name)
                 loser = players.get(loser_name)
@@ -717,10 +769,9 @@ def walkforward_games_total_benchmark(
                 )
                 best_of = _best_of(row, score)
 
-                # Build the strength-blind prior once per target match, not once
-                # per line. This keeps validation fast without changing evidence.
+                # Build the strength-blind prior once per target match.
                 baseline_weight = 0.0
-                baseline_over = {float(line): 0.0 for line in lines}
+                baseline_over = {line: 0.0 for line in line_values}
                 baseline_n = 0
                 for sample in samples[-1800:]:
                     if sample.best_of != best_of:
@@ -734,48 +785,50 @@ def walkforward_games_total_benchmark(
                         continue
                     baseline_weight += weight
                     baseline_n += 1
-                    for line in lines:
-                        baseline_over[float(line)] += weight * float(sample.total_games > line)
+                    for line in line_values:
+                        baseline_over[line] += weight * float(sample.total_games > line)
 
                 if baseline_n < 30 or baseline_weight <= 0:
                     continue
 
-                for line in lines:
-                    estimate = _weighted_total_probability(
-                        samples=samples,
-                        player_a=winner,
-                        player_b=loser,
-                        target_probability_a=p_winner,
-                        target_date=day,
-                        target_level=level,
-                        target_surface=surface,
-                        best_of=best_of,
-                        line=line,
-                    )
-                    if estimate is None:
-                        continue
+                estimate = _weighted_total_probabilities(
+                    samples=samples,
+                    player_a=winner,
+                    player_b=loser,
+                    target_probability_a=p_winner,
+                    target_date=day,
+                    target_level=level,
+                    target_surface=surface,
+                    best_of=best_of,
+                    lines=line_values,
+                )
+                if estimate is None:
+                    continue
 
+                probabilities = estimate[0]
+                for line in line_values:
                     model_p = _calibrated_probability(
-                        estimate[0],
+                        probabilities[line],
                         TENNIS_GAMES_TOTAL_CALIBRATION_ALPHA,
                     )
                     baseline_p = clamp(
-                        baseline_over[float(line)] / baseline_weight,
+                        baseline_over[line] / baseline_weight,
                         0.01,
                         0.99,
                     )
-                    scored.append((model_p, baseline_p, int(score.total_games > line)))
+                    scored.append(
+                        (model_p, baseline_p, int(score.total_games > line), line)
+                    )
 
         for row in day_rows:
             _apply_row(row, players=players, samples=samples)
 
     if not scored:
-        return {"n": 0}
+        return {"n": 0, "by_line": {}}
 
     eps = 1e-12
 
-    def metrics(index: int) -> dict[str, float]:
-        values = [(row[index], row[2]) for row in scored]
+    def metrics(values: list[tuple[float, int]]) -> dict[str, float]:
         return {
             "brier": sum((p - y) ** 2 for p, y in values) / len(values),
             "log_loss": -sum(
@@ -785,12 +838,28 @@ def walkforward_games_total_benchmark(
             "accuracy": sum(int((p >= 0.5) == bool(y)) for p, y in values) / len(values),
         }
 
-    model_metrics = metrics(0)
-    baseline_metrics = metrics(1)
+    model_metrics = metrics([(model_p, outcome) for model_p, _, outcome, _ in scored])
+    baseline_metrics = metrics([(base_p, outcome) for _, base_p, outcome, _ in scored])
+    by_line: dict[str, dict] = {}
+    for line in line_values:
+        subset = [row for row in scored if row[3] == line]
+        if not subset:
+            continue
+        model_line = metrics([(row[0], row[2]) for row in subset])
+        baseline_line = metrics([(row[1], row[2]) for row in subset])
+        by_line[f"{line:g}"] = {
+            "n": len(subset),
+            "model": model_line,
+            "baseline": baseline_line,
+            "brier_improvement": baseline_line["brier"] - model_line["brier"],
+            "log_loss_improvement": baseline_line["log_loss"] - model_line["log_loss"],
+        }
+
     return {
         "n": len(scored),
         "model": model_metrics,
         "baseline": baseline_metrics,
         "brier_improvement": baseline_metrics["brier"] - model_metrics["brier"],
         "log_loss_improvement": baseline_metrics["log_loss"] - model_metrics["log_loss"],
+        "by_line": by_line,
     }
