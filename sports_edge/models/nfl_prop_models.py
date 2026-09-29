@@ -193,6 +193,8 @@ def project_nfl_passing_yards(
 
     base_yards, current_weight = _blend_mean(cur_yards, prior_yards)
     expected_att, _ = _blend_mean(cur_att, prior_att)
+    pass_role_factor, pass_role_reason = _role_shift(cur_att, max_move=0.10)
+    expected_att *= pass_role_factor
 
     cur_total_att = sum(cur_att)
     prior_total_att = sum(prior_att)
@@ -219,6 +221,8 @@ def project_nfl_passing_yards(
         f"Opponent pass-defense factor {matchup:.3f} from {matchup_games} current game(s)",
         f"Projected mean {projected:.1f} yards with {sd:.1f} yard weekly volatility",
     ]
+    if pass_role_reason:
+        factors.append(pass_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior-season passing baseline {mean(prior_yards):.1f}/game over {len(prior_yards)} game(s)")
 
@@ -276,6 +280,8 @@ def project_nfl_passing_tds(
 
     td_rate, current_weight = _blend_mean(cur_td, prior_td)
     expected_att, _ = _blend_mean(cur_att, prior_att)
+    pass_role_factor, pass_role_reason = _role_shift(cur_att, max_move=0.10)
+    expected_att *= pass_role_factor
     cur_att_mean = mean(cur_att) if cur_att else expected_att
     volume_factor = clamp(expected_att / max(cur_att_mean, 1.0), 0.85, 1.15)
 
@@ -289,6 +295,8 @@ def project_nfl_passing_tds(
         f"Opponent passing-TD factor {matchup:.3f} from {matchup_games} current game(s)",
         f"Poisson scoring mean {lam:.2f} passing TDs",
     ]
+    if pass_role_reason:
+        factors.append(pass_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior passing TD baseline {mean(prior_td):.2f}/game over {len(prior_td)} game(s)")
 
@@ -341,6 +349,8 @@ def project_nfl_pass_attempts(
     cur = _values(ctx.current_rows, "attempts")
     prior = _values(ctx.prior_rows, "attempts")
     projected, _ = _blend_mean(cur, prior)
+    pass_role_factor, pass_role_reason = _role_shift(cur, max_move=0.10)
+    projected *= pass_role_factor
     sd = _weighted_sd(cur, prior, 4.0)
     probability = normal_over_probability(projected, sd, float(milestone_attempts) - 0.5)
 
@@ -348,6 +358,8 @@ def project_nfl_pass_attempts(
         f"Current pass attempts {mean(cur):.1f}/game over {len(cur)} game(s)",
         f"Projected pass attempts {projected:.1f} with {sd:.1f} weekly volatility",
     ]
+    if pass_role_reason:
+        factors.append(pass_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior pass-attempt baseline {mean(prior):.1f}/game over {len(prior)} game(s)")
     sample, confidence = _sample_and_confidence(
@@ -402,6 +414,8 @@ def project_nfl_pass_completions(
 
     base_comp, current_weight = _blend_mean(cur_comp, prior_comp)
     expected_att, _ = _blend_mean(cur_att, prior_att)
+    pass_role_factor, pass_role_reason = _role_shift(cur_att, max_move=0.10)
+    expected_att *= pass_role_factor
     cur_att_total = sum(cur_att)
     prior_att_total = sum(prior_att)
     cur_rate = sum(cur_comp) / cur_att_total if cur_att_total > 0 else 0.0
@@ -420,6 +434,8 @@ def project_nfl_pass_completions(
         f"Expected pass attempts {expected_att:.1f}; blended completion rate {completion_rate:.1%}",
         f"Projected completions {projected:.1f} with {sd:.1f} weekly volatility",
     ]
+    if pass_role_reason:
+        factors.append(pass_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior completions baseline {mean(prior_comp):.1f}/game over {len(prior_comp)} game(s)")
     sample, confidence = _sample_and_confidence(
@@ -474,6 +490,8 @@ def project_nfl_pass_interceptions(
 
     game_rate, current_weight = _blend_mean(cur_int, prior_int)
     expected_att, _ = _blend_mean(cur_att, prior_att)
+    pass_role_factor, pass_role_reason = _role_shift(cur_att, max_move=0.10)
+    expected_att *= pass_role_factor
     cur_att_total = sum(cur_att)
     prior_att_total = sum(prior_att)
     cur_rate = sum(cur_int) / cur_att_total if cur_att_total > 0 else 0.0
@@ -491,6 +509,8 @@ def project_nfl_pass_interceptions(
         f"Expected pass attempts {expected_att:.1f}; blended interception rate {int_rate:.2%}",
         f"Poisson interception mean {lam:.2f}",
     ]
+    if pass_role_reason:
+        factors.append(pass_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior interceptions baseline {mean(prior_int):.2f}/game over {len(prior_int)} game(s)")
     sample, confidence = _sample_and_confidence(
