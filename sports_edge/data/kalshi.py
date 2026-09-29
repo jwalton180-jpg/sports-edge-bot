@@ -109,6 +109,50 @@ class KalshiPublicClient:
         params = {"depth": depth} if depth else None
         return self.http.get_json(f"{self.base}/markets/{ticker}/orderbook", params=params)
 
+    def market_candlesticks(
+        self,
+        series_ticker: str,
+        ticker: str,
+        *,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int = 1,
+        include_latest_before_start: bool = True,
+    ):
+        params = {
+            "start_ts": int(start_ts),
+            "end_ts": int(end_ts),
+            "period_interval": int(period_interval),
+            "include_latest_before_start": str(bool(include_latest_before_start)).lower(),
+        }
+        return self.http.get_json(
+            f"{self.base}/series/{series_ticker}/markets/{ticker}/candlesticks",
+            params=params,
+        )
+
+    def batch_market_candlesticks(
+        self,
+        market_tickers: list[str] | tuple[str, ...],
+        *,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int = 1,
+        include_latest_before_start: bool = True,
+    ):
+        tickers = [str(x).strip() for x in market_tickers if str(x).strip()]
+        if not tickers:
+            return {"markets": []}
+        if len(tickers) > 100:
+            raise ValueError("Kalshi batch candlesticks supports at most 100 market tickers per request")
+        params = {
+            "market_tickers": ",".join(dict.fromkeys(tickers)),
+            "start_ts": int(start_ts),
+            "end_ts": int(end_ts),
+            "period_interval": int(period_interval),
+            "include_latest_before_start": str(bool(include_latest_before_start)).lower(),
+        }
+        return self.http.get_json(f"{self.base}/markets/candlesticks", params=params)
+
     def events(self, status: str = "open", limit: int = 200, cursor: str | None = None, with_nested_markets: bool = True):
         params = {"status": status, "limit": min(limit, 200), "with_nested_markets": str(with_nested_markets).lower()}
         if cursor: params["cursor"] = cursor
