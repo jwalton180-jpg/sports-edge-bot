@@ -618,6 +618,7 @@ def walkforward_games_total_calibration_grid(
     return reports
 
 
+
 def walkforward_games_total_benchmark(
     rows: Iterable[dict],
     *,
@@ -664,6 +665,29 @@ def walkforward_games_total_benchmark(
                 surface = str(row.get("surface") or "").strip().lower() or None
                 best_of = _best_of(row, score)
 
+                # Build the strength-blind prior once per target match, not once
+                # per line. This keeps validation fast without changing evidence.
+                baseline_weight = 0.0
+                baseline_over = {float(line): 0.0 for line in lines}
+                baseline_n = 0
+                for sample in samples[-1800:]:
+                    if sample.best_of != best_of:
+                        continue
+                    level_w = _level_weight(sample.level, level)
+                    if level_w <= 0:
+                        continue
+                    age_days = max(0, (day - sample.match_date).days)
+                    weight = (0.5 ** (age_days / 420.0)) * level_w
+                    if weight <= 0.005:
+                        continue
+                    baseline_weight += weight
+                    baseline_n += 1
+                    for line in lines:
+                        baseline_over[float(line)] += weight * float(sample.total_games > line)
+
+                if baseline_n < 30 or baseline_weight <= 0:
+                    continue
+
                 for line in lines:
                     estimate = _weighted_total_probability(
                         samples=samples,
@@ -679,30 +703,15 @@ def walkforward_games_total_benchmark(
                     if estimate is None:
                         continue
 
-                    baseline_weight = 0.0
-                    baseline_over = 0.0
-                    baseline_n = 0
-                    for sample in samples[-1800:]:
-                        if sample.best_of != best_of:
-                            continue
-                        level_w = _level_weight(sample.level, level)
-                        if level_w <= 0:
-                            continue
-                        age_days = max(0, (day - sample.match_date).days)
-                        weight = (0.5 ** (age_days / 420.0)) * level_w
-                        if weight <= 0.005:
-                            continue
-                        baseline_weight += weight
-                        baseline_over += weight * float(sample.total_games > line)
-                        baseline_n += 1
-                    if baseline_n < 30 or baseline_weight <= 0:
-                        continue
-
                     model_p = _calibrated_probability(
                         estimate[0],
                         TENNIS_GAMES_TOTAL_CALIBRATION_ALPHA,
                     )
-                    baseline_p = clamp(baseline_over / baseline_weight, 0.01, 0.99)
+                    baseline_p = clamp(
+                        baseline_over[float(line)] / baseline_weight,
+                        0.01,
+                        0.99,
+                    )
                     scored.append((model_p, baseline_p, int(score.total_games > line)))
 
         for row in day_rows:
