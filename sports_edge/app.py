@@ -619,9 +619,22 @@ PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     "MLB RBIs": [("MLB", ("batter_rbis",))],
     "MLB H+R+RBI": [("MLB", ("batter_hits_runs_rbis",))],
     "MLB Strikeouts": [("MLB", ("pitcher_strikeouts",))],
-    "NFL Passing": [("NFL", ("player_pass_yds", "player_pass_tds"))],
-    "NFL Rushing": [("NFL", ("player_rush_yds",))],
-    "NFL Receiving": [("NFL", ("player_receptions", "player_reception_yds"))],
+    "NFL Passing": [("NFL", (
+        "player_pass_yds", "player_pass_yds_alternate",
+        "player_pass_tds", "player_pass_tds_alternate",
+        "player_pass_attempts", "player_pass_attempts_alternate",
+        "player_pass_completions", "player_pass_completions_alternate",
+        "player_pass_interceptions", "player_pass_interceptions_alternate",
+    ))],
+    "NFL Rushing": [("NFL", (
+        "player_rush_yds", "player_rush_yds_alternate",
+        "player_rush_attempts", "player_rush_attempts_alternate",
+        "player_rush_reception_yds", "player_rush_reception_yds_alternate",
+    ))],
+    "NFL Receiving": [("NFL", (
+        "player_receptions", "player_receptions_alternate",
+        "player_reception_yds", "player_reception_yds_alternate",
+    ))],
     "NFL Touchdowns": [("NFL", ("player_anytime_td",))],
     "NBA Points": [("NBA", ("player_points",))],
     "NBA Rebounds": [("NBA", ("player_rebounds",))],
@@ -635,13 +648,37 @@ PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     "WNBA PRA": [("WNBA", ("player_points_rebounds_assists",))],
     "Best Available": [
         ("MLB", ("batter_hits", "batter_home_runs", "batter_total_bases", "batter_rbis", "batter_hits_runs_rbis", "pitcher_strikeouts")),
-        ("NFL", ("player_anytime_td",)),
+        ("NFL", (
+            "player_pass_yds", "player_pass_yds_alternate",
+            "player_pass_tds", "player_pass_tds_alternate",
+            "player_pass_attempts", "player_pass_attempts_alternate",
+            "player_pass_completions", "player_pass_completions_alternate",
+            "player_pass_interceptions", "player_pass_interceptions_alternate",
+            "player_rush_yds", "player_rush_yds_alternate",
+            "player_rush_attempts", "player_rush_attempts_alternate",
+            "player_rush_reception_yds", "player_rush_reception_yds_alternate",
+            "player_receptions", "player_receptions_alternate",
+            "player_reception_yds", "player_reception_yds_alternate",
+            "player_anytime_td",
+        )),
         ("NBA", ("player_points",)),
         ("WNBA", ("player_points",)),
     ],
     "Mixed Sports": [
         ("MLB", ("batter_hits", "batter_home_runs", "batter_total_bases", "batter_rbis", "batter_hits_runs_rbis", "pitcher_strikeouts")),
-        ("NFL", ("player_anytime_td",)),
+        ("NFL", (
+            "player_pass_yds", "player_pass_yds_alternate",
+            "player_pass_tds", "player_pass_tds_alternate",
+            "player_pass_attempts", "player_pass_attempts_alternate",
+            "player_pass_completions", "player_pass_completions_alternate",
+            "player_pass_interceptions", "player_pass_interceptions_alternate",
+            "player_rush_yds", "player_rush_yds_alternate",
+            "player_rush_attempts", "player_rush_attempts_alternate",
+            "player_rush_reception_yds", "player_rush_reception_yds_alternate",
+            "player_receptions", "player_receptions_alternate",
+            "player_reception_yds", "player_reception_yds_alternate",
+            "player_anytime_td",
+        )),
         ("NBA", ("player_points",)),
         ("WNBA", ("player_points",)),
     ],
@@ -842,9 +879,9 @@ def scan_parlay_candidates(
     line_targets = [
         row for row in (model_targets or [])
         if row.market_key in {
-            "mlb_spread", "mlb_game_total",
-            "nfl_spread", "nfl_game_total",
-            "wnba_spread", "wnba_game_total",
+            "mlb_spread", "mlb_game_total", "mlb_team_total",
+            "nfl_spread", "nfl_game_total", "nfl_team_total",
+            "wnba_spread", "wnba_game_total", "wnba_team_total",
         }
     ]
     if line_targets:
@@ -878,13 +915,43 @@ def scan_parlay_candidates(
                 ]
                 if not targets:
                     continue
-                candidates.extend(
-                    candidate_book_context_for_model_lines(
-                        game,
-                        payload,
-                        targets,
+                featured_targets = [
+                    row for row in targets
+                    if row.market_key not in {"mlb_team_total", "nfl_team_total", "wnba_team_total"}
+                ]
+                if featured_targets:
+                    candidates.extend(
+                        candidate_book_context_for_model_lines(
+                            game,
+                            payload,
+                            featured_targets,
+                        )
                     )
-                )
+
+                team_total_targets = [
+                    row for row in targets
+                    if row.market_key in {"mlb_team_total", "nfl_team_total", "wnba_team_total"}
+                ]
+                if team_total_targets:
+                    team_payload, team_err, _ = get_event_odds(
+                        api_key_value,
+                        game.sport_key,
+                        game.event_id,
+                        "team_totals,alternate_team_totals",
+                    )
+                    calls += 1
+                    if team_err:
+                        errors.append(
+                            f"{game.away_team} @ {game.home_team} team totals: {team_err}"
+                        )
+                    elif team_payload:
+                        candidates.extend(
+                            candidate_book_context_for_model_lines(
+                                game,
+                                team_payload,
+                                team_total_targets,
+                            )
+                        )
 
     plan = PARLAY_PROP_PLAN.get(preset, [])
     if preset in ("Best Available", "Mixed Sports") and sport_filter_value != "All":
