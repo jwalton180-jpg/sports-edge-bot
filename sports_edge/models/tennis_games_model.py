@@ -616,3 +616,120 @@ def walkforward_games_total_calibration_grid(
             "accuracy": sum(int((p >= 0.5) == bool(y)) for p, y, _ in scored) / len(scored),
         }
     return reports
+
+
+def walkforward_games_total_benchmark(
+    rows: Iterable[dict],
+    *,
+    holdout_year: int,
+    lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+) -> dict:
+    """Compare the matchup model with a strength-blind chronological prior.
+
+    The benchmark knows the line, best-of format, level bucket and recency, but
+    deliberately ignores player identity, Elo strength, surface and player
+    recent-total history. Both probabilities are formed only from earlier dates.
+    """
+    ordered = sorted(
+        [row for row in rows if _date(row) is not None],
+        key=lambda row: (
+            str(row.get("tourney_date") or ""),
+            str(row.get("match_num") or ""),
+            str(row.get("winner_name") or ""),
+        ),
+    )
+    players: dict[str, _PlayerState] = {}
+    samples: list[_HistoricalSample] = []
+    scored: list[tuple[float, float, int]] = []
+
+    for day, day_iter in groupby(ordered, key=_date):
+        day_rows = list(day_iter)
+        if day is None:
+            continue
+
+        if day.year == holdout_year:
+            for row in day_rows:
+                winner_name = normalize(row.get("winner_name"))
+                loser_name = normalize(row.get("loser_name"))
+                score = parse_completed_score(row.get("score"))
+                if not winner_name or not loser_name or score is None:
+                    continue
+                winner = players.get(winner_name)
+                loser = players.get(loser_name)
+                if winner is None or loser is None or min(winner.matches, loser.matches) < 5:
+                    continue
+
+                p_winner = _elo_probability(winner.elo, loser.elo)
+                level = _level_bucket(row.get("tourney_level"))
+                surface = str(row.get("surface") or "").strip().lower() or None
+                best_of = _best_of(row, score)
+
+                for line in lines:
+                    estimate = _weighted_total_probability(
+                        samples=samples,
+                        player_a=winner,
+                        player_b=loser,
+                        target_probability_a=p_winner,
+                        target_date=day,
+                        target_level=level,
+                        target_surface=surface,
+                        best_of=best_of,
+                        line=line,
+                    )
+                    if estimate is None:
+                        continue
+
+                    baseline_weight = 0.0
+                    baseline_over = 0.0
+                    baseline_n = 0
+                    for sample in samples[-1800:]:
+                        if sample.best_of != best_of:
+                            continue
+                        level_w = _level_weight(sample.level, level)
+                        if level_w <= 0:
+                            continue
+                        age_days = max(0, (day - sample.match_date).days)
+                        weight = (0.5 ** (age_days / 420.0)) * level_w
+                        if weight <= 0.005:
+                            continue
+                        baseline_weight += weight
+                        baseline_over += weight * float(sample.total_games > line)
+                        baseline_n += 1
+                    if baseline_n < 30 or baseline_weight <= 0:
+                        continue
+
+                    model_p = _calibrated_probability(
+                        estimate[0],
+                        TENNIS_GAMES_TOTAL_CALIBRATION_ALPHA,
+                    )
+                    baseline_p = clamp(baseline_over / baseline_weight, 0.01, 0.99)
+                    scored.append((model_p, baseline_p, int(score.total_games > line)))
+
+        for row in day_rows:
+            _apply_row(row, players=players, samples=samples)
+
+    if not scored:
+        return {"n": 0}
+
+    eps = 1e-12
+
+    def metrics(index: int) -> dict[str, float]:
+        values = [(row[index], row[2]) for row in scored]
+        return {
+            "brier": sum((p - y) ** 2 for p, y in values) / len(values),
+            "log_loss": -sum(
+                y * math.log(max(eps, p)) + (1 - y) * math.log(max(eps, 1.0 - p))
+                for p, y in values
+            ) / len(values),
+            "accuracy": sum(int((p >= 0.5) == bool(y)) for p, y in values) / len(values),
+        }
+
+    model_metrics = metrics(0)
+    baseline_metrics = metrics(1)
+    return {
+        "n": len(scored),
+        "model": model_metrics,
+        "baseline": baseline_metrics,
+        "brier_improvement": baseline_metrics["brier"] - model_metrics["brier"],
+        "log_loss_improvement": baseline_metrics["log_loss"] - model_metrics["log_loss"],
+    }
