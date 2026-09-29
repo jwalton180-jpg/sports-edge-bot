@@ -1253,6 +1253,7 @@ elif view == "Player Props":
                         max_nfl_td_players=24 if model_family_key == "player_anytime_td" else None,
                         include_wnba_player_props=(sport_filter == "WNBA"),
                         max_wnba_players=24 if sport_filter == "WNBA" else None,
+                        include_tennis_match_winner=(model_family_key != "tennis_games_total"),
                         include_tennis_games_total=(model_family_key == "tennis_games_total"),
                     )
                     prop_model_candidates = [
@@ -1547,6 +1548,7 @@ elif view == "Parlay Generator":
                     else broad_wnba_cap if use_all_wnba_models
                     else None
                 ),
+                include_tennis_match_winner=(preset != "Tennis Games Total"),
                 include_tennis_games_total=(
                     preset == "Tennis Games Total" or use_all_tennis_models
                 ),
