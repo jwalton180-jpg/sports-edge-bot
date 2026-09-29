@@ -39,6 +39,11 @@ class _Matchup:
         return f"{self.away_name} @ {self.home_name}"
 
 
+MLB_SPREAD_CALIBRATION_ALPHA = 0.75
+MLB_GAME_TOTAL_CALIBRATION_ALPHA = 0.70
+MLB_TEAM_TOTAL_CALIBRATION_ALPHA = 0.75
+
+
 _CODE_ALIASES = {
     "CWS": {"CWS", "CHW"},
     "KCR": {"KCR", "KC"},
@@ -55,6 +60,11 @@ def _f(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _calibrated_probability(probability: float, alpha: float) -> float:
+    """Shrink raw Poisson probabilities toward 50% using forward-validated alpha."""
+    return clamp(0.5 + float(alpha) * (float(probability) - 0.5), 0.01, 0.99)
 
 
 def _codes(abbr: str) -> set[str]:
@@ -235,10 +245,11 @@ def project_mlb_spread(
             return None
         team_mu, opp_mu = (away_mu, home_mu) if side == "away" else (home_mu, away_mu)
         team = matchup.away_name if side == "away" else matchup.home_name
-        prob = _margin_over(line, team_mu, opp_mu)
+        raw_prob = _margin_over(line, team_mu, opp_mu)
+        prob = _calibrated_probability(raw_prob, MLB_SPREAD_CALIBRATION_ALPHA)
         evidence = ModelEvidence(
             sport="MLB",
-            model_name="MLB Run Line: team scoring/allowance Poisson baseline",
+            model_name="MLB Run Line: calibrated team scoring/allowance Poisson",
             fair_probability=prob,
             confidence=_confidence(games, "spread"),
             sample_size=games,
@@ -246,6 +257,7 @@ def project_mlb_spread(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected {team} margin {team_mu - opp_mu:+.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                f"Forward-validated probability calibration: {MLB_SPREAD_CALIBRATION_ALPHA:.2f}× distance from 50% (raw {raw_prob:.1%})",
             ),
             warnings=_warnings(),
         )
@@ -267,10 +279,11 @@ def project_mlb_game_total(
             return None
         matchup, away_mu, home_mu, games = result
         total_mu = away_mu + home_mu
-        prob = _poisson_over(line, total_mu)
+        raw_prob = _poisson_over(line, total_mu)
+        prob = _calibrated_probability(raw_prob, MLB_GAME_TOTAL_CALIBRATION_ALPHA)
         evidence = ModelEvidence(
             sport="MLB",
-            model_name="MLB Game Total: team scoring/allowance Poisson baseline",
+            model_name="MLB Game Total: calibrated team scoring/allowance Poisson",
             fair_probability=prob,
             confidence=_confidence(games, "total"),
             sample_size=games,
@@ -278,6 +291,7 @@ def project_mlb_game_total(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected game total {total_mu:.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                f"Forward-validated probability calibration: {MLB_GAME_TOTAL_CALIBRATION_ALPHA:.2f}× distance from 50% (raw {raw_prob:.1%})",
             ),
             warnings=_warnings(),
         )
@@ -304,10 +318,11 @@ def project_mlb_team_total(
             return None
         team_mu = away_mu if side == "away" else home_mu
         team = matchup.away_name if side == "away" else matchup.home_name
-        prob = _poisson_over(line, team_mu)
+        raw_prob = _poisson_over(line, team_mu)
+        prob = _calibrated_probability(raw_prob, MLB_TEAM_TOTAL_CALIBRATION_ALPHA)
         evidence = ModelEvidence(
             sport="MLB",
-            model_name="MLB Team Total: team scoring/allowance Poisson baseline",
+            model_name="MLB Team Total: calibrated team scoring/allowance Poisson",
             fair_probability=prob,
             confidence=_confidence(games, "team_total"),
             sample_size=games,
@@ -315,6 +330,7 @@ def project_mlb_team_total(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected {team} score {team_mu:.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                f"Forward-validated probability calibration: {MLB_TEAM_TOTAL_CALIBRATION_ALPHA:.2f}× distance from 50% (raw {raw_prob:.1%})",
             ),
             warnings=_warnings(),
         )
