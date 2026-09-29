@@ -43,7 +43,7 @@ jobs:
               for rows in prior_by.values():
                   rows.sort(key=lambda r:int(float(r.get("week") or 0)))
 
-              for key,min_actual in (("targets",1.0),("carries",1.0)):
+              for key,min_actual in (("targets",1.0),("carries",1.0),("attempts",5.0)):
                   base_err=[]; adapt_err=[]; shifted=0
                   for pid,rows in cur_by.items():
                       pvals=[f(r,key) for r in prior_by.get(pid,[])]
