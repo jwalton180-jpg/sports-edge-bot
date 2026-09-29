@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 import re
 from typing import Iterable
@@ -241,13 +241,9 @@ def _parse_timestamp(value: object) -> datetime | None:
 
 
 def _tennis_scheduled_start(market: dict) -> datetime | None:
-    # occurrence_datetime is the strongest field currently returned by Kalshi;
-    # expected_expiration_time is retained only as a compatibility fallback.
-    for key in ("occurrence_datetime", "expected_expiration_time"):
-        parsed = _parse_timestamp(market.get(key))
-        if parsed is not None:
-            return parsed
-    return None
+    # Require the explicit scheduled occurrence. Expiration/close timestamps can
+    # lag the actual match and are not proof that a contract is still pregame.
+    return _parse_timestamp(market.get("occurrence_datetime"))
 
 
 def _tennis_best_of(market: dict, gender: str) -> int | None:
@@ -313,7 +309,7 @@ def _tennis_games_total_candidates(
         start = _tennis_scheduled_start(market)
         # A scheduled start in the past is not proof a match is live, but it is
         # enough uncertainty to refuse a pregame model. Future start is required.
-        if start is None or start <= current:
+        if start is None or start <= current + timedelta(minutes=10):
             continue
 
         try:
