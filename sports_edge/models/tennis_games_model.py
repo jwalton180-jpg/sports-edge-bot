@@ -15,9 +15,10 @@ from sports_edge.models.game_scope import normalize
 from sports_edge.models.model_evidence import ModelEvidence
 
 
-# Production activation must keep this value tied to chronological holdout
-# evidence. It is intentionally conservative until a challenger beats it.
-TENNIS_GAMES_TOTAL_CALIBRATION_ALPHA = 0.75
+# Selected on the 2025 chronological holdout and re-checked on 2026.
+# Shrinking toward 50% worsened Brier/log loss for men; women were nearly tied
+# at 0.90 in 2025 and favored 1.00 again in 2026, so production stays unshrunk.
+TENNIS_GAMES_TOTAL_CALIBRATION_ALPHA = 1.00
 
 
 @dataclass(frozen=True)
