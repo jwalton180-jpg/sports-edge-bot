@@ -216,6 +216,15 @@ def get_events(api_key: str, sport_key: str):
         return [], _safe_error(exc), None
 
 
+@st.cache_data(ttl=15, show_spinner=False)
+def get_scores(api_key: str, sport_key: str):
+    try:
+        r = OddsClient(api_key=api_key).scores(sport_key, days_from=1)
+        return (r.data if isinstance(r.data, list) else []), None
+    except Exception as exc:
+        return [], _safe_error(exc)
+
+
 @st.cache_data(ttl=20, show_spinner=False)
 def get_featured_odds(api_key: str, sport_key: str):
     try:
@@ -1648,27 +1657,10 @@ elif view == "Live Feed":
             and row.kalshi_ticker
         ]
 
+        # First build the price/model radar with no claim that a match is live.
+        # Actual live promotion happens only after a current score payload confirms it.
         confirmed_live_ids: set[str] = set()
-        confirmed_live_pairs: set[str] = set()
         live_game_count = 0
-        if api_key:
-            active, active_err = get_active_sports(api_key)
-            if not active_err:
-                tennis_games, _, _ = build_game_universe(api_key, active, "Tennis")
-                for game in tennis_games:
-                    if game.state != "LIVE":
-                        continue
-                    live_game_count += 1
-                    cid = canonical_event_id_from_game(game)
-                    confirmed_live_ids.add(cid)
-                    parts = cid.split(":", 2)
-                    if len(parts) == 3:
-                        confirmed_live_pairs.add(parts[2])
-
-        for row in tennis_candidates:
-            parts = row.event_id.split(":", 2)
-            if len(parts) == 3 and parts[2] in confirmed_live_pairs:
-                confirmed_live_ids.add(row.event_id)
 
         tickers = tuple(sorted({
             str(row.kalshi_ticker)
@@ -1679,17 +1671,80 @@ elif view == "Live Feed":
         if candle_err:
             st.warning(candle_err)
 
+        preliminary = build_tennis_reversal_radar(
+            tennis_candidates,
+            candles,
+            confirmed_live_event_ids=set(),
+        )
+
+        # Only spend score-feed calls on matches that already clear the
+        # price-dip/rebound/model-support WATCH gate. This keeps the 30-second
+        # loop low-cost while preventing a scheduled-start timestamp from being
+        # mistaken for proof that a match is still live.
+        if api_key and preliminary:
+            active, active_err = get_active_sports(api_key)
+            if not active_err:
+                tennis_games, _, _ = build_game_universe(api_key, active, "Tennis")
+                games_by_pair: dict[str, list[GameEvent]] = {}
+                for game in tennis_games:
+                    cid = canonical_event_id_from_game(game)
+                    parts = cid.split(":", 2)
+                    if len(parts) == 3:
+                        games_by_pair.setdefault(parts[2], []).append(game)
+
+                watch_ids = {row.event_id for row in preliminary}
+                candidate_games: list[tuple[str, GameEvent]] = []
+                for event_id in watch_ids:
+                    parts = event_id.split(":", 2)
+                    if len(parts) != 3:
+                        continue
+                    matches = games_by_pair.get(parts[2], [])
+                    if len(matches) == 1:
+                        candidate_games.append((event_id, matches[0]))
+
+                score_cache: dict[str, list[dict]] = {}
+                for _, game in candidate_games[:12]:
+                    if game.sport_key in score_cache:
+                        continue
+                    payload, score_err = get_scores(api_key, game.sport_key)
+                    if not score_err:
+                        score_cache[game.sport_key] = payload
+
+                now_utc = datetime.now(timezone.utc)
+                for model_event_id, game in candidate_games:
+                    for score_event in score_cache.get(game.sport_key, []):
+                        if str(score_event.get("id") or "") != game.event_id:
+                            continue
+                        if score_event.get("completed") is True:
+                            continue
+                        scores = score_event.get("scores")
+                        if not isinstance(scores, list) or not scores:
+                            continue
+                        last_update = score_event.get("last_update")
+                        if last_update:
+                            try:
+                                updated = datetime.fromisoformat(str(last_update).replace("Z", "+00:00"))
+                                if updated.tzinfo is None:
+                                    updated = updated.replace(tzinfo=timezone.utc)
+                                if (now_utc - updated.astimezone(timezone.utc)).total_seconds() > 180:
+                                    continue
+                            except ValueError:
+                                continue
+                        confirmed_live_ids.add(model_event_id)
+                        break
+
         radar = build_tennis_reversal_radar(
             tennis_candidates,
             candles,
             confirmed_live_event_ids=confirmed_live_ids,
         )
+        live_game_count = len(confirmed_live_ids)
         strong = [row for row in radar if row.status == "REVERSAL SIGNAL"]
         watch = [row for row in radar if row.status == "WATCH"]
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Modeled match sides", len(tennis_candidates))
-        c2.metric("Live matches confirmed", live_game_count)
+        c2.metric("Score-confirmed live", live_game_count)
         c3.metric("Reversal signals", len(strong))
         c4.metric("Watches", len(watch))
 
