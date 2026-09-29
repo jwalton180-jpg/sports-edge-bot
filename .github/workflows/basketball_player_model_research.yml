@@ -1,0 +1,63 @@
+name: Basketball player model research
+
+on:
+  push:
+    branches: [basketball-player-model-research-20260929]
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect current NBA WNBA box-score schemas and Kalshi prop families
+        run: |
+          python - <<'PY'
+          import io, requests, pandas as pd
+          from collections import Counter
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          urls = {
+              "NBA": "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_nba_player_boxscores/player_box_2026.csv",
+              "WNBA": "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_wnba_player_boxscores/player_box_2026.csv",
+          }
+          for sport,url in urls.items():
+              r=requests.get(url,timeout=60)
+              r.raise_for_status()
+              df=pd.read_csv(io.BytesIO(r.content),nrows=8)
+              print("DATA",sport,"bytes",len(r.content))
+              print("COLUMNS",sport,list(df.columns))
+              print("SAMPLE",sport,df.head(3).to_dict("records"))
+
+          result=fetch_supported_sport_catalog(
+              sports=("NBA","WNBA"),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped=group_kalshi_sports(result.markets)
+          print("catalog_error",result.error)
+          print("catalog_complete",result.cursor_exhausted)
+          for sport in ("NBA","WNBA"):
+              rows=grouped.get(sport,[])
+              print("SPORT",sport,"TOTAL",len(rows),"FAMILIES",dict(Counter(r.family for r in rows)))
+              for family in sorted({r.family for r in rows}):
+                  samples=[
+                      (
+                          r.market.get("series_ticker"),
+                          r.market.get("title"),
+                          r.market.get("floor_strike"),
+                          r.market.get("event_ticker"),
+                          r.market.get("status"),
+                      )
+                      for r in rows if r.family==family
+                  ][:5]
+                  print("SAMPLE_MARKETS",sport,family,samples)
+          PY
