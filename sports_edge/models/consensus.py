@@ -135,6 +135,138 @@ def _fresh_age_seconds(last_update: Any, now: datetime) -> float:
     return max(0.0, (now - dt).total_seconds())
 
 
+def line_consensus_from_event(
+    event: dict,
+    *,
+    market_key: str,
+    target_name: str,
+    target_point: float,
+    selection_label: str,
+    now: datetime | None = None,
+    max_age_s: float = 120.0,
+    min_books: int = 2,
+    max_disagreement_pp: float = 12.0,
+    point_tolerance: float = 0.01,
+) -> ConsensusQuote | None:
+    """No-vig consensus for one exact spread/total line.
+
+    The line itself is part of the identity. Books offering a nearby but
+    different number are ignored rather than silently treated as equivalent.
+    """
+
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    values: list[tuple[float, float]] = []
+    wanted = normalize_name(target_name)
+
+    for bookmaker in event.get("bookmakers", []) or []:
+        market = next(
+            (m for m in bookmaker.get("markets", []) or [] if m.get("key") == market_key),
+            None,
+        )
+        if not market:
+            continue
+        outcomes = market.get("outcomes", []) or []
+        if len(outcomes) != 2:
+            continue
+
+        age_s = _fresh_age_seconds(
+            market.get("last_update") or bookmaker.get("last_update"),
+            now,
+        )
+        if not math.isfinite(age_s) or age_s > max_age_s:
+            continue
+
+        parsed: list[tuple[dict, float]] = []
+        valid = True
+        for outcome in outcomes:
+            try:
+                price = float(outcome.get("price"))
+                raw_p = american_to_implied(price)
+                point = float(outcome.get("point"))
+            except (TypeError, ValueError, ZeroDivisionError):
+                valid = False
+                break
+            parsed.append((outcome, raw_p))
+        if not valid:
+            continue
+
+        hit: tuple[dict, float] | None = None
+        other: tuple[dict, float] | None = None
+        for item in parsed:
+            outcome, raw_p = item
+            if (
+                normalize_name(str(outcome.get("name") or "")) == wanted
+                and abs(float(outcome.get("point")) - float(target_point)) <= point_tolerance
+            ):
+                hit = item
+            else:
+                other = item
+        if hit is None or other is None:
+            continue
+
+        # Require the other half of the exact two-way line. For spreads the
+        # handicap signs should be opposite; for totals both sides share point.
+        hit_point = float(hit[0].get("point"))
+        other_point = float(other[0].get("point"))
+        if market_key == "spreads":
+            compatible = abs(hit_point + other_point) <= point_tolerance
+        elif market_key == "totals":
+            compatible = abs(hit_point - other_point) <= point_tolerance
+        else:
+            compatible = True
+        if not compatible:
+            continue
+
+        total = hit[1] + other[1]
+        if total <= 0:
+            continue
+        values.append((hit[1] / total, age_s))
+
+    if not values:
+        return None
+
+    weights = [1.0 / (1.0 + age / 45.0) for _, age in values]
+    denom = sum(weights)
+    fair = sum(p * w for (p, _), w in zip(values, weights)) / denom
+    ages = [age for _, age in values]
+    probabilities = [p for p, _ in values]
+    med_age = median(ages)
+    disagreement_pp = (
+        100.0 * (max(probabilities) - min(probabilities))
+        if len(probabilities) > 1
+        else 0.0
+    )
+    book_count = len(values)
+
+    book_factor = min(1.0, book_count / 4.0)
+    freshness_factor = clamp(1.0 - med_age / max(max_age_s, 1.0))
+    disagreement_factor = clamp(
+        1.0 - disagreement_pp / max(max_disagreement_pp * 1.5, 1.0)
+    )
+    data_quality = clamp(
+        0.55 * book_factor + 0.30 * freshness_factor + 0.15 * disagreement_factor
+    )
+
+    warnings: list[str] = []
+    if book_count < min_books:
+        warnings.append(f"Only {book_count} fresh sportsbook source(s)")
+    if disagreement_pp > max_disagreement_pp:
+        warnings.append(f"Cross-book disagreement {disagreement_pp:.1f} pp")
+    if med_age > max_age_s * 0.75:
+        warnings.append(f"Sportsbook consensus aging ({med_age:.0f}s)")
+
+    return ConsensusQuote(
+        selection=selection_label,
+        fair_probability=clamp(fair),
+        book_count=book_count,
+        median_age_s=float(med_age),
+        max_age_s=float(max(ages)),
+        disagreement_pp=float(disagreement_pp),
+        data_quality=float(data_quality),
+        warnings=tuple(warnings),
+    )
+
+
 def consensus_from_event(
     event: dict,
     *,
