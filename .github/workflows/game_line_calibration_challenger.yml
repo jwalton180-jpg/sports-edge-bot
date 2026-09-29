@@ -1,0 +1,172 @@
+name: Game-line probability calibration challenger
+
+on:
+  push:
+    branches: [calibrate-game-line-probabilities-20260929]
+  workflow_dispatch:
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Calibrate NFL and MLB probabilities on prior year, validate forward
+        run: |
+          python - <<'PY'
+          from collections import defaultdict
+          from datetime import date, datetime
+          from math import log
+          from statistics import mean
+          import requests
+
+          from sports_edge.data.nfl_prop_data import schedule_rows
+          from sports_edge.models.nfl_lines_model import (
+              _Matchup as NFLMatchup,
+              _history as nfl_history,
+              _normal_over,
+              _score_projection,
+          )
+          from sports_edge.models.mlb_lines_model import _margin_over, _poisson_over
+
+          def clip(p):
+              return min(.995,max(.005,float(p)))
+          def shrink(p,a):
+              return clip(.5+a*(p-.5))
+          def brier(rows,a):
+              return mean((shrink(p,a)-y)**2 for p,y in rows)
+          def logloss(rows,a):
+              vals=[]
+              for p,y in rows:
+                  q=shrink(p,a)
+                  vals.append(-(y*log(q)+(1-y)*log(1-q)))
+              return mean(vals)
+          ALPHAS=[x/100 for x in range(40,111,5)]
+
+          # ---------------- NFL ----------------
+          all_nfl=tuple(schedule_rows())
+          nfl_sets={}
+          for season in (2024,2025,2026):
+              margin_rows=[]; total_rows=[]
+              for row in all_nfl:
+                  try:
+                      if int(row.get("season") or 0)!=season: continue
+                      if str(row.get("game_type") or "").upper() not in {"REG","POST"}: continue
+                      gd=date.fromisoformat(str(row.get("gameday"))[:10])
+                      away=str(row.get("away_team") or "")
+                      home=str(row.get("home_team") or "")
+                      hs=float(row.get("home_score")); aws=float(row.get("away_score"))
+                  except Exception:
+                      continue
+                  ac=nfl_history(all_nfl,team=away,season=season,before=gd)
+                  hc=nfl_history(all_nfl,team=home,season=season,before=gd)
+                  ap=nfl_history(all_nfl,team=away,season=season-1,before=date(season,3,1))
+                  hp=nfl_history(all_nfl,team=home,season=season-1,before=date(season,3,1))
+                  if min(len(ac)+len(ap),len(hc)+len(hp))<8:
+                      continue
+                  m=NFLMatchup(away,home,gd,ac,hc,ap,hp)
+                  _,_,home_margin,total_mu,margin_sd,total_sd=_score_projection(m)
+                  actual_margin=hs-aws; actual_total=hs+aws
+                  if actual_margin!=0:
+                      margin_rows.append((_normal_over(home_margin,margin_sd,0.0),1.0 if actual_margin>0 else 0.0))
+                  for threshold in (37.5,41.5,45.5,49.5,53.5):
+                      total_rows.append((_normal_over(total_mu,total_sd,threshold),1.0 if actual_total>threshold else 0.0))
+              nfl_sets[season]=(margin_rows,total_rows)
+
+          def best_alpha(rows):
+              scored=[(brier(rows,a),logloss(rows,a),a) for a in ALPHAS]
+              scored.sort()
+              return scored[0]
+
+          nfl_margin_alpha=best_alpha(nfl_sets[2024][0])[2]
+          nfl_total_alpha=best_alpha(nfl_sets[2024][1])[2]
+          print("NFL_SELECTED","margin_alpha",nfl_margin_alpha,"total_alpha",nfl_total_alpha)
+          for season in (2024,2025,2026):
+              for label,rows,a in (
+                  ("margin",nfl_sets[season][0],nfl_margin_alpha),
+                  ("total",nfl_sets[season][1],nfl_total_alpha),
+              ):
+                  if not rows: continue
+                  print("NFL",season,label,"n",len(rows),
+                        "raw_brier",round(brier(rows,1.0),6),
+                        "cal_brier",round(brier(rows,a),6),
+                        "delta_brier",round(brier(rows,a)-brier(rows,1.0),6),
+                        "raw_ll",round(logloss(rows,1.0),6),
+                        "cal_ll",round(logloss(rows,a),6),
+                        "delta_ll",round(logloss(rows,a)-logloss(rows,1.0),6))
+
+          # ---------------- MLB ----------------
+          def fetch_mlb(season):
+              r=requests.get(
+                  "https://statsapi.mlb.com/api/v1/schedule",
+                  params={
+                      "sportId":1,
+                      "startDate":f"{season}-03-20",
+                      "endDate":f"{season}-09-28",
+                      "hydrate":"team",
+                  },
+                  timeout=45,
+              )
+              r.raise_for_status()
+              rows=[]
+              for block in r.json().get("dates",[]) or []:
+                  day=block.get("date")
+                  for g in block.get("games",[]) or []:
+                      if str((g.get("status") or {}).get("abstractGameState") or "")!="Final":
+                          continue
+                      teams=g.get("teams") or {}
+                      away=teams.get("away") or {}; home=teams.get("home") or {}
+                      try:
+                          aid=int((away.get("team") or {}).get("id"))
+                          hid=int((home.get("team") or {}).get("id"))
+                          ar=int(away.get("score")); hr=int(home.get("score"))
+                      except Exception:
+                          continue
+                      rows.append((day,int(g.get("gamePk") or 0),aid,hid,ar,hr))
+              rows.sort()
+              return rows
+
+          mlb_sets={}
+          for season in (2024,2025,2026):
+              games=fetch_mlb(season)
+              hist=defaultdict(list)
+              spread_rows=[]; total_rows=[]
+              for day,gpk,away,home,ar,hr in games:
+                  ah=hist[away]; hh=hist[home]
+                  if len(ah)>=20 and len(hh)>=20:
+                      a_for=mean(x[0] for x in ah); a_allow=mean(x[1] for x in ah)
+                      h_for=mean(x[0] for x in hh); h_allow=mean(x[1] for x in hh)
+                      mu_a=max(2.0,min(7.5,.55*a_for+.45*h_allow-.08))
+                      mu_h=max(2.0,min(7.5,.55*h_for+.45*a_allow+.08))
+                      actual_margin=hr-ar; actual_total=hr+ar
+                      # Home margin > 1.5 and away margin > 1.5 create two
+                      # symmetric binary calibration observations per game.
+                      spread_rows.append((_margin_over(1.5,mu_h,mu_a),1.0 if actual_margin>1.5 else 0.0))
+                      spread_rows.append((_margin_over(1.5,mu_a,mu_h),1.0 if -actual_margin>1.5 else 0.0))
+                      for threshold in (6.5,7.5,8.5,9.5,10.5,11.5):
+                          total_rows.append((_poisson_over(threshold,mu_a+mu_h),1.0 if actual_total>threshold else 0.0))
+                  hist[away].append((ar,hr))
+                  hist[home].append((hr,ar))
+              mlb_sets[season]=(spread_rows,total_rows)
+
+          mlb_spread_alpha=best_alpha(mlb_sets[2024][0])[2]
+          mlb_total_alpha=best_alpha(mlb_sets[2024][1])[2]
+          print("MLB_SELECTED","spread_alpha",mlb_spread_alpha,"total_alpha",mlb_total_alpha)
+          for season in (2024,2025,2026):
+              for label,rows,a in (
+                  ("spread",mlb_sets[season][0],mlb_spread_alpha),
+                  ("total",mlb_sets[season][1],mlb_total_alpha),
+              ):
+                  if not rows: continue
+                  print("MLB",season,label,"n",len(rows),
+                        "raw_brier",round(brier(rows,1.0),6),
+                        "cal_brier",round(brier(rows,a),6),
+                        "delta_brier",round(brier(rows,a)-brier(rows,1.0),6),
+                        "raw_ll",round(logloss(rows,1.0),6),
+                        "cal_ll",round(logloss(rows,a),6),
+                        "delta_ll",round(logloss(rows,a)-logloss(rows,1.0),6))
+          PY
