@@ -769,7 +769,7 @@ def _generate_parlay_compat(
 
 def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
     if sport_filter_value == "Tennis":
-        return ["Tennis Moneyline", "Best Available"]
+        return ["Tennis Moneyline", "Tennis Games Total", "Best Available"]
     if sport_filter_value == "MLB":
         return ["Best Available", "MLB Game Markets", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB RBIs", "MLB H+R+RBI", "MLB Strikeouts"]
     if sport_filter_value == "NFL":
@@ -782,6 +782,7 @@ def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
         "Best Available",
         "Mixed Sports",
         "Tennis Moneyline",
+        "Tennis Games Total",
         "MLB Hits",
         "MLB Home Runs",
         "MLB Total Bases",
@@ -1208,6 +1209,8 @@ elif view == "Player Props":
             model_family_key = "player_threes"
         elif sport_filter == "WNBA" and family == "Points + Rebounds + Assists":
             model_family_key = "player_points_rebounds_assists"
+        elif sport_filter == "Tennis" and family == "Games Total":
+            model_family_key = "tennis_games_total"
 
         if model_family_key:
             st.success("Independent Sports Edge model available for this prop family.")
@@ -1250,6 +1253,7 @@ elif view == "Player Props":
                         max_nfl_td_players=24 if model_family_key == "player_anytime_td" else None,
                         include_wnba_player_props=(sport_filter == "WNBA"),
                         max_wnba_players=24 if sport_filter == "WNBA" else None,
+                        include_tennis_games_total=(model_family_key == "tennis_games_total"),
                     )
                     prop_model_candidates = [
                         row for row in prop_model_candidates
@@ -1452,6 +1456,7 @@ elif view == "Parlay Generator":
             use_nfl_game_lines = preset in {"Best Available", "Mixed Sports", "NFL Game Markets"}
             use_all_wnba_models = preset in {"Best Available", "Mixed Sports"}
             use_wnba_game_lines = preset in {"Best Available", "Mixed Sports", "WNBA Game Markets"}
+            use_all_tennis_models = preset in {"Best Available", "Mixed Sports"}
             focused_mlb_cap = max(12, min(24, target * 3))
             broad_mlb_cap = max(10, min(16, target * 3))
             pitcher_cap = max(8, min(16, target * 2))
@@ -1542,12 +1547,16 @@ elif view == "Parlay Generator":
                     else broad_wnba_cap if use_all_wnba_models
                     else None
                 ),
+                include_tennis_games_total=(
+                    preset == "Tennis Games Total" or use_all_tennis_models
+                ),
             )
 
             supported_model_presets = {
                 "Best Available",
                 "Mixed Sports",
                 "Tennis Moneyline",
+                "Tennis Games Total",
                 "MLB Game Markets",
                 "NFL Game Markets",
                 "NFL Passing",
@@ -1606,6 +1615,11 @@ elif view == "Parlay Generator":
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "Tennis" and row.market_key == "model_h2h"
+                ]
+            elif preset == "Tennis Games Total":
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.sport == "Tennis" and row.market_key == "tennis_games_total"
                 ]
             elif preset == "NFL Game Markets":
                 model_candidates = [
