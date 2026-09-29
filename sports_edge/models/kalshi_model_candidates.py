@@ -15,6 +15,7 @@ from sports_edge.models.event_identity import (
 from sports_edge.models.game_scope import normalize
 from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.live_board import market_side_probability
+from sports_edge.models.basketball_prop_models import project_wnba_player_prop
 from sports_edge.models.mlb_hits_model import project_mlb_hits
 from sports_edge.models.mlb_lines_model import (
     project_mlb_game_total,
@@ -1446,6 +1447,124 @@ def _nfl_prop_candidates(
     return out
 
 
+def _wnba_player_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
+    market = row.market
+    title = str(market.get("title") or "").strip()
+    player_name = title.split(":", 1)[0].strip()
+    if not player_name:
+        return []
+
+    try:
+        milestone = int(float(market.get("floor_strike")) + 0.5)
+    except (TypeError, ValueError):
+        match = re.search(r":\s*(\d+)\+", title)
+        if not match:
+            return []
+        milestone = int(match.group(1))
+
+    projection = project_wnba_player_prop(
+        player_name=player_name,
+        family=row.family,
+        milestone=milestone,
+        event_date=_parse_date(market),
+        event_ticker=str(market.get("event_ticker") or ""),
+    )
+    if projection is None or not projection.evidence.usable:
+        return []
+
+    base = projection.evidence
+    no_evidence = replace(
+        base,
+        fair_probability=1.0 - base.fair_probability,
+        factors=tuple([
+            f"Complement of {projection.player_name} {projection.milestone}+ {projection.market_label} model probability",
+            *base.factors,
+        ]),
+    )
+    yes_price = market_side_probability(market, "YES")
+    no_price = market_side_probability(market, "NO")
+
+    out: list[ParlayCandidateLeg] = []
+    for side, price, evidence, selection_side in (
+        ("YES", yes_price, base, "Over"),
+        ("NO", no_price, no_evidence, "Under"),
+    ):
+        if price is None:
+            continue
+        out.append(
+            ParlayCandidateLeg(
+                sport="WNBA",
+                event_id=_canonical_game_id(
+                    "WNBA",
+                    projection.game_title,
+                    _parse_date(market),
+                ),
+                event_title=projection.game_title,
+                market_key=projection.market_key,
+                market_label=projection.market_label,
+                selection=(
+                    f"{projection.player_name} {selection_side} "
+                    f"{projection.line:g} {projection.market_label}"
+                ),
+                consensus_probability=evidence.fair_probability,
+                book_count=0,
+                source_age_s=0.0,
+                median_odds=None,
+                kalshi_ticker=str(market.get("ticker") or ""),
+                kalshi_side=side,
+                kalshi_price=price,
+                kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                kalshi_status="MODEL",
+                evidence_class="MODEL",
+                model_probability=evidence.fair_probability,
+                model_confidence=evidence.confidence,
+                model_name=evidence.model_name,
+                model_sample_size=evidence.sample_size,
+                model_reasons=evidence.factors,
+                model_warnings=evidence.warnings,
+            )
+        )
+    return out
+
+
+def _wnba_player_candidates(
+    rows: list[KalshiSportMarket],
+    *,
+    max_players: int | None = None,
+) -> list[ParlayCandidateLeg]:
+    groups: dict[tuple[str, str], list[KalshiSportMarket]] = {}
+    for row in rows:
+        title = str(row.market.get("title") or "")
+        player_name = title.split(":", 1)[0].strip()
+        if not player_name:
+            continue
+        groups.setdefault((_event_key(row.market), normalize(player_name)), []).append(row)
+
+    ranked = sorted(
+        groups.values(),
+        key=lambda group: max((_market_volume(x.market) for x in group), default=0.0),
+        reverse=True,
+    )
+
+    out: list[ParlayCandidateLeg] = []
+    modeled_players = 0
+    scan_limit = len(ranked)
+    if max_players is not None and max_players > 0:
+        scan_limit = min(len(ranked), max_players * 3)
+
+    for group in ranked[:scan_limit]:
+        built: list[ParlayCandidateLeg] = []
+        for row in group:
+            built.extend(_wnba_player_candidate_for_market(row))
+        if not built:
+            continue
+        out.extend(built)
+        modeled_players += 1
+        if max_players is not None and max_players > 0 and modeled_players >= max_players:
+            break
+    return out
+
+
 def _wnba_line_candidate_for_market(row: KalshiSportMarket) -> list[ParlayCandidateLeg]:
     market = row.market
     title = str(market.get("title") or "").strip()
@@ -1591,6 +1710,8 @@ def model_candidates_from_kalshi(
     max_nfl_td_players: int | None = None,
     include_nfl_game_lines: bool = False,
     include_wnba_game_lines: bool = False,
+    include_wnba_player_props: bool = False,
+    max_wnba_players: int | None = None,
 ) -> list[ParlayCandidateLeg]:
     sports = (
         ("MLB", "NBA", "WNBA", "NFL", "Tennis")
@@ -1764,6 +1885,24 @@ def model_candidates_from_kalshi(
                 if row.family in {"Spread", "Game Total", "Team Total"}
             ]
             all_rows.extend(_wnba_line_candidates(line_rows))
+
+        if sport == "WNBA" and include_wnba_player_props:
+            prop_rows = [
+                row for row in rows
+                if row.family in {
+                    "Points",
+                    "Rebounds",
+                    "Assists",
+                    "Three-Pointers",
+                    "Points + Rebounds + Assists",
+                }
+            ]
+            all_rows.extend(
+                _wnba_player_candidates(
+                    prop_rows,
+                    max_players=max_wnba_players,
+                )
+            )
 
     # Model candidates are allowed to include both sides; the EV gate chooses.
     return all_rows
