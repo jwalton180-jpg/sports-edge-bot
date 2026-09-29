@@ -12,6 +12,15 @@ from sports_edge.models.game_scope import normalize
 from sports_edge.models.model_evidence import ModelEvidence
 
 
+@dataclass(frozen=True)
+class HeadToHeadMeeting:
+    match_date: date
+    winner: str
+    loser: str
+    surface: str
+    level: str
+
+
 @dataclass
 class PlayerState:
     elo: float = 1500.0
@@ -45,6 +54,7 @@ class TennisResearchModel:
         self.end_year = year
         self.players: dict[str, PlayerState] = defaultdict(PlayerState)
         self.alias_index: dict[str, set[str]] = {}
+        self.head_to_head: dict[tuple[str, str], list[HeadToHeadMeeting]] = defaultdict(list)
         self._fit()
 
     @staticmethod
@@ -139,6 +149,16 @@ class TennisResearchModel:
             if d is not None:
                 w.recent_dates.append(d)
                 l.recent_dates.append(d)
+                pair = tuple(sorted((winner, loser)))
+                self.head_to_head[pair].append(
+                    HeadToHeadMeeting(
+                        match_date=d,
+                        winner=winner,
+                        loser=loser,
+                        surface=str(row.get("surface") or "").strip().lower(),
+                        level=level,
+                    )
+                )
 
             w_svpt = self._float(row, "w_svpt")
             w_1st = self._float(row, "w_1stWon")
@@ -171,6 +191,103 @@ class TennisResearchModel:
         vals = list(values)
         return mean(vals) if vals else None
 
+    @staticmethod
+    def _recent_mean(values, n: int) -> float | None:
+        vals = list(values)
+        if not vals:
+            return None
+        tail = vals[-n:]
+        return mean(tail) if tail else None
+
+    def _trajectory_adjustment(self, a: PlayerState, b: PlayerState) -> tuple[float, str | None]:
+        short_a = self._recent_mean(a.recent_results, 5)
+        short_b = self._recent_mean(b.recent_results, 5)
+        long_a = self._mean(a.recent_results)
+        long_b = self._mean(b.recent_results)
+        if None in (short_a, short_b, long_a, long_b):
+            return 0.0, None
+        delta = clamp((short_a - long_a) - (short_b - long_b), -0.60, 0.60)
+        return 0.28 * delta, f"Form trajectory delta {delta:+.2f} (last 5 vs longer baseline)"
+
+    def _serve_return_trend_adjustment(self, a: PlayerState, b: PlayerState) -> tuple[float, str | None]:
+        a_short_s = self._recent_mean(a.serve_points_won, 5)
+        a_short_r = self._recent_mean(a.return_points_won, 5)
+        b_short_s = self._recent_mean(b.serve_points_won, 5)
+        b_short_r = self._recent_mean(b.return_points_won, 5)
+        a_long_s = self._mean(a.serve_points_won)
+        a_long_r = self._mean(a.return_points_won)
+        b_long_s = self._mean(b.serve_points_won)
+        b_long_r = self._mean(b.return_points_won)
+        vals = (a_short_s, a_short_r, b_short_s, b_short_r, a_long_s, a_long_r, b_long_s, b_long_r)
+        if any(v is None for v in vals):
+            return 0.0, None
+        a_trend = (a_short_s + a_short_r) - (a_long_s + a_long_r)
+        b_trend = (b_short_s + b_short_r) - (b_long_s + b_long_r)
+        delta = clamp(a_trend - b_trend, -0.12, 0.12)
+        return 1.25 * delta, f"Recent serve/return trend delta {delta:+.3f}"
+
+    def _h2h_adjustment(
+        self,
+        akey: str,
+        bkey: str,
+        *,
+        today: date,
+        level: str,
+        surface: str | None,
+    ) -> tuple[float, tuple[str, ...], int]:
+        store = getattr(self, "head_to_head", {}) or {}
+        meetings = list(store.get(tuple(sorted((akey, bkey))), ()))
+        eligible = [m for m in meetings if m.match_date < today]
+        if not eligible:
+            return 0.0, (), 0
+
+        weighted_a = 0.0
+        weighted_b = 0.0
+        same_surface = 0
+        surface_key = str(surface or "").strip().lower()
+        level_key = str(level or "").strip().lower()
+
+        for meeting in eligible:
+            age_days = max(0, (today - meeting.match_date).days)
+            # Two-year half-life: old meetings retain context but decay.
+            weight = 0.5 ** (age_days / 730.0)
+            if surface_key and meeting.surface and meeting.surface == surface_key:
+                weight *= 1.25
+                same_surface += 1
+            if level_key and meeting.level:
+                meeting_level = meeting.level.lower()
+                if (
+                    ("challenger" in level_key and meeting_level in {"c", "d"})
+                    or ("itf" in level_key and meeting_level in {"f", "i"})
+                    or ("tour" in level_key and meeting_level in {"g", "m", "a"})
+                ):
+                    weight *= 1.10
+
+            if meeting.winner == akey:
+                weighted_a += weight
+            elif meeting.winner == bkey:
+                weighted_b += weight
+
+        total_weight = weighted_a + weighted_b
+        if total_weight <= 0:
+            return 0.0, (), 0
+
+        # Beta(2,2) prior aggressively shrinks tiny H2H samples toward 50%.
+        posterior_a = (2.0 + weighted_a) / (4.0 + total_weight)
+        strength = total_weight / (total_weight + 3.0)
+        centered = posterior_a - 0.5
+        adjustment = clamp(1.6 * centered * strength, -0.28, 0.28)
+
+        a_wins = sum(1 for m in eligible if m.winner == akey)
+        b_wins = sum(1 for m in eligible if m.winner == bkey)
+        factors = [
+            f"Head-to-head before match: {a_wins}-{b_wins}; recency-weighted share {posterior_a:.1%}",
+            f"H2H logit adjustment {adjustment:+.3f} after small-sample shrinkage",
+        ]
+        if same_surface:
+            factors.append(f"{same_surface} prior H2H meeting(s) on the same surface received extra weight")
+        return adjustment, tuple(factors), len(eligible)
+
     def _fatigue(self, state: PlayerState, today: date) -> tuple[int, float]:
         recent_matches = 0
         for d in state.recent_dates:
@@ -189,6 +306,7 @@ class TennisResearchModel:
         *,
         level: str = "tour",
         as_of: date | None = None,
+        surface: str | None = None,
     ) -> ModelEvidence | None:
         a_input = self._name(player_a)
         b_input = self._name(player_b)
@@ -219,6 +337,12 @@ class TennisResearchModel:
             p = 1.0 / (1.0 + exp(-z))
             factors.append(f"Recent-form delta {form_delta:+.2f}")
 
+        trajectory_adj, trajectory_factor = self._trajectory_adjustment(a, b)
+        if trajectory_factor:
+            z = log(p / (1.0 - p)) + trajectory_adj
+            p = 1.0 / (1.0 + exp(-z))
+            factors.append(trajectory_factor)
+
         serve_a = self._mean(a.serve_points_won)
         serve_b = self._mean(b.serve_points_won)
         ret_a = self._mean(a.return_points_won)
@@ -229,6 +353,12 @@ class TennisResearchModel:
             z = log(p / (1.0 - p)) + 2.2 * sr_delta
             p = 1.0 / (1.0 + exp(-z))
             factors.append(f"Serve/return composite delta {sr_delta:+.3f}")
+
+        sr_trend_adj, sr_trend_factor = self._serve_return_trend_adjustment(a, b)
+        if sr_trend_factor:
+            z = log(p / (1.0 - p)) + sr_trend_adj
+            p = 1.0 / (1.0 + exp(-z))
+            factors.append(sr_trend_factor)
 
         today = as_of or datetime.now(timezone.utc).date()
         matches_a, mins_a = self._fatigue(a, today)
@@ -257,6 +387,18 @@ class TennisResearchModel:
                 "Challenger calibration: 50/50 enhanced-model and Elo blend"
             )
 
+        h2h_adj, h2h_factors, h2h_count = self._h2h_adjustment(
+            akey,
+            bkey,
+            today=today,
+            level=level,
+            surface=surface,
+        )
+        if h2h_count:
+            z = log(p / (1.0 - p)) + h2h_adj
+            p = 1.0 / (1.0 + exp(-z))
+            factors.extend(h2h_factors)
+
         sample = min(a.matches, b.matches)
         stat_depth = min(len(a.serve_points_won), len(b.serve_points_won), 12)
         confidence = clamp(
@@ -267,6 +409,8 @@ class TennisResearchModel:
             0.0,
             0.88,
         )
+        if h2h_count >= 3:
+            confidence = min(0.90, confidence + min(0.04, 0.01 * h2h_count))
         if "itf" in level_key:
             confidence = min(confidence, 0.55)
         elif "challenger" in level_key or "125" in level_key:
@@ -277,10 +421,12 @@ class TennisResearchModel:
             warnings.append("limited recent serve/return samples")
         if sample < 8:
             warnings.append("thin player-history sample")
+        if h2h_count == 1:
+            warnings.append("single prior H2H meeting is heavily shrunk and should not dominate the call")
 
         return ModelEvidence(
             sport="Tennis",
-            model_name="Tennis Elo + form + serve/return + workload",
+            model_name="Tennis Elo + form trajectory + serve/return trend + workload + H2H",
             fair_probability=clamp(p, 0.03, 0.97),
             confidence=confidence,
             sample_size=sample,

@@ -6,6 +6,7 @@ from math import prod
 from typing import Iterable
 
 from sports_edge.models.consensus import consensus_from_event
+from sports_edge.models.event_identity import canonical_event_id_from_game
 from sports_edge.models.game_scope import GameEvent
 from sports_edge.models.live_board import LiveSignal
 from sports_edge.models.props import PropConsensus
@@ -114,7 +115,7 @@ def candidate_legs_from_h2h(
         rows.append(
             ParlayCandidateLeg(
                 sport=game.sport,
-                event_id=game.event_id,
+                event_id=canonical_event_id_from_game(game),
                 event_title=f"{game.away_team} @ {game.home_team}",
                 market_key="h2h",
                 market_label="Moneyline",
@@ -173,7 +174,7 @@ def candidate_legs_from_props(
         rows.append(
             ParlayCandidateLeg(
                 sport=game.sport,
-                event_id=game.event_id,
+                event_id=canonical_event_id_from_game(game),
                 event_title=f"{game.away_team} @ {game.home_team}",
                 market_key=quote.market_key,
                 market_label=quote.market_label,
