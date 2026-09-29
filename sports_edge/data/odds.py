@@ -49,6 +49,15 @@ class OddsClient:
             raise RuntimeError("THE_ODDS_API_KEY is not configured")
         return self.http.get_json(f"{BASE}/sports/{sport_key}/events", params={"apiKey": self.api_key})
 
+    def scores(self, sport_key: str, days_from: int = 1):
+        if not self.api_key:
+            raise RuntimeError("THE_ODDS_API_KEY is not configured")
+        params = {
+            "apiKey": self.api_key,
+            "daysFrom": max(1, min(int(days_from), 3)),
+        }
+        return self.http.get_json(f"{BASE}/sports/{sport_key}/scores", params=params)
+
     def event_markets(self, sport_key: str, event_id: str, regions: str = "us"):
         if not self.api_key:
             raise RuntimeError("THE_ODDS_API_KEY is not configured")
