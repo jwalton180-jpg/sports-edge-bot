@@ -61,13 +61,50 @@ def _as_date(value: date | datetime | str) -> date:
         return datetime.now(timezone.utc).date()
 
 
-def _alias_code(name: str, aliases: dict[str, tuple[str, ...]]) -> str | None:
+def _derived_aliases(
+    code: str,
+    values: tuple[str, ...],
+    *,
+    extra_codes: tuple[str, ...] = (),
+) -> set[str]:
+    candidates = {normalize(code), *(normalize(x) for x in extra_codes)}
+    for raw in values:
+        n = normalize(raw)
+        if not n:
+            continue
+        candidates.add(n)
+        parts = n.split()
+        if len(parts) >= 2:
+            # Derive Kalshi-style city + nickname initial(s), e.g.
+            # "Los Angeles D", "New York Y", "Chicago WS".
+            if len(parts) >= 3 and " ".join(parts[-2:]) in {"white sox", "red sox", "blue jays"}:
+                city_parts = parts[:-2]
+                nick_parts = parts[-2:]
+            else:
+                city_parts = parts[:-1]
+                nick_parts = parts[-1:]
+            if city_parts:
+                city = " ".join(city_parts)
+                initials = "".join(x[0] for x in nick_parts if x)
+                if initials:
+                    candidates.add(f"{city} {initials}")
+    return {x for x in candidates if x}
+
+
+def _alias_code(
+    name: str,
+    aliases: dict[str, tuple[str, ...]],
+    *,
+    code_map: dict[str, str] | None = None,
+) -> str | None:
     q = normalize(name)
     if not q:
         return None
     hits: list[str] = []
+    mapping = code_map or {}
     for code, values in aliases.items():
-        candidates = {normalize(code), *(normalize(v) for v in values)}
+        extras = (mapping.get(code),) if mapping.get(code) else ()
+        candidates = _derived_aliases(code, values, extra_codes=extras)
         if q in candidates:
             hits.append(code)
     return hits[0] if len(hits) == 1 else None
@@ -82,7 +119,7 @@ def canonical_participant(sport: str, name: str) -> str:
         # public-team model import graph.
         from sports_edge.data.public_team_data import NFL_TEAM_ALIASES
 
-        code = _alias_code(name, NFL_TEAM_ALIASES)
+        code = _alias_code(name, NFL_TEAM_ALIASES, code_map=_NFL_KALSHI_CODES)
         if code:
             return _NFL_KALSHI_CODES.get(code, code).lower()
 
