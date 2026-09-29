@@ -1,0 +1,97 @@
+name: Live calibrated MLB game-line audit
+
+on:
+  push:
+    branches: [calibrate-game-line-probabilities-20260929]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Audit calibrated live MLB lines
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          import re, requests
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+          markets=[]
+          for series in ("KXMLBGAME","KXMLBSPREAD","KXMLBTOTAL","KXMLBTEAMTOTAL"):
+              r=requests.get(
+                  "https://external-api.kalshi.com/trade-api/v2/markets",
+                  params={"limit":1000,"status":"open","series_ticker":series},
+                  timeout=20,
+              )
+              r.raise_for_status()
+              rows=r.json().get("markets",[]) or []
+              markets.extend(rows)
+              print("SERIES",series,len(rows))
+
+          grouped=group_kalshi_sports(markets)
+          candidates=model_candidates_from_kalshi(
+              grouped,
+              sport_filter="MLB",
+              include_mlb_game_lines=True,
+          )
+          keys={"model_h2h","mlb_spread","mlb_game_total","mlb_team_total"}
+          candidates=[c for c in candidates if c.market_key in keys]
+          assessments=[assess_leg(c,"best") for c in candidates]
+          qualified=[a for a in assessments if a.qualified]
+          ticket=build_intelligent_parlay(
+              candidates,
+              mode="best",
+              target_legs=4,
+              max_per_event=1,
+          )
+
+          calibrated=[
+              c for c in candidates
+              if c.market_key in {"mlb_spread","mlb_game_total","mlb_team_total"}
+          ]
+          raw_pairs=[]
+          for c in calibrated:
+              raw=None
+              for reason in c.model_reasons:
+                  m=re.search(r"raw ([0-9.]+)%",reason)
+                  if m:
+                      raw=float(m.group(1))/100.0
+                      break
+              if raw is not None:
+                  raw_pairs.append((c.market_key,raw,float(c.model_probability or 0)))
+
+          print("candidate_by_key",dict(Counter(c.market_key for c in candidates)))
+          print("qualified_by_key",dict(Counter(a.leg.market_key for a in qualified)))
+          print("qualified_total",len(qualified))
+          print("calibrated_with_raw_trace",len(raw_pairs))
+          if raw_pairs:
+              avg_raw_ext=sum(abs(raw-.5) for _,raw,_ in raw_pairs)/len(raw_pairs)
+              avg_cal_ext=sum(abs(cal-.5) for _,_,cal in raw_pairs)/len(raw_pairs)
+              print("avg_distance_from_50_raw",round(avg_raw_ext,5))
+              print("avg_distance_from_50_calibrated",round(avg_cal_ext,5))
+              assert avg_cal_ext < avg_raw_ext, "calibration did not reduce probability extremity"
+
+          event_ids=[x.leg.event_id for x in ticket.legs]
+          print("ticket_legs",len(ticket.legs))
+          print("ticket_unique_events",len(set(event_ids)))
+          print("ticket",[
+              (
+                  x.leg.market_key,
+                  x.leg.selection,
+                  x.leg.event_title,
+                  round(x.fair_probability,4),
+                  round(x.kalshi_probability or 0,4),
+                  round(x.edge_points or 0,2),
+              )
+              for x in ticket.legs
+          ])
+          assert len(event_ids)==len(set(event_ids)), "duplicate physical MLB game in ticket"
+          PY
