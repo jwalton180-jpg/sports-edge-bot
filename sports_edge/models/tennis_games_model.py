@@ -533,3 +533,85 @@ def walkforward_games_total_report(
         "accuracy": accuracy,
         "by_line": by_line,
     }
+
+
+def walkforward_games_total_calibration_grid(
+    rows: Iterable[dict],
+    *,
+    holdout_year: int,
+    alphas: tuple[float, ...] = (0.60, 0.75, 0.90, 1.00),
+    lines: tuple[float, ...] = (18.5, 20.5, 22.5, 24.5, 26.5),
+) -> dict[str, dict]:
+    """Score several calibration alphas from one leakage-safe prequential pass."""
+    ordered = sorted(
+        [row for row in rows if _date(row) is not None],
+        key=lambda row: (
+            str(row.get("tourney_date") or ""),
+            str(row.get("match_num") or ""),
+            str(row.get("winner_name") or ""),
+        ),
+    )
+    players: dict[str, _PlayerState] = {}
+    samples: list[_HistoricalSample] = []
+    raw_scores: list[tuple[float, int, float]] = []
+
+    for day, day_iter in groupby(ordered, key=_date):
+        day_rows = list(day_iter)
+        if day is None:
+            continue
+
+        if day.year == holdout_year:
+            for row in day_rows:
+                winner_name = normalize(row.get("winner_name"))
+                loser_name = normalize(row.get("loser_name"))
+                score = parse_completed_score(row.get("score"))
+                if not winner_name or not loser_name or score is None:
+                    continue
+                winner = players.get(winner_name)
+                loser = players.get(loser_name)
+                if winner is None or loser is None or min(winner.matches, loser.matches) < 5:
+                    continue
+                p_winner = _elo_probability(winner.elo, loser.elo)
+                level = _level_bucket(row.get("tourney_level"))
+                surface = str(row.get("surface") or "").strip().lower() or None
+                best_of = _best_of(row, score)
+                for line in lines:
+                    estimate = _weighted_total_probability(
+                        samples=samples,
+                        player_a=winner,
+                        player_b=loser,
+                        target_probability_a=p_winner,
+                        target_date=day,
+                        target_level=level,
+                        target_surface=surface,
+                        best_of=best_of,
+                        line=line,
+                    )
+                    if estimate is None:
+                        continue
+                    raw_scores.append((estimate[0], int(score.total_games > line), line))
+
+        for row in day_rows:
+            _apply_row(row, players=players, samples=samples)
+
+    reports: dict[str, dict] = {}
+    eps = 1e-12
+    for alpha in alphas:
+        key = f"{float(alpha):.2f}"
+        if not raw_scores:
+            reports[key] = {"n": 0, "brier": None, "log_loss": None, "accuracy": None}
+            continue
+        scored = [
+            (_calibrated_probability(raw, float(alpha)), outcome, line)
+            for raw, outcome, line in raw_scores
+        ]
+        reports[key] = {
+            "n": len(scored),
+            "brier": sum((p - y) ** 2 for p, y, _ in scored) / len(scored),
+            "log_loss": -sum(
+                y * math.log(max(eps, p)) + (1 - y) * math.log(max(eps, 1.0 - p))
+                for p, y, _ in scored
+            ) / len(scored),
+            "accuracy": sum(int((p >= 0.5) == bool(y)) for p, y, _ in scored) / len(scored),
+        }
+    return reports
