@@ -70,4 +70,22 @@ jobs:
               checked+=1
               if checked>=6: break
           print("checked",checked)
+
+          # Probe current public 1-minute candlestick path on one Tennis market.
+          import time, requests
+          if rows:
+              m=rows[0].market
+              ticker=str(m.get("ticker") or "")
+              series=str(m.get("series_ticker") or "")
+              end=int(time.time()); start=end-3600
+              paths=[
+                  f"https://external-api.kalshi.com/trade-api/v2/series/{series}/markets/{ticker}/candlesticks",
+                  f"https://external-api.kalshi.com/trade-api/v2/markets/{ticker}/candlesticks",
+              ]
+              for url in paths:
+                  try:
+                      rr=requests.get(url,params={"start_ts":start,"end_ts":end,"period_interval":1},timeout=15)
+                      print("CANDLE_PROBE",url.split("/trade-api/v2/")[-1],"status",rr.status_code,"body",rr.text[:2000])
+                  except Exception as exc:
+                      print("CANDLE_ERROR",type(exc).__name__,str(exc)[:200])
           PY
