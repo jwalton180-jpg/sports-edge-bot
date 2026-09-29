@@ -65,6 +65,7 @@ from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
     candidate_legs_from_props,
+    candidate_book_context_for_model_lines,
     combo_blueprint,
     generate_candidate_parlay,
 )
@@ -222,6 +223,19 @@ def get_featured_odds(api_key: str, sport_key: str):
         r = OddsClient(api_key=api_key).odds(
             sport_key=sport_key,
             markets="h2h",
+            bookmakers=",".join(PREMIUM_BOOKMAKER_KEYS),
+        )
+        return (r.data if isinstance(r.data, list) else []), None, r.latency_ms
+    except Exception as exc:
+        return [], _safe_error(exc), None
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def get_featured_line_odds(api_key: str, sport_key: str):
+    try:
+        r = OddsClient(api_key=api_key).odds(
+            sport_key=sport_key,
+            markets="spreads,totals",
             bookmakers=",".join(PREMIUM_BOOKMAKER_KEYS),
         )
         return (r.data if isinstance(r.data, list) else []), None, r.latency_ms
@@ -758,6 +772,7 @@ def scan_parlay_candidates(
     scoped_markets: dict[str, list[dict]],
     api_key_value: str,
     max_games: int,
+    model_targets: list[ParlayCandidateLeg] | None = None,
 ) -> tuple[list[ParlayCandidateLeg], list[str], int]:
     candidates: list[ParlayCandidateLeg] = []
     errors: list[str] = []
@@ -765,8 +780,12 @@ def scan_parlay_candidates(
 
     # Decide which sports' moneylines are allowed. This now obeys the user's
     # Sport filter and supports Tennis instead of silently falling back to MLB.
-    if preset == "NFL Game Markets":
+    if preset == "MLB Game Markets":
+        h2h_sports = ["MLB"]
+    elif preset == "NFL Game Markets":
         h2h_sports = ["NFL"]
+    elif preset == "WNBA Game Markets":
+        h2h_sports = ["WNBA"]
     elif preset == "Tennis Moneyline":
         h2h_sports = ["Tennis"]
     elif preset in ("Best Available", "Mixed Sports"):
@@ -808,6 +827,53 @@ def scan_parlay_candidates(
                         event_payload,
                         exact,
                         mode=mode,
+                    )
+                )
+
+    line_targets = [
+        row for row in (model_targets or [])
+        if row.market_key in {
+            "mlb_spread", "mlb_game_total",
+            "nfl_spread", "nfl_game_total",
+            "wnba_spread", "wnba_game_total",
+        }
+    ]
+    if line_targets:
+        line_sports = list(dict.fromkeys(row.sport for row in line_targets))
+        scan_games = _linked_scan_games(
+            games_in,
+            scoped_markets,
+            line_sports,
+            max_games,
+        )
+        by_sport_key: dict[str, list[GameEvent]] = {}
+        for game in scan_games:
+            by_sport_key.setdefault(game.sport_key, []).append(game)
+
+        for sport_key, key_games in by_sport_key.items():
+            sport_name = key_games[0].sport
+            events, err, _ = get_featured_line_odds(api_key_value, sport_key)
+            calls += 1
+            if err:
+                errors.append(f"{sport_name} game lines: {err}")
+                continue
+            event_map = {str(e.get("id")): e for e in events if e.get("id")}
+            for game in key_games:
+                payload = event_map.get(game.event_id)
+                if not payload:
+                    continue
+                canonical_id = canonical_event_id_from_game(game)
+                targets = [
+                    row for row in line_targets
+                    if row.event_id == canonical_id and row.sport == game.sport
+                ]
+                if not targets:
+                    continue
+                candidates.extend(
+                    candidate_book_context_for_model_lines(
+                        game,
+                        payload,
+                        targets,
                     )
                 )
 
@@ -1495,7 +1561,7 @@ elif view == "Parlay Generator":
     if state_matches and api_key and state.get("model_candidate_rows") and not state.get("secondary_done"):
         st.caption("Model-first ticket is ready. Sportsbook confirmation is optional and runs separately.")
         if st.button("Add optional sportsbook cross-check", use_container_width=True, key="secondary_crosscheck_v4"):
-            with st.spinner("Cross-checking a bounded set of fresh sportsbook props…"):
+            with st.spinner("Cross-checking a bounded set of exact-game sportsbook markets…"):
                 model_candidates = list(state.get("model_candidate_rows") or [])
                 active, active_err = get_active_sports(api_key)
                 lazy_games, _, universe_errors = build_game_universe(api_key, active, sport_filter)
@@ -1509,6 +1575,7 @@ elif view == "Parlay Generator":
                     scoped_markets=lazy_scoped,
                     api_key_value=api_key,
                     max_games=min(scan_games_n, 6 if preset == "MLB Hits" else scan_games_n),
+                    model_targets=model_candidates,
                 )
                 candidates = attach_sportsbook_context(model_candidates, book_candidates)
                 result = build_intelligent_parlay(
