@@ -61,6 +61,37 @@ def _blend_mean(current: list[float], prior: list[float]) -> tuple[float, float]
     return blended, current_weight
 
 
+def _role_shift(
+    current_opportunities: list[float],
+    *,
+    max_move: float = 0.12,
+) -> tuple[float, str | None]:
+    """Conservative short-vs-current role multiplier.
+
+    The last two games can reveal a depth-chart/injury-driven workload change
+    before the season average catches up. The adjustment is reliability-shrunk
+    and capped so a tiny sample cannot hijack the longer player baseline.
+    """
+    if len(current_opportunities) < 3:
+        return 1.0, None
+    baseline = mean(current_opportunities)
+    recent = mean(current_opportunities[-2:])
+    if baseline <= 0.5:
+        return 1.0, None
+
+    raw_ratio = clamp(recent / baseline, 0.65, 1.35)
+    reliability = clamp((len(current_opportunities) - 2) / 4.0, 0.25, 1.0)
+    multiplier = 1.0 + 0.50 * reliability * (raw_ratio - 1.0)
+    multiplier = clamp(multiplier, 1.0 - max_move, 1.0 + max_move)
+    if abs(multiplier - 1.0) < 0.015:
+        return 1.0, None
+    direction = "up" if multiplier > 1.0 else "down"
+    return multiplier, (
+        f"Role trend {direction}: last-2 opportunity {recent:.1f} vs "
+        f"current-season {baseline:.1f} ({multiplier:.3f} workload multiplier)"
+    )
+
+
 def _weighted_sd(current: list[float], prior: list[float], floor: float) -> float:
     samples: list[float] = []
     weights: list[float] = []
@@ -519,6 +550,8 @@ def project_nfl_receiving_yards(
 
     base_yards, current_weight = _blend_mean(cur_yards, prior_yards)
     expected_targets, _ = _blend_mean(cur_targets, prior_targets)
+    target_role_factor, target_role_reason = _role_shift(cur_targets)
+    expected_targets *= target_role_factor
 
     cur_targets_total = sum(cur_targets)
     prior_targets_total = sum(prior_targets)
@@ -544,6 +577,8 @@ def project_nfl_receiving_yards(
         f"Opponent receiving-yard factor {matchup:.3f} from {matchup_games} current game(s)",
         f"Projected mean {projected:.1f} yards with {sd:.1f} yard weekly volatility",
     ]
+    if target_role_reason:
+        factors.append(target_role_reason)
     if target_shares:
         factors.append(f"Current target share {mean(target_shares):.1%}")
     if air_shares:
@@ -605,6 +640,8 @@ def project_nfl_rushing_yards(
 
     base_yards, current_weight = _blend_mean(cur_yards, prior_yards)
     expected_carries, _ = _blend_mean(cur_carries, prior_carries)
+    carry_role_factor, carry_role_reason = _role_shift(cur_carries)
+    expected_carries *= carry_role_factor
 
     cur_carries_total = sum(cur_carries)
     prior_carries_total = sum(prior_carries)
@@ -631,6 +668,8 @@ def project_nfl_rushing_yards(
         f"Opponent rushing-yard factor {matchup:.3f} from {matchup_games} current game(s)",
         f"Projected mean {projected:.1f} yards with {sd:.1f} yard weekly volatility",
     ]
+    if carry_role_reason:
+        factors.append(carry_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior rushing baseline {mean(prior_yards):.1f}/game over {len(prior_yards)} game(s)")
 
@@ -684,6 +723,8 @@ def project_nfl_rush_attempts(
     cur = _values(ctx.current_rows, "carries")
     prior = _values(ctx.prior_rows, "carries")
     projected, _ = _blend_mean(cur, prior)
+    carry_role_factor, carry_role_reason = _role_shift(cur)
+    projected *= carry_role_factor
     sd = _weighted_sd(cur, prior, 2.8)
     probability = normal_over_probability(projected, sd, float(milestone_attempts) - 0.5)
 
@@ -691,6 +732,8 @@ def project_nfl_rush_attempts(
         f"Current carries {mean(cur):.1f}/game over {len(cur)} game(s)",
         f"Projected carries {projected:.1f} with {sd:.1f} weekly volatility",
     ]
+    if carry_role_reason:
+        factors.append(carry_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior carry baseline {mean(prior):.1f}/game over {len(prior)} game(s)")
     sample, confidence = _sample_and_confidence(
@@ -752,7 +795,6 @@ def project_nfl_rush_receiving_yards(
     rec_factor, rec_games, _ = _matchup_factor(ctx, "receiving_yards")
     projected = clamp(rush_base * rush_factor + rec_base * rec_factor, 2.0, 240.0)
     sd = _weighted_sd(cur_total, prior_total, 20.0)
-    probability = normal_over_probability(projected, sd, float(milestone_yards) - 0.5)
 
     current_ops = [
         _f(r, "carries") + _f(r, "targets")
@@ -763,6 +805,11 @@ def project_nfl_rush_receiving_yards(
         for r in ctx.prior_rows
     ]
     expected_ops, _ = _blend_mean(current_ops, prior_ops)
+    opportunity_role_factor, opportunity_role_reason = _role_shift(current_ops)
+    expected_ops *= opportunity_role_factor
+    # Shift the projected combined yards by the same bounded workload signal.
+    projected = clamp(projected * opportunity_role_factor, 2.0, 240.0)
+    probability = normal_over_probability(projected, sd, float(milestone_yards) - 0.5)
     factors = [
         f"Current rushing + receiving yards {mean(cur_total):.1f}/game over {len(cur_total)} game(s)",
         f"Blended rushing component {rush_base:.1f} yards; receiving component {rec_base:.1f} yards",
@@ -770,6 +817,8 @@ def project_nfl_rush_receiving_yards(
         f"Expected carries + targets {expected_ops:.1f}",
         f"Projected combined mean {projected:.1f} yards with {sd:.1f} weekly volatility",
     ]
+    if opportunity_role_reason:
+        factors.append(opportunity_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior combined-yards baseline {mean(prior_total):.1f}/game over {len(prior_total)} game(s)")
     matchup_games = min(rush_games, rec_games)
@@ -825,6 +874,8 @@ def project_nfl_receptions(
 
     base_rec, current_weight = _blend_mean(cur_rec, prior_rec)
     expected_targets, _ = _blend_mean(cur_targets, prior_targets)
+    target_role_factor, target_role_reason = _role_shift(cur_targets)
+    expected_targets *= target_role_factor
 
     cur_targets_total = sum(cur_targets)
     prior_targets_total = sum(prior_targets)
@@ -851,6 +902,8 @@ def project_nfl_receptions(
         f"Expected targets {expected_targets:.1f}; blended catch rate {catch_rate:.1%}",
         f"Projected mean {projected:.2f} receptions with {sd:.2f} weekly volatility",
     ]
+    if target_role_reason:
+        factors.append(target_role_reason)
     if target_shares:
         factors.append(f"Current target share {mean(target_shares):.1%}")
     if ctx.prior_rows:
@@ -919,6 +972,8 @@ def project_nfl_touchdowns(
 
     td_rate, current_weight = _blend_mean(cur_td, prior_td)
     expected_opp, _ = _blend_mean(cur_opp, prior_opp)
+    opportunity_role_factor, opportunity_role_reason = _role_shift(cur_opp)
+    expected_opp *= opportunity_role_factor
     cur_opp_mean = mean(cur_opp) if cur_opp else expected_opp
     role_factor = clamp(expected_opp / max(cur_opp_mean, 1.0), 0.85, 1.15)
     lam = clamp(td_rate * role_factor, 0.03, 2.2)
@@ -930,6 +985,8 @@ def project_nfl_touchdowns(
         f"Poisson scoring mean {lam:.2f} TDs",
         "Passing TDs are excluded from this scorer market model",
     ]
+    if opportunity_role_reason:
+        factors.append(opportunity_role_reason)
     if ctx.prior_rows:
         factors.append(f"Prior scored-TD baseline {mean(prior_td):.2f}/game over {len(prior_td)} game(s)")
 
