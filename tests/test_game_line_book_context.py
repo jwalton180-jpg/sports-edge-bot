@@ -40,6 +40,16 @@ def _event():
                             {"name": "Under", "price": under, "point": 47.5},
                         ],
                     },
+                    {
+                        "key": "alternate_team_totals",
+                        "last_update": "2026-09-29T11:59:30Z",
+                        "outcomes": [
+                            {"name": "Over", "description": "Buffalo Bills", "price": -110, "point": 24.5},
+                            {"name": "Under", "description": "Buffalo Bills", "price": -110, "point": 24.5},
+                            {"name": "Over", "description": "Los Angeles Chargers", "price": -105, "point": 21.5},
+                            {"name": "Under", "description": "Los Angeles Chargers", "price": -115, "point": 21.5},
+                        ],
+                    },
                 ],
             }
         )
@@ -70,7 +80,11 @@ def _model(selection, key, fair=0.61):
         event_id=canonical_event_id_from_game(game),
         event_title="LAC @ BUF",
         market_key=key,
-        market_label="Spread" if key == "nfl_spread" else "Game Total",
+        market_label=(
+            "Spread" if key == "nfl_spread"
+            else "Team Total" if key == "nfl_team_total"
+            else "Game Total"
+        ),
         selection=selection,
         consensus_probability=fair,
         book_count=0,
@@ -165,3 +179,44 @@ def test_integer_line_fails_closed_due_to_push_mismatch():
         now=NOW,
     )
     assert rows == []
+
+
+def test_team_total_over_under_book_context_is_exact_team_and_line():
+    game = _game()
+    targets = [
+        _model("BUF Over 24.5 Team Total", "nfl_team_total"),
+        _model("BUF Under 24.5 Team Total", "nfl_team_total", fair=0.39),
+    ]
+    rows = candidate_book_context_for_model_lines(
+        game,
+        _event(),
+        targets,
+        now=NOW,
+    )
+    assert len(rows) == 2
+    by_selection = {row.selection: row for row in rows}
+    assert by_selection["BUF Over 24.5 Team Total"].book_count == 3
+    assert by_selection["BUF Under 24.5 Team Total"].book_count == 3
+    assert abs(
+        by_selection["BUF Over 24.5 Team Total"].consensus_probability
+        + by_selection["BUF Under 24.5 Team Total"].consensus_probability
+        - 1.0
+    ) < 1e-9
+
+
+def test_team_total_wrong_line_and_integer_push_fail_closed():
+    game = _game()
+    wrong = candidate_book_context_for_model_lines(
+        game,
+        _event(),
+        [_model("BUF Over 25.5 Team Total", "nfl_team_total")],
+        now=NOW,
+    )
+    integer = candidate_book_context_for_model_lines(
+        game,
+        _event(),
+        [_model("BUF Over 24 Team Total", "nfl_team_total")],
+        now=NOW,
+    )
+    assert wrong == []
+    assert integer == []
