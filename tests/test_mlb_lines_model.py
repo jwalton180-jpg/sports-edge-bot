@@ -5,6 +5,7 @@ from sports_edge.models.mlb_lines_model import (
     MLBLineProjection,
     _poisson_over,
     _margin_over,
+    _blend_recent_rate,
 )
 from sports_edge.models.model_evidence import ModelEvidence
 import sports_edge.models.kalshi_model_candidates as kmc
@@ -21,6 +22,19 @@ def test_mlb_margin_probability_is_directional():
     dog = _margin_over(1.5, 3.7, 5.3)
     assert favored > dog
 
+
+
+
+def test_recent_team_rate_is_shrunk_and_sample_gated():
+    assert _blend_recent_rate(4.5, 6.0, 4) == 4.5
+    blended = _blend_recent_rate(4.5, 6.0, 12)
+    assert 4.5 < blended < 6.0
+    assert abs(blended - 4.83) < 1e-9
+
+
+def test_recent_team_rate_downtrend_is_capped():
+    blended = _blend_recent_rate(5.0, 2.0, 20)
+    assert abs(blended - 4.34) < 1e-9
 
 def _projection(key, label, fair=0.61):
     evidence = ModelEvidence(
