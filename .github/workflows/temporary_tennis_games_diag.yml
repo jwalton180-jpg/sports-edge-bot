@@ -1,0 +1,54 @@
+name: Temporary Tennis Games Market Diagnostic
+
+on:
+  push:
+    branches: [feature/tennis-games-total-model]
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Inspect live Tennis games markets
+        run: |
+          python - <<'PY'
+          import json
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+
+          result = fetch_supported_sport_catalog(
+              sports=("Tennis",),
+              page_limit_per_series=6,
+              page_size=200,
+              max_workers=4,
+              request_interval_s=0.20,
+          )
+          print("catalog", {
+              "markets": len(result.markets),
+              "pages": result.pages,
+              "complete": result.cursor_exhausted,
+              "error": result.error,
+              "incomplete": result.incomplete_series,
+          })
+          grouped = group_kalshi_sports(result.markets)
+          targets = [
+              row for row in grouped["Tennis"]
+              if row.family in {"Games Total", "Games Spread"}
+          ]
+          print("target_count", len(targets))
+          fields = (
+              "ticker","event_ticker","series_ticker","title","subtitle","event_title",
+              "yes_sub_title","no_sub_title","floor_strike","cap_strike","functional_strike",
+              "yes_bid_dollars","yes_ask_dollars","no_bid_dollars","no_ask_dollars",
+              "open_time","close_time","status"
+          )
+          for row in targets[:30]:
+              print("ROW", row.family, json.dumps({k: row.market.get(k) for k in fields}, sort_keys=True))
+          PY
