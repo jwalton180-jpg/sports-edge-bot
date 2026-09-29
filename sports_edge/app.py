@@ -641,11 +641,11 @@ PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     "NBA Assists": [("NBA", ("player_assists",))],
     "NBA Threes": [("NBA", ("player_threes",))],
     "NBA PRA": [("NBA", ("player_points_rebounds_assists",))],
-    "WNBA Points": [("WNBA", ("player_points",))],
-    "WNBA Rebounds": [("WNBA", ("player_rebounds",))],
-    "WNBA Assists": [("WNBA", ("player_assists",))],
-    "WNBA Threes": [("WNBA", ("player_threes",))],
-    "WNBA PRA": [("WNBA", ("player_points_rebounds_assists",))],
+    "WNBA Points": [("WNBA", ("player_points", "player_points_alternate"))],
+    "WNBA Rebounds": [("WNBA", ("player_rebounds", "player_rebounds_alternate"))],
+    "WNBA Assists": [("WNBA", ("player_assists", "player_assists_alternate"))],
+    "WNBA Threes": [("WNBA", ("player_threes", "player_threes_alternate"))],
+    "WNBA PRA": [("WNBA", ("player_points_rebounds_assists", "player_points_rebounds_assists_alternate"))],
     "Best Available": [
         ("MLB", ("batter_hits", "batter_home_runs", "batter_total_bases", "batter_rbis", "batter_hits_runs_rbis", "pitcher_strikeouts")),
         ("NFL", (
@@ -662,7 +662,13 @@ PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
             "player_anytime_td",
         )),
         ("NBA", ("player_points",)),
-        ("WNBA", ("player_points",)),
+        ("WNBA", (
+            "player_points", "player_points_alternate",
+            "player_rebounds", "player_rebounds_alternate",
+            "player_assists", "player_assists_alternate",
+            "player_threes", "player_threes_alternate",
+            "player_points_rebounds_assists", "player_points_rebounds_assists_alternate",
+        )),
     ],
     "Mixed Sports": [
         ("MLB", ("batter_hits", "batter_home_runs", "batter_total_bases", "batter_rbis", "batter_hits_runs_rbis", "pitcher_strikeouts")),
@@ -680,7 +686,13 @@ PARLAY_PROP_PLAN: dict[str, list[tuple[str, tuple[str, ...]]]] = {
             "player_anytime_td",
         )),
         ("NBA", ("player_points",)),
-        ("WNBA", ("player_points",)),
+        ("WNBA", (
+            "player_points", "player_points_alternate",
+            "player_rebounds", "player_rebounds_alternate",
+            "player_assists", "player_assists_alternate",
+            "player_threes", "player_threes_alternate",
+            "player_points_rebounds_assists", "player_points_rebounds_assists_alternate",
+        )),
     ],
 }
 
@@ -1186,6 +1198,16 @@ elif view == "Player Props":
             model_family_key = "player_receptions"
         elif sport_filter == "NFL" and family == "Player Touchdowns":
             model_family_key = "player_anytime_td"
+        elif sport_filter == "WNBA" and family == "Points":
+            model_family_key = "player_points"
+        elif sport_filter == "WNBA" and family == "Rebounds":
+            model_family_key = "player_rebounds"
+        elif sport_filter == "WNBA" and family == "Assists":
+            model_family_key = "player_assists"
+        elif sport_filter == "WNBA" and family == "Three-Pointers":
+            model_family_key = "player_threes"
+        elif sport_filter == "WNBA" and family == "Points + Rebounds + Assists":
+            model_family_key = "player_points_rebounds_assists"
 
         if model_family_key:
             st.success("Independent Sports Edge model available for this prop family.")
@@ -1226,6 +1248,8 @@ elif view == "Player Props":
                         max_nfl_receiving_players=24 if model_family_key in {"player_reception_yds", "player_receptions"} else None,
                         include_nfl_touchdowns=(model_family_key == "player_anytime_td"),
                         max_nfl_td_players=24 if model_family_key == "player_anytime_td" else None,
+                        include_wnba_player_props=(sport_filter == "WNBA"),
+                        max_wnba_players=24 if sport_filter == "WNBA" else None,
                     )
                     prop_model_candidates = [
                         row for row in prop_model_candidates
@@ -1426,12 +1450,15 @@ elif view == "Parlay Generator":
             use_mlb_game_lines = preset in {"Best Available", "Mixed Sports", "MLB Game Markets"}
             use_all_nfl_models = preset in {"Best Available", "Mixed Sports"}
             use_nfl_game_lines = preset in {"Best Available", "Mixed Sports", "NFL Game Markets"}
+            use_all_wnba_models = preset in {"Best Available", "Mixed Sports"}
             use_wnba_game_lines = preset in {"Best Available", "Mixed Sports", "WNBA Game Markets"}
             focused_mlb_cap = max(12, min(24, target * 3))
             broad_mlb_cap = max(10, min(16, target * 3))
             pitcher_cap = max(8, min(16, target * 2))
             focused_nfl_cap = max(12, min(24, target * 3))
             broad_nfl_cap = max(12, min(18, target * 3))
+            focused_wnba_cap = max(12, min(24, target * 3))
+            broad_wnba_cap = max(10, min(18, target * 3))
 
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
@@ -1505,6 +1532,16 @@ elif view == "Parlay Generator":
                 ),
                 include_nfl_game_lines=use_nfl_game_lines,
                 include_wnba_game_lines=use_wnba_game_lines,
+                include_wnba_player_props=(
+                    preset in {"WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"}
+                    or use_all_wnba_models
+                ),
+                max_wnba_players=(
+                    focused_wnba_cap
+                    if preset in {"WNBA Points", "WNBA Rebounds", "WNBA Assists", "WNBA Threes", "WNBA PRA"}
+                    else broad_wnba_cap if use_all_wnba_models
+                    else None
+                ),
             )
 
             supported_model_presets = {
@@ -1518,6 +1555,11 @@ elif view == "Parlay Generator":
                 "NFL Receiving",
                 "NFL Touchdowns",
                 "WNBA Game Markets",
+                "WNBA Points",
+                "WNBA Rebounds",
+                "WNBA Assists",
+                "WNBA Threes",
+                "WNBA PRA",
                 "MLB Hits",
                 "MLB Home Runs",
                 "MLB Total Bases",
@@ -1595,6 +1637,16 @@ elif view == "Parlay Generator":
                     row for row in model_candidates
                     if row.sport == "WNBA" and row.market_key in {"model_h2h", "wnba_spread", "wnba_game_total", "wnba_team_total"}
                 ]
+            elif preset == "WNBA Points":
+                model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_points"]
+            elif preset == "WNBA Rebounds":
+                model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_rebounds"]
+            elif preset == "WNBA Assists":
+                model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_assists"]
+            elif preset == "WNBA Threes":
+                model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_threes"]
+            elif preset == "WNBA PRA":
+                model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_points_rebounds_assists"]
             elif preset not in supported_model_presets:
                 model_candidates = []
 
@@ -1969,7 +2021,7 @@ with st.expander("System status / Model Trust"):
     st.write("**Player props:** exact game + full player + prop family + compatible line/milestone required.")
     st.write("**Sportsbook intelligence:** source-weighted no-vig consensus plus leave-one-book-out offer checks.")
     st.write("**Catalog:** full open-market cursor exhaustion for MLB, NBA, WNBA, NFL and all Tennis families; unknown supported families stay visible instead of disappearing.")
-    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo, form trajectory, serve/return trend, workload, and recency-weighted shrunk H2H; MLB Hits, Home Runs, Total Bases, RBIs, H+R+RBI, and Pitcher Strikeouts use player/recent/game-log/opponent/probable-starter context; NFL Spread/Game Total/Team Total use current/prior scoring and defense with empirical volatility; NFL Passing Yards/TDs/Attempts/Completions/Interceptions, Rushing Yards/Attempts, Rushing + Receiving Yards, Receiving Yards, Receptions, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB run lines/totals use independent team scoring/allowance Poisson baselines; MLB/NFL/NBA/WNBA game winners use public team-strength baselines; WNBA spreads/totals add scoring, defense, recent form, home court, and empirical game volatility. Sportsbooks are secondary calibration only.")
+    st.write("**Sport models:** model evidence is mandatory for parlay qualification. Tennis uses Elo, form trajectory, serve/return trend, workload, and recency-weighted shrunk H2H; MLB Hits, Home Runs, Total Bases, RBIs, H+R+RBI, and Pitcher Strikeouts use player/recent/game-log/opponent/probable-starter context; NFL Spread/Game Total/Team Total use current/prior scoring and defense with empirical volatility; NFL Passing Yards/TDs/Attempts/Completions/Interceptions, Rushing Yards/Attempts, Rushing + Receiving Yards, Receiving Yards, Receptions, and Player Touchdowns use current usage/efficiency, prior-season shrinkage, and conservative matchup context; MLB run lines/totals use independent team scoring/allowance Poisson baselines; MLB/NFL/NBA/WNBA game winners use public team-strength baselines; WNBA spreads/totals add scoring, defense, recent form, home court, and empirical game volatility; WNBA player props add minutes/role, per-minute production, recent efficiency, opponent history, team scoring environment, and empirical variance. Sportsbooks are secondary calibration only.")
     st.write("**Public bettors:** records must clear sample, verification, and CLV gates before they can count as supporting evidence.")
     st.warning("No pick or parlay is guaranteed. Missing, stale, conflicting, or unverified evidence fails closed.")
 
