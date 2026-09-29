@@ -3,10 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from math import prod
+import re
 from typing import Iterable
 
-from sports_edge.models.consensus import consensus_from_event
-from sports_edge.models.event_identity import canonical_event_id_from_game
+from sports_edge.models.consensus import consensus_from_event, line_consensus_from_event
+from sports_edge.models.event_identity import (
+    canonical_event_id_from_game,
+    canonical_participant,
+)
 from sports_edge.models.game_scope import GameEvent
 from sports_edge.models.live_board import LiveSignal
 from sports_edge.models.props import PropConsensus
@@ -151,6 +155,117 @@ def candidate_legs_from_h2h(
     if mode == "longshot":
         return ranked
     return ranked[:1]
+
+def candidate_book_context_for_model_lines(
+    game: GameEvent,
+    event_payload: dict,
+    model_targets: list[ParlayCandidateLeg],
+    *,
+    now: datetime | None = None,
+) -> list[ParlayCandidateLeg]:
+    """Build secondary book context for exact model spread/total selections.
+
+    This does not create or qualify a model pick. It only returns sportsbook
+    consensus rows whose physical event, selection, and line exactly correspond
+    to an existing independent model candidate.
+    """
+
+    event_id = canonical_event_id_from_game(game)
+    out: list[ParlayCandidateLeg] = []
+    team_by_key = {
+        canonical_participant(game.sport, game.away_team): game.away_team,
+        canonical_participant(game.sport, game.home_team): game.home_team,
+    }
+
+    for target in model_targets:
+        if target.event_id != event_id or target.sport != game.sport:
+            continue
+
+        quote = None
+        if target.market_key in {"mlb_spread", "nfl_spread", "wnba_spread"}:
+            match = re.fullmatch(
+                r"(.+?)\s+margin\s+(>|≤|<=)\s+(-?\d+(?:\.\d+)?)",
+                target.selection.strip(),
+            )
+            if not match:
+                continue
+            raw_team, relation, raw_line = match.groups()
+            line = float(raw_line)
+            # Integer sportsbook spreads introduce a push state while Kalshi's
+            # strict > / <= contract is binary. Fail closed instead of treating
+            # a push as an exact complement.
+            if abs(line * 2.0 - round(line * 2.0)) > 1e-8 or int(round(line * 2.0)) % 2 == 0:
+                continue
+
+            team_key = canonical_participant(game.sport, raw_team)
+            team_name = team_by_key.get(team_key)
+            if not team_name:
+                continue
+            other_name = game.home_team if team_name == game.away_team else game.away_team
+
+            if relation == ">":
+                target_name = team_name
+                target_point = -line
+            else:
+                target_name = other_name
+                target_point = line
+
+            quote = line_consensus_from_event(
+                event_payload,
+                market_key="spreads",
+                target_name=target_name,
+                target_point=target_point,
+                selection_label=target.selection,
+                now=now,
+            )
+
+        elif target.market_key in {"mlb_game_total", "nfl_game_total", "wnba_game_total"}:
+            match = re.fullmatch(
+                r"(Over|Under)\s+(-?\d+(?:\.\d+)?)\s+Game Total",
+                target.selection.strip(),
+                re.I,
+            )
+            if not match:
+                continue
+            side, raw_line = match.groups()
+            line = float(raw_line)
+            if abs(line * 2.0 - round(line * 2.0)) > 1e-8 or int(round(line * 2.0)) % 2 == 0:
+                continue
+            quote = line_consensus_from_event(
+                event_payload,
+                market_key="totals",
+                target_name=side.title(),
+                target_point=line,
+                selection_label=target.selection,
+                now=now,
+            )
+
+        if quote is None or quote.warnings:
+            continue
+
+        out.append(
+            ParlayCandidateLeg(
+                sport=target.sport,
+                event_id=target.event_id,
+                event_title=target.event_title,
+                market_key=target.market_key,
+                market_label=target.market_label,
+                selection=target.selection,
+                consensus_probability=quote.fair_probability,
+                book_count=quote.book_count,
+                source_age_s=quote.median_age_s,
+                median_odds=None,
+                kalshi_ticker=None,
+                kalshi_side=None,
+                kalshi_price=None,
+                kalshi_edge_points=None,
+                kalshi_status="CONSENSUS ONLY",
+                evidence_class="CONSENSUS BASELINE",
+            )
+        )
+
+    return out
+
 
 def candidate_legs_from_props(
     game: GameEvent,
