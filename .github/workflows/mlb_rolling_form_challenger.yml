@@ -15,21 +15,25 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - name: Compare season-only vs rolling-form next-game scoring
+      - name: Tune on 2025 and hold out 2026
         run: |
           python - <<'PY'
           from collections import defaultdict
-          from datetime import date
           from math import lgamma, log
           from statistics import mean
           import requests
 
           BASE="https://statsapi.mlb.com/api/v1/schedule"
 
-          def fetch(start,end):
+          def fetch(season):
               r=requests.get(
                   BASE,
-                  params={"sportId":1,"startDate":start,"endDate":end,"hydrate":"team"},
+                  params={
+                      "sportId":1,
+                      "startDate":f"{season}-03-20",
+                      "endDate":f"{season}-09-28",
+                      "hydrate":"team",
+                  },
                   timeout=45,
               )
               r.raise_for_status()
@@ -37,8 +41,8 @@ jobs:
               for block in r.json().get("dates",[]) or []:
                   day=block.get("date")
                   for g in block.get("games",[]) or []:
-                      state=str((g.get("status") or {}).get("abstractGameState") or "")
-                      if state!="Final": continue
+                      if str((g.get("status") or {}).get("abstractGameState") or "")!="Final":
+                          continue
                       teams=g.get("teams") or {}
                       away=teams.get("away") or {}; home=teams.get("home") or {}
                       try:
@@ -51,62 +55,62 @@ jobs:
               rows.sort()
               return rows
 
-          def blend(season,recent,n):
-              if n<5:return season
-              w=.22*min(1.0,n/12.0)
-              return (1-w)*season+w*recent
-
           def pois_nll(actual,mu):
               mu=max(.05,mu)
               return mu-actual*log(mu)+lgamma(actual+1)
 
-          for season,end in ((2025,"2025-09-28"),(2026,"2026-09-28")):
-              start=f"{season}-03-20"
-              games=fetch(start,end)
+          def evaluate(games,window,weight):
               hist=defaultdict(list)
-              team_base=[]; team_adapt=[]
-              total_base=[]; total_adapt=[]
-              nll_base=[]; nll_adapt=[]
-              evaluated=0
-
+              team_abs=[]; total_abs=[]; nll=[]
               for day,gpk,away,home,ar,hr in games:
                   ah=hist[away]; hh=hist[home]
                   if len(ah)>=20 and len(hh)>=20:
-                      a_for=mean(x[0] for x in ah)
-                      a_allow=mean(x[1] for x in ah)
-                      h_for=mean(x[0] for x in hh)
-                      h_allow=mean(x[1] for x in hh)
+                      a_for=mean(x[0] for x in ah); a_allow=mean(x[1] for x in ah)
+                      h_for=mean(x[0] for x in hh); h_allow=mean(x[1] for x in hh)
+                      if weight>0:
+                          arx=ah[-window:]; hrx=hh[-window:]
+                          a_for=(1-weight)*a_for+weight*mean(x[0] for x in arx)
+                          a_allow=(1-weight)*a_allow+weight*mean(x[1] for x in arx)
+                          h_for=(1-weight)*h_for+weight*mean(x[0] for x in hrx)
+                          h_allow=(1-weight)*h_allow+weight*mean(x[1] for x in hrx)
+                      mu_a=max(2.0,min(7.5,.55*a_for+.45*h_allow-.08))
+                      mu_h=max(2.0,min(7.5,.55*h_for+.45*a_allow+.08))
+                      team_abs.extend((abs(mu_a-ar),abs(mu_h-hr)))
+                      total_abs.append(abs((mu_a+mu_h)-(ar+hr)))
+                      nll.extend((pois_nll(ar,mu_a),pois_nll(hr,mu_h)))
+                  hist[away].append((ar,hr)); hist[home].append((hr,ar))
+              return mean(team_abs),mean(total_abs),mean(nll),len(total_abs)
 
-                      a_recent=ah[-12:]; h_recent=hh[-12:]
-                      a_for_ad=blend(a_for,mean(x[0] for x in a_recent),len(a_recent))
-                      a_allow_ad=blend(a_allow,mean(x[1] for x in a_recent),len(a_recent))
-                      h_for_ad=blend(h_for,mean(x[0] for x in h_recent),len(h_recent))
-                      h_allow_ad=blend(h_allow,mean(x[1] for x in h_recent),len(h_recent))
+          train=fetch(2025); test=fetch(2026)
+          configs=[(0,0.0)]
+          for window in (5,8,12,16,20):
+              for weight in (.03,.05,.08,.10,.12,.15,.18,.22):
+                  configs.append((window,weight))
 
-                      b_away=max(2.0,min(7.5,.55*a_for+.45*h_allow-.08))
-                      b_home=max(2.0,min(7.5,.55*h_for+.45*a_allow+.08))
-                      a_away=max(2.0,min(7.5,.55*a_for_ad+.45*h_allow_ad-.08))
-                      a_home=max(2.0,min(7.5,.55*h_for_ad+.45*a_allow_ad+.08))
+          rows=[]
+          for window,weight in configs:
+              tr=evaluate(train,window or 12,weight)
+              rows.append((tr[2],tr[0],tr[1],window,weight,tr))
+          rows.sort()
 
-                      team_base.extend((abs(b_away-ar),abs(b_home-hr)))
-                      team_adapt.extend((abs(a_away-ar),abs(a_home-hr)))
-                      total_base.append(abs((b_away+b_home)-(ar+hr)))
-                      total_adapt.append(abs((a_away+a_home)-(ar+hr)))
-                      nll_base.extend((pois_nll(ar,b_away),pois_nll(hr,b_home)))
-                      nll_adapt.extend((pois_nll(ar,a_away),pois_nll(hr,a_home)))
-                      evaluated+=1
-
-                  hist[away].append((ar,hr))
-                  hist[home].append((hr,ar))
-
-              def report(metric,b,a):
-                  mb=mean(b); ma=mean(a)
-                  print("RESULT",season,metric,"n",len(b),
-                        "base",round(mb,6),"adaptive",round(ma,6),
-                        "delta",round(ma-mb,6),
-                        "pct",round((ma/mb-1)*100,3))
-              print("GAMES",season,"fetched",len(games),"evaluated",evaluated)
-              report("team_run_mae",team_base,team_adapt)
-              report("game_total_mae",total_base,total_adapt)
-              report("team_poisson_nll",nll_base,nll_adapt)
+          base_train=evaluate(train,12,0.0)
+          base_test=evaluate(test,12,0.0)
+          print("BASE_2025",base_train)
+          print("BASE_2026",base_test)
+          print("TOP_2025")
+          for row in rows[:12]:
+              _,_,_,window,weight,tr=row
+              te=evaluate(test,window or 12,weight)
+              print(
+                  "CONFIG","window",window,"weight",weight,
+                  "train_team_mae",round(tr[0],6),
+                  "train_total_mae",round(tr[1],6),
+                  "train_nll",round(tr[2],6),
+                  "test_team_mae",round(te[0],6),
+                  "test_total_mae",round(te[1],6),
+                  "test_nll",round(te[2],6),
+                  "test_delta_team",round(te[0]-base_test[0],6),
+                  "test_delta_total",round(te[1]-base_test[1],6),
+                  "test_delta_nll",round(te[2]-base_test[2],6),
+              )
           PY
