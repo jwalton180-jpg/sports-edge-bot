@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 import math
 import re
@@ -9,7 +9,11 @@ import re
 import requests
 
 from sports_edge.core.math import clamp
-from sports_edge.data.mlb_prop_data import schedule_for_day, team_season_stat
+from sports_edge.data.mlb_prop_data import (
+    schedule_for_day,
+    team_date_range_stat,
+    team_season_stat,
+)
 from sports_edge.models.game_scope import normalize
 from sports_edge.models.model_evidence import ModelEvidence
 
@@ -23,6 +27,18 @@ class MLBLineProjection:
     selection_label: str
     line: float
     projected_value: float
+
+
+@dataclass(frozen=True)
+class _TeamRates:
+    season_for: float
+    season_allowed: float
+    recent_for: float | None
+    recent_allowed: float | None
+    blended_for: float
+    blended_allowed: float
+    season_games: int
+    recent_games: int
 
 
 @dataclass(frozen=True)
@@ -106,7 +122,21 @@ def _resolve_matchup(event_date: date, event_ticker: str, event_title: str) -> _
     return next(iter(unique.values())) if len(unique) == 1 else None
 
 
-def _team_rates(team_id: int, season: int) -> tuple[float, float, int] | None:
+def _blend_recent_rate(
+    season_rate: float,
+    recent_rate: float | None,
+    recent_games: int,
+    *,
+    max_weight: float = 0.22,
+) -> float:
+    if recent_rate is None or recent_games < 5:
+        return season_rate
+    weight = max_weight * clamp(recent_games / 12.0, 0.0, 1.0)
+    return (1.0 - weight) * season_rate + weight * recent_rate
+
+
+def _team_rates(team_id: int, event_date: date) -> _TeamRates | None:
+    season = event_date.year
     hitting = team_season_stat(team_id, "hitting", season)
     pitching = team_season_stat(team_id, "pitching", season)
     if not hitting or not pitching:
@@ -117,7 +147,65 @@ def _team_rates(team_id: int, season: int) -> tuple[float, float, int] | None:
     gp = _f(hitting.get("gamesPlayed")) or _f(pitching.get("gamesPlayed"))
     if runs_for is None or runs_allowed is None or gp is None or gp < 8:
         return None
-    return runs_for / gp, runs_allowed / gp, int(gp)
+
+    season_for = runs_for / gp
+    season_allowed = runs_allowed / gp
+
+    prior_end = event_date - timedelta(days=1)
+    recent_start = prior_end - timedelta(days=20)
+    recent_hit = team_date_range_stat(
+        team_id,
+        "hitting",
+        recent_start.isoformat(),
+        prior_end.isoformat(),
+    )
+    recent_pitch = team_date_range_stat(
+        team_id,
+        "pitching",
+        recent_start.isoformat(),
+        prior_end.isoformat(),
+    )
+
+    recent_games_raw = (
+        _f((recent_hit or {}).get("gamesPlayed"))
+        or _f((recent_pitch or {}).get("gamesPlayed"))
+        or 0.0
+    )
+    recent_games = int(recent_games_raw)
+    recent_for = None
+    recent_allowed = None
+    if recent_games >= 5:
+        recent_runs_for = _f((recent_hit or {}).get("runs"))
+        recent_runs_allowed = _f((recent_pitch or {}).get("runs"))
+        if recent_runs_for is not None:
+            recent_for = recent_runs_for / recent_games
+        if recent_runs_allowed is not None:
+            recent_allowed = recent_runs_allowed / recent_games
+
+    return _TeamRates(
+        season_for=season_for,
+        season_allowed=season_allowed,
+        recent_for=recent_for,
+        recent_allowed=recent_allowed,
+        blended_for=_blend_recent_rate(season_for, recent_for, recent_games),
+        blended_allowed=_blend_recent_rate(season_allowed, recent_allowed, recent_games),
+        season_games=int(gp),
+        recent_games=recent_games,
+    )
+
+
+def _rate_factors(name: str, rates: _TeamRates) -> tuple[str, ...]:
+    rows = [
+        f"{name} season scoring {rates.season_for:.2f} runs/game; allowance {rates.season_allowed:.2f}",
+    ]
+    if rates.recent_for is not None or rates.recent_allowed is not None:
+        rec_for = f"{rates.recent_for:.2f}" if rates.recent_for is not None else "n/a"
+        rec_allowed = f"{rates.recent_allowed:.2f}" if rates.recent_allowed is not None else "n/a"
+        rows.append(
+            f"{name} rolling 21-day form {rec_for} runs/game; {rec_allowed} allowed "
+            f"over {rates.recent_games} game(s), conservatively shrunk toward season baseline"
+        )
+    return tuple(rows)
 
 
 def _poisson_cdf(k: int, lam: float) -> float:
@@ -153,18 +241,16 @@ def _projection(event_date: date, event_ticker: str, event_title: str):
     matchup = _resolve_matchup(event_date, event_ticker, event_title)
     if matchup is None:
         return None
-    away = _team_rates(matchup.away_id, event_date.year)
-    home = _team_rates(matchup.home_id, event_date.year)
+    away = _team_rates(matchup.away_id, event_date)
+    home = _team_rates(matchup.home_id, event_date)
     if away is None or home is None:
         return None
-    away_for, away_allowed, away_gp = away
-    home_for, home_allowed, home_gp = home
 
-    away_mu = 0.55 * away_for + 0.45 * home_allowed - 0.08
-    home_mu = 0.55 * home_for + 0.45 * away_allowed + 0.08
+    away_mu = 0.55 * away.blended_for + 0.45 * home.blended_allowed - 0.08
+    home_mu = 0.55 * home.blended_for + 0.45 * away.blended_allowed + 0.08
     away_mu = clamp(away_mu, 2.0, 7.5)
     home_mu = clamp(home_mu, 2.0, 7.5)
-    return matchup, away_mu, home_mu, min(away_gp, home_gp)
+    return matchup, away_mu, home_mu, min(away.season_games, home.season_games), away, home
 
 
 def _confidence(games: int, kind: str) -> float:
@@ -229,7 +315,7 @@ def project_mlb_spread(
         result = _projection(event_date, event_ticker, event_title)
         if result is None:
             return None
-        matchup, away_mu, home_mu, games = result
+        matchup, away_mu, home_mu, games, away_rates, home_rates = result
         side = _team_side(matchup, team_name)
         if side is None:
             return None
@@ -238,7 +324,7 @@ def project_mlb_spread(
         prob = _margin_over(line, team_mu, opp_mu)
         evidence = ModelEvidence(
             sport="MLB",
-            model_name="MLB Run Line: team scoring/allowance Poisson baseline",
+            model_name="MLB Run Line: season + rolling-form scoring/allowance Poisson",
             fair_probability=prob,
             confidence=_confidence(games, "spread"),
             sample_size=games,
@@ -246,6 +332,8 @@ def project_mlb_spread(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected {team} margin {team_mu - opp_mu:+.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                *_rate_factors(matchup.away_name, away_rates),
+                *_rate_factors(matchup.home_name, home_rates),
             ),
             warnings=_warnings(),
         )
@@ -265,12 +353,12 @@ def project_mlb_game_total(
         result = _projection(event_date, event_ticker, event_title)
         if result is None:
             return None
-        matchup, away_mu, home_mu, games = result
+        matchup, away_mu, home_mu, games, away_rates, home_rates = result
         total_mu = away_mu + home_mu
         prob = _poisson_over(line, total_mu)
         evidence = ModelEvidence(
             sport="MLB",
-            model_name="MLB Game Total: team scoring/allowance Poisson baseline",
+            model_name="MLB Game Total: season + rolling-form scoring/allowance Poisson",
             fair_probability=prob,
             confidence=_confidence(games, "total"),
             sample_size=games,
@@ -278,6 +366,8 @@ def project_mlb_game_total(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected game total {total_mu:.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                *_rate_factors(matchup.away_name, away_rates),
+                *_rate_factors(matchup.home_name, home_rates),
             ),
             warnings=_warnings(),
         )
@@ -298,7 +388,7 @@ def project_mlb_team_total(
         result = _projection(event_date, event_ticker, event_title)
         if result is None:
             return None
-        matchup, away_mu, home_mu, games = result
+        matchup, away_mu, home_mu, games, away_rates, home_rates = result
         side = _team_side(matchup, team_name)
         if side is None:
             return None
@@ -307,7 +397,7 @@ def project_mlb_team_total(
         prob = _poisson_over(line, team_mu)
         evidence = ModelEvidence(
             sport="MLB",
-            model_name="MLB Team Total: team scoring/allowance Poisson baseline",
+            model_name="MLB Team Total: season + rolling-form scoring/allowance Poisson",
             fair_probability=prob,
             confidence=_confidence(games, "team_total"),
             sample_size=games,
@@ -315,6 +405,8 @@ def project_mlb_team_total(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected {team} score {team_mu:.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                *_rate_factors(matchup.away_name, away_rates),
+                *_rate_factors(matchup.home_name, home_rates),
             ),
             warnings=_warnings(),
         )
