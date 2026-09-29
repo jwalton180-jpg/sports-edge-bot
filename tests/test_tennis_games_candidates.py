@@ -153,3 +153,22 @@ def test_mens_grand_slam_qualifying_stays_best_of_three():
 
 def test_womens_match_format_is_best_of_three_without_extra_metadata():
     assert _tennis_best_of({}, "women") == 3
+
+
+def test_games_total_does_not_use_expiration_as_pregame_proof(monkeypatch):
+    monkeypatch.setattr(
+        "sports_edge.models.kalshi_model_candidates._tennis_games_model",
+        lambda gender, year: _FakeGamesModel(),
+    )
+    total = _total_row()
+    total.market.pop("occurrence_datetime")
+    total.market["expected_expiration_time"] = "2099-01-03T05:00:00Z"
+    rows = [
+        _match_row("Alpha Player", "Beta Player"),
+        _match_row("Beta Player", "Alpha Player"),
+        total,
+    ]
+    assert _tennis_games_total_candidates(
+        rows,
+        now=datetime(2099, 1, 1, 0, 0, tzinfo=timezone.utc),
+    ) == []
