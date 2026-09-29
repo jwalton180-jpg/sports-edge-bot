@@ -138,4 +138,4 @@ def test_same_selection_from_other_event_does_not_make_join_ambiguous():
     other_event = replace(book_a, event_id="E2", event_title="Other Event")
     merged = attach_sportsbook_context([model_leg], [book_a, other_event])
     assert merged[0].book_count == 4
-    assert merged[0].evidence_class == "MODEL"
+    assert merged[0].evidence_class == "MODEL + BOOKS"
