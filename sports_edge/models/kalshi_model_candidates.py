@@ -46,6 +46,7 @@ from sports_edge.models.nfl_prop_models import (
 )
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_research import TennisResearchModel, tennis_level_from_series
+from sports_edge.models.tennis_games_model import TennisGamesModel
 from sports_edge.models.wnba_lines_model import (
     project_wnba_game_total,
     project_wnba_spread,
@@ -156,6 +157,236 @@ def _event_choices(rows: Iterable[KalshiSportMarket]) -> list[tuple[str, str, fl
 @lru_cache(maxsize=4)
 def _tennis_model(gender: str, year: int) -> TennisResearchModel:
     return TennisResearchModel(gender, current_year=year)
+
+
+@lru_cache(maxsize=4)
+def _tennis_games_model(gender: str, year: int) -> TennisGamesModel:
+    return TennisGamesModel(gender, current_year=year)
+
+
+def _tennis_event_signature(market: dict) -> str:
+    raw = str(market.get("event_ticker") or "").strip()
+    if "-" not in raw:
+        return raw
+    return raw.split("-", 1)[1]
+
+
+def _tennis_matchups_by_signature(
+    rows: list[KalshiSportMarket],
+) -> dict[str, tuple[str, str]]:
+    """Resolve exactly two participants for each physical Tennis match.
+
+    Match-winner contracts are preferred because they expose both player names.
+    Games-spread titles are only a fallback. The shared event suffix is a join
+    key, never the final canonical event identity.
+    """
+    names: dict[str, list[str]] = {}
+    for row in rows:
+        if row.family != "Match Winner":
+            continue
+        signature = _tennis_event_signature(row.market)
+        if not signature:
+            continue
+        bucket = names.setdefault(signature, [])
+        for key in ("yes_sub_title", "no_sub_title", "yes_title", "no_title"):
+            value = _clean_selection(row.market.get(key))
+            if value and normalize(value) not in {normalize(x) for x in bucket}:
+                bucket.append(value)
+
+    for row in rows:
+        if row.family != "Games Spread":
+            continue
+        signature = _tennis_event_signature(row.market)
+        if not signature or len(names.get(signature, [])) == 2:
+            continue
+        title = str(row.market.get("title") or "").strip()
+        match = re.match(
+            r"Will\s+(.+?)\s+win\s+at\s+least\s+[0-9.]+\s+more\s+games\s+than\s+(.+?)\??$",
+            title,
+            re.I,
+        )
+        if not match:
+            continue
+        bucket = names.setdefault(signature, [])
+        for value in (match.group(1).strip(), match.group(2).strip()):
+            if value and normalize(value) not in {normalize(x) for x in bucket}:
+                bucket.append(value)
+
+    return {
+        signature: (values[0], values[1])
+        for signature, values in names.items()
+        if len(values) == 2 and normalize(values[0]) != normalize(values[1])
+    }
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _tennis_scheduled_start(market: dict) -> datetime | None:
+    # occurrence_datetime is the strongest field currently returned by Kalshi;
+    # expected_expiration_time is retained only as a compatibility fallback.
+    for key in ("occurrence_datetime", "expected_expiration_time"):
+        parsed = _parse_timestamp(market.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _tennis_best_of(market: dict, gender: str) -> int | None:
+    if gender == "women":
+        return 3
+
+    text = normalize(" ".join(
+        str(market.get(key) or "")
+        for key in (
+            "rules_primary",
+            "rules_secondary",
+            "event_title",
+            "subtitle",
+            "series_title",
+            "series_tags",
+        )
+    ))
+    if not text:
+        return None
+
+    grand_slam = any(
+        term in text
+        for term in (
+            "australian open",
+            "french open",
+            "roland garros",
+            "wimbledon",
+            "us open",
+            "u s open",
+        )
+    )
+    if grand_slam and "qualif" not in text:
+        return 5
+
+    # Men's ATP/Challenger/ITF non-Slam singles are best-of-three. Require
+    # explicit tennis competition/rule context so missing metadata fails closed.
+    if any(term in text for term in (" atp ", " challenger", " itf ", " tennis ")):
+        return 3
+    return None
+
+
+def _tennis_games_total_candidates(
+    rows: list[KalshiSportMarket],
+    *,
+    now: datetime | None = None,
+) -> list[ParlayCandidateLeg]:
+    matchups = _tennis_matchups_by_signature(rows)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+
+    out: list[ParlayCandidateLeg] = []
+    for row in rows:
+        if row.family != "Games Total":
+            continue
+        market = row.market
+        signature = _tennis_event_signature(market)
+        participants = matchups.get(signature)
+        if participants is None:
+            continue
+
+        start = _tennis_scheduled_start(market)
+        # A scheduled start in the past is not proof a match is live, but it is
+        # enough uncertainty to refuse a pregame model. Future start is required.
+        if start is None or start <= current:
+            continue
+
+        try:
+            line = float(market.get("floor_strike"))
+        except (TypeError, ValueError):
+            continue
+        if line <= 0:
+            continue
+
+        player_a, player_b = participants
+        series = str(market.get("series_ticker") or "")
+        gender, level = tennis_level_from_series(series)
+        best_of = _tennis_best_of(market, gender)
+        if best_of is None:
+            continue
+
+        model = _tennis_games_model(gender, start.date().year)
+        projection = model.project_games_total(
+            player_a,
+            player_b,
+            line=line,
+            event_date=start.date(),
+            level=level,
+            surface=_explicit_tennis_surface(market),
+            best_of=best_of,
+            game_title=f"{player_a} vs {player_b}",
+        )
+        if projection is None or not projection.evidence.usable:
+            continue
+
+        base = projection.evidence
+        no_evidence = replace(
+            base,
+            fair_probability=1.0 - base.fair_probability,
+            factors=tuple([
+                f"Complement of Over {line:g} games model probability",
+                *base.factors,
+            ]),
+        )
+        yes_price = market_side_probability(market, "YES")
+        no_price = market_side_probability(market, "NO")
+
+        # Preserve the same canonical identity scheme as existing Tennis
+        # match-winner candidates. The suffix only resolved participants.
+        canonical_date = _parse_date(market)
+        event_id = canonical_event_id("Tennis", player_a, player_b, canonical_date)
+        event_title = f"{player_a} vs {player_b}"
+
+        for side, price, evidence, selection in (
+            ("YES", yes_price, base, f"Over {line:g} Games"),
+            ("NO", no_price, no_evidence, f"Under {line:g} Games"),
+        ):
+            if price is None:
+                continue
+            out.append(
+                ParlayCandidateLeg(
+                    sport="Tennis",
+                    event_id=event_id,
+                    event_title=event_title,
+                    market_key=projection.market_key,
+                    market_label=projection.market_label,
+                    selection=selection,
+                    consensus_probability=evidence.fair_probability,
+                    book_count=0,
+                    source_age_s=0.0,
+                    median_odds=None,
+                    kalshi_ticker=str(market.get("ticker") or ""),
+                    kalshi_side=side,
+                    kalshi_price=price,
+                    kalshi_edge_points=100.0 * (evidence.fair_probability - price),
+                    kalshi_status="MODEL",
+                    evidence_class="MODEL",
+                    model_probability=evidence.fair_probability,
+                    model_confidence=evidence.confidence,
+                    model_name=evidence.model_name,
+                    model_sample_size=evidence.sample_size,
+                    model_reasons=evidence.factors,
+                    model_warnings=evidence.warnings,
+                )
+            )
+    return out
 
 
 def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandidateLeg]:
@@ -1712,6 +1943,7 @@ def model_candidates_from_kalshi(
     include_wnba_game_lines: bool = False,
     include_wnba_player_props: bool = False,
     max_wnba_players: int | None = None,
+    include_tennis_games_total: bool = False,
 ) -> list[ParlayCandidateLeg]:
     sports = (
         ("MLB", "NBA", "WNBA", "NFL", "Tennis")
@@ -1736,6 +1968,9 @@ def model_candidates_from_kalshi(
                 all_rows.extend(_tennis_event_candidates(event_rows))
             else:
                 all_rows.extend(_team_event_candidates(sport, event_rows))
+
+        if sport == "Tennis" and include_tennis_games_total:
+            all_rows.extend(_tennis_games_total_candidates(rows))
 
         if sport == "MLB" and include_mlb_hits:
             hit_rows = [row for row in rows if row.family == "Hits"]
