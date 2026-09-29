@@ -8,6 +8,10 @@ import re
 from typing import Iterable
 
 from sports_edge.data.public_team_data import team_game_model
+from sports_edge.models.event_identity import (
+    canonical_event_id,
+    canonical_event_id_from_title,
+)
 from sports_edge.models.game_scope import normalize
 from sports_edge.models.kalshi_sports import KalshiSportMarket
 from sports_edge.models.live_board import market_side_probability
@@ -88,17 +92,8 @@ def _event_key(market: dict) -> str:
 
 
 def _canonical_game_id(sport: str, game_title: str, event_date: date) -> str:
-    """Stable game identity shared across Kalshi prop series for correlation control."""
-    parts = [
-        normalize(part)
-        for part in re.split(r"\s+(?:vs\.?|@)\s+", str(game_title or "").strip(), maxsplit=1, flags=re.I)
-        if normalize(part)
-    ]
-    if len(parts) == 2:
-        participants = "|".join(sorted(parts))
-    else:
-        participants = normalize(game_title) or "unknown"
-    return f"{sport.upper()}:{event_date.isoformat()}:{participants}"
+    """Backward-compatible wrapper around shared physical-event identity."""
+    return canonical_event_id_from_title(sport, game_title, event_date)
 
 
 def _event_title(market: dict) -> str:
@@ -187,7 +182,7 @@ def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandid
         out.append(
             ParlayCandidateLeg(
                 sport="Tennis",
-                event_id=_event_key(market),
+                event_id=canonical_event_id("Tennis", a_name, b_name, event_date),
                 event_title=_event_title(market),
                 market_key="model_h2h",
                 market_label="Match Winner",
@@ -243,7 +238,7 @@ def _team_event_candidates(sport: str, rows: list[KalshiSportMarket]) -> list[Pa
         out.append(
             ParlayCandidateLeg(
                 sport=sport,
-                event_id=_event_key(market),
+                event_id=canonical_event_id(sport, a_name, b_name, event_date),
                 event_title=_event_title(market),
                 market_key="model_h2h",
                 market_label="Moneyline",
@@ -1760,19 +1755,20 @@ def attach_sportsbook_context(
     model_candidates: list[ParlayCandidateLeg],
     book_candidates: list[ParlayCandidateLeg],
 ) -> list[ParlayCandidateLeg]:
-    """Attach books only when a selection match is unique within the sport.
+    """Attach books only when physical event and selection both match.
 
-    Ambiguous joins fail closed: the model candidate stays model-only rather
-    than inheriting evidence from the wrong game.
+    Canonical event identity prevents same-named selections from other games
+    or Tennis matches contaminating model evidence. Ambiguous joins still fail
+    closed.
     """
-    by_key: dict[tuple[str, str], list[ParlayCandidateLeg]] = {}
+    by_key: dict[tuple[str, str, str], list[ParlayCandidateLeg]] = {}
     for row in book_candidates:
-        key = (row.sport, normalize(row.selection))
+        key = (row.sport, row.event_id, normalize(row.selection))
         by_key.setdefault(key, []).append(row)
 
     out: list[ParlayCandidateLeg] = []
     for row in model_candidates:
-        hits = by_key.get((row.sport, normalize(row.selection)), [])
+        hits = by_key.get((row.sport, row.event_id, normalize(row.selection)), [])
         if len(hits) != 1:
             out.append(row)
             continue
