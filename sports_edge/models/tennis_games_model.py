@@ -200,7 +200,7 @@ def _level_weight(sample_level: str, target_level: str) -> float:
     return 0.0
 
 
-def _weighted_total_probability(
+def _weighted_total_probabilities(
     *,
     samples: Iterable[_HistoricalSample],
     player_a: _PlayerState,
@@ -210,8 +210,9 @@ def _weighted_total_probability(
     target_level: str,
     target_surface: str | None,
     best_of: int,
-    line: float,
-) -> tuple[float, float, float, int, float] | None:
+    lines: Iterable[float],
+) -> tuple[dict[float, float], float, float, int, float] | None:
+    """Build one weighted empirical distribution and evaluate many total lines."""
     favorite_p = max(target_probability_a, 1.0 - target_probability_a)
     pool = list(samples)[-1800:]
     weighted: list[tuple[float, float]] = []
@@ -252,12 +253,51 @@ def _weighted_total_probability(
         projected_mu = sample_mu + 0.35 * delta
 
     shift = projected_mu - sample_mu
-    raw = sum(w for w, total in weighted if total + shift > line) / sum_w
-    variance = sum(w * ((total + shift) - projected_mu) ** 2 for w, total in weighted) / sum_w
+    line_values = tuple(float(line) for line in lines)
+    probabilities = {
+        line: clamp(
+            sum(w for w, total in weighted if total + shift > line) / sum_w,
+            0.01,
+            0.99,
+        )
+        for line in line_values
+    }
+    variance = sum(
+        w * ((total + shift) - projected_mu) ** 2
+        for w, total in weighted
+    ) / sum_w
     sd = max(2.0, math.sqrt(max(0.0, variance)))
     effective_n = (sum_w * sum_w) / sum_w2
-    return clamp(raw, 0.01, 0.99), projected_mu, sd, len(weighted), effective_n
+    return probabilities, projected_mu, sd, len(weighted), effective_n
 
+
+def _weighted_total_probability(
+    *,
+    samples: Iterable[_HistoricalSample],
+    player_a: _PlayerState,
+    player_b: _PlayerState,
+    target_probability_a: float,
+    target_date: date,
+    target_level: str,
+    target_surface: str | None,
+    best_of: int,
+    line: float,
+) -> tuple[float, float, float, int, float] | None:
+    result = _weighted_total_probabilities(
+        samples=samples,
+        player_a=player_a,
+        player_b=player_b,
+        target_probability_a=target_probability_a,
+        target_date=target_date,
+        target_level=target_level,
+        target_surface=target_surface,
+        best_of=best_of,
+        lines=(float(line),),
+    )
+    if result is None:
+        return None
+    probabilities, projected_mu, sd, pool_n, effective_n = result
+    return probabilities[float(line)], projected_mu, sd, pool_n, effective_n
 
 def _calibrated_probability(raw: float, alpha: float) -> float:
     return clamp(0.5 + alpha * (raw - 0.5), 0.01, 0.99)
