@@ -177,3 +177,23 @@ def test_wnba_candidate_builds_yes_no_model_sides(monkeypatch):
         "Caitlin Clark Under 9.5 Assists",
     }
     assert all(x.event_id == "WNBA:2026-09-29:indiana fever|las vegas aces" for x in out)
+
+
+def test_wnba_pregame_guard_fails_closed_without_exact_schedule_match(monkeypatch):
+    monkeypatch.setattr(bpm, "_wnba_schedule_rows", lambda: ())
+    assert bpm._pregame_only(EVENT_DATE, "KXWNBAPTS-26SEP29LVIND") is False
+
+
+def test_wnba_pregame_guard_rejects_completed_game(monkeypatch):
+    monkeypatch.setattr(
+        bpm,
+        "_wnba_schedule_rows",
+        lambda: ({
+            "game_date": "2026-09-29",
+            "away_abbreviation": "LV",
+            "home_abbreviation": "IND",
+            "status_type_completed": "true",
+            "status_type_state": "post",
+        },),
+    )
+    assert bpm._pregame_only(EVENT_DATE, "KXWNBAPTS-26SEP29LVIND") is False
