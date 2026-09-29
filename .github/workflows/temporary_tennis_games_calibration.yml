@@ -23,10 +23,7 @@ jobs:
           python - <<'PY'
           import json
           from sports_edge.data.tennis_history import load_recent_tennis_rows
-          from sports_edge.models.tennis_games_model import (
-              walkforward_games_total_benchmark,
-              walkforward_games_total_calibration_grid,
-          )
+          from sports_edge.models.tennis_games_model import walkforward_games_total_calibration_grid
 
           for gender in ("men", "women"):
               rows = [
@@ -42,10 +39,4 @@ jobs:
                       lines=(18.5, 20.5, 22.5, 24.5, 26.5),
                   )
                   print("GRID", gender, year, json.dumps(report, sort_keys=True))
-                  benchmark = walkforward_games_total_benchmark(
-                      rows,
-                      holdout_year=year,
-                      lines=(18.5, 20.5, 22.5, 24.5, 26.5),
-                  )
-                  print("BENCHMARK", gender, year, json.dumps(benchmark, sort_keys=True))
           PY
