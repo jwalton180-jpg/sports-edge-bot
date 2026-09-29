@@ -1,0 +1,37 @@
+name: Temporary Tennis Games Benchmark Only
+
+on:
+  push:
+    branches: [feature/tennis-games-total-model]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Matchup model versus strength-blind prior
+        run: |
+          python - <<'PY'
+          import json
+          from sports_edge.data.tennis_history import load_recent_tennis_rows
+          from sports_edge.models.tennis_games_model import walkforward_games_total_benchmark
+
+          for gender in ("men", "women"):
+              rows = [
+                  row for row in load_recent_tennis_rows(gender, 2024, 2026)
+                  if str(row.get("tourney_level") or "").upper() in {"A", "M", "G", "P", "C"}
+              ]
+              for year in (2025, 2026):
+                  report = walkforward_games_total_benchmark(
+                      rows,
+                      holdout_year=year,
+                      lines=(18.5, 20.5, 22.5, 24.5, 26.5),
+                  )
+                  print("BENCHMARK", gender, year, json.dumps(report, sort_keys=True))
+          PY
