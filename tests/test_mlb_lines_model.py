@@ -1,3 +1,5 @@
+import pytest
+
 from datetime import date
 
 from sports_edge.models.kalshi_sports import KalshiSportMarket
@@ -27,8 +29,8 @@ def test_mlb_margin_probability_is_directional():
 
 
 def test_mlb_probability_calibration_shrinks_extremes_monotonically():
-    assert _calibrated_probability(0.80, 0.75) == 0.725
-    assert _calibrated_probability(0.20, 0.75) == 0.275
+    assert _calibrated_probability(0.80, 0.75) == pytest.approx(0.725)
+    assert _calibrated_probability(0.20, 0.75) == pytest.approx(0.275)
     assert _calibrated_probability(0.60, 0.70) < _calibrated_probability(0.70, 0.70)
     assert _calibrated_probability(0.50, 0.70) == 0.50
 
