@@ -1712,24 +1712,28 @@ elif view == "Live Feed":
 
                 now_utc = datetime.now(timezone.utc)
                 for model_event_id, game in candidate_games:
+                    if game.commence_time > now_utc:
+                        continue
                     for score_event in score_cache.get(game.sport_key, []):
                         if str(score_event.get("id") or "") != game.event_id:
                             continue
                         if score_event.get("completed") is True:
                             continue
                         scores = score_event.get("scores")
-                        if not isinstance(scores, list) or not scores:
+                        if not isinstance(scores, list) or len(scores) < 2:
                             continue
                         last_update = score_event.get("last_update")
-                        if last_update:
-                            try:
-                                updated = datetime.fromisoformat(str(last_update).replace("Z", "+00:00"))
-                                if updated.tzinfo is None:
-                                    updated = updated.replace(tzinfo=timezone.utc)
-                                if (now_utc - updated.astimezone(timezone.utc)).total_seconds() > 180:
-                                    continue
-                            except ValueError:
+                        if not last_update:
+                            continue
+                        try:
+                            updated = datetime.fromisoformat(str(last_update).replace("Z", "+00:00"))
+                            if updated.tzinfo is None:
+                                updated = updated.replace(tzinfo=timezone.utc)
+                            age_s = (now_utc - updated.astimezone(timezone.utc)).total_seconds()
+                            if age_s < -30 or age_s > 180:
                                 continue
+                        except ValueError:
+                            continue
                         confirmed_live_ids.add(model_event_id)
                         break
 
