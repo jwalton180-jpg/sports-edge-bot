@@ -134,7 +134,7 @@ jobs:
           for season in (2024,2025,2026):
               games=fetch_mlb(season)
               hist=defaultdict(list)
-              spread_rows=[]; total_rows=[]
+              spread_rows=[]; total_rows=[]; team_total_rows=[]
               for day,gpk,away,home,ar,hr in games:
                   ah=hist[away]; hh=hist[home]
                   if len(ah)>=20 and len(hh)>=20:
@@ -143,23 +143,32 @@ jobs:
                       mu_a=max(2.0,min(7.5,.55*a_for+.45*h_allow-.08))
                       mu_h=max(2.0,min(7.5,.55*h_for+.45*a_allow+.08))
                       actual_margin=hr-ar; actual_total=hr+ar
-                      # Home margin > 1.5 and away margin > 1.5 create two
-                      # symmetric binary calibration observations per game.
-                      spread_rows.append((_margin_over(1.5,mu_h,mu_a),1.0 if actual_margin>1.5 else 0.0))
-                      spread_rows.append((_margin_over(1.5,mu_a,mu_h),1.0 if -actual_margin>1.5 else 0.0))
+                      for margin_line in (0.5,1.5,2.5,3.5):
+                          spread_rows.append((_margin_over(margin_line,mu_h,mu_a),1.0 if actual_margin>margin_line else 0.0))
+                          spread_rows.append((_margin_over(margin_line,mu_a,mu_h),1.0 if -actual_margin>margin_line else 0.0))
                       for threshold in (6.5,7.5,8.5,9.5,10.5,11.5):
                           total_rows.append((_poisson_over(threshold,mu_a+mu_h),1.0 if actual_total>threshold else 0.0))
+                      for threshold in (2.5,3.5,4.5,5.5,6.5):
+                          team_total_rows.append((_poisson_over(threshold,mu_a),1.0 if ar>threshold else 0.0))
+                          team_total_rows.append((_poisson_over(threshold,mu_h),1.0 if hr>threshold else 0.0))
                   hist[away].append((ar,hr))
                   hist[home].append((hr,ar))
-              mlb_sets[season]=(spread_rows,total_rows)
+              mlb_sets[season]=(spread_rows,total_rows,team_total_rows)
 
           mlb_spread_alpha=best_alpha(mlb_sets[2024][0])[2]
           mlb_total_alpha=best_alpha(mlb_sets[2024][1])[2]
-          print("MLB_SELECTED","spread_alpha",mlb_spread_alpha,"total_alpha",mlb_total_alpha)
+          mlb_team_total_alpha=best_alpha(mlb_sets[2024][2])[2]
+          print(
+              "MLB_SELECTED",
+              "spread_alpha",mlb_spread_alpha,
+              "total_alpha",mlb_total_alpha,
+              "team_total_alpha",mlb_team_total_alpha,
+          )
           for season in (2024,2025,2026):
               for label,rows,a in (
                   ("spread",mlb_sets[season][0],mlb_spread_alpha),
                   ("total",mlb_sets[season][1],mlb_total_alpha),
+                  ("team_total",mlb_sets[season][2],mlb_team_total_alpha),
               ):
                   if not rows: continue
                   print("MLB",season,label,"n",len(rows),
