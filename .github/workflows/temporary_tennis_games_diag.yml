@@ -23,6 +23,7 @@ jobs:
           from sports_edge.data.kalshi import KalshiPublicClient
           from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
           from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import _tennis_games_total_candidates
 
           result = fetch_supported_sport_catalog(
               sports=("Tennis",),
@@ -64,6 +65,27 @@ jobs:
               ]
               for sib in siblings[:8]:
                   print("SIBLING", sib.family, json.dumps({k: sib.market.get(k) for k in fields}, sort_keys=True))
+
+          modeled = _tennis_games_total_candidates(tennis)
+          print("MODELED_TOTAL_SIDES", len(modeled))
+          for candidate in sorted(
+              modeled,
+              key=lambda row: row.kalshi_edge_points,
+              reverse=True,
+          )[:20]:
+              print("MODEL_SIDE", json.dumps({
+                  "event_id": candidate.event_id,
+                  "event_title": candidate.event_title,
+                  "selection": candidate.selection,
+                  "side": candidate.kalshi_side,
+                  "price": candidate.kalshi_price,
+                  "fair": candidate.model_probability,
+                  "edge_pp": candidate.kalshi_edge_points,
+                  "confidence": candidate.model_confidence,
+                  "sample": candidate.model_sample_size,
+                  "ticker": candidate.kalshi_ticker,
+                  "warnings": candidate.model_warnings,
+              }, sort_keys=True))
 
           client = KalshiPublicClient()
           for row in totals[:3]:
