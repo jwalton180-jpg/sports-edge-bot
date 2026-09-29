@@ -18,9 +18,24 @@ PROP_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
         "RBIs": ("batter_rbis", "batter_rbis_alternate"),
     },
     "NFL": {
-        "Passing": ("player_pass_yds", "player_pass_tds", "player_pass_attempts", "player_pass_completions", "player_pass_interceptions"),
-        "Rushing": ("player_rush_yds", "player_rush_attempts", "player_rush_tds", "player_rush_reception_yds"),
-        "Receiving": ("player_receptions", "player_reception_yds", "player_reception_tds"),
+        "Passing": (
+            "player_pass_yds", "player_pass_yds_alternate",
+            "player_pass_tds", "player_pass_tds_alternate",
+            "player_pass_attempts", "player_pass_attempts_alternate",
+            "player_pass_completions", "player_pass_completions_alternate",
+            "player_pass_interceptions", "player_pass_interceptions_alternate",
+        ),
+        "Rushing": (
+            "player_rush_yds", "player_rush_yds_alternate",
+            "player_rush_attempts", "player_rush_attempts_alternate",
+            "player_rush_tds", "player_rush_tds_alternate",
+            "player_rush_reception_yds", "player_rush_reception_yds_alternate",
+        ),
+        "Receiving": (
+            "player_receptions", "player_receptions_alternate",
+            "player_reception_yds", "player_reception_yds_alternate",
+            "player_reception_tds", "player_reception_tds_alternate",
+        ),
         "Touchdowns": ("player_anytime_td", "player_tds", "player_1st_td"),
     },
     "NBA": {
