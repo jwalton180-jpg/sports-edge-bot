@@ -1,0 +1,39 @@
+name: WNBA role trajectory sanity check
+
+on:
+  push:
+    branches: [basketball-player-model-research-20260929]
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect recent playoff role trajectories
+        run: |
+          python - <<'PY'
+          import io, requests, pandas as pd
+          url="https://github.com/sportsdataverse/sportsdataverse-data/releases/download/espn_wnba_player_boxscores/player_box_2026.csv"
+          r=requests.get(url,timeout=60); r.raise_for_status()
+          df=pd.read_csv(io.BytesIO(r.content))
+          names=["Napheesa Collier","Caitlin Clark","Kelsey Mitchell","Breanna Stewart","A'ja Wilson"]
+          for name in names:
+              x=df[(df["athlete_display_name"]==name)&(df["minutes"].fillna(0)>0)].copy()
+              x=x.sort_values(["game_date","game_id"])
+              cols=["game_date","season_type","team_abbreviation","opponent_team_abbreviation","minutes","starter","points","rebounds","assists","three_point_field_goals_made"]
+              print("PLAYER",name,"games",len(x))
+              print(x[cols].tail(10).to_dict("records"))
+              if len(x):
+                  print("MINUTES",name,
+                        "season",round(x["minutes"].mean(),2),
+                        "last10",round(x.tail(10)["minutes"].mean(),2),
+                        "last5",round(x.tail(5)["minutes"].mean(),2),
+                        "last3",round(x.tail(3)["minutes"].mean(),2),
+                        "latest",x.iloc[-1]["game_date"])
+          PY
