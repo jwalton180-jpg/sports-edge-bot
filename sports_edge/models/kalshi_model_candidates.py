@@ -100,6 +100,17 @@ def _event_title(market: dict) -> str:
     return str(market.get("event_title") or market.get("title") or _event_key(market)).strip()
 
 
+def _explicit_tennis_surface(market: dict) -> str | None:
+    text = normalize(" ".join(
+        str(market.get(k) or "")
+        for k in ("series_title", "series_tags", "event_title", "subtitle")
+    ))
+    for surface in ("clay", "grass", "hard", "carpet"):
+        if re.search(rf"\b{surface}\b", text):
+            return surface
+    return None
+
+
 def _clean_selection(value: str | None) -> str:
     raw = str(value or "").strip()
     if normalize(raw) in {"", "yes", "no"}:
@@ -159,7 +170,14 @@ def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandid
     a_name, a_side, a_price, a_market = choices[0]
     b_name, b_side, b_price, b_market = choices[1]
     model = _tennis_model(gender, event_date.year)
-    evidence_a = model.probability(a_name, b_name, level=level, as_of=event_date)
+    surface = _explicit_tennis_surface(first_market)
+    evidence_a = model.probability(
+        a_name,
+        b_name,
+        level=level,
+        as_of=event_date,
+        surface=surface,
+    )
     if evidence_a is None or not evidence_a.usable:
         return []
 
