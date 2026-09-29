@@ -1,0 +1,56 @@
+name: Live WNBA pregame-guard verification
+
+on:
+  push:
+    branches: [wnba-player-prop-models-20260929]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Verify current WNBA props survive exact pregame guard
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+          result=fetch_supported_sport_catalog(
+              sports=("WNBA",),
+              page_limit_per_series=50,
+              page_size=1000,
+              max_workers=6,
+              request_interval_s=0.15,
+          )
+          grouped=group_kalshi_sports(result.markets)
+          candidates=model_candidates_from_kalshi(
+              grouped,
+              sport_filter="WNBA",
+              include_wnba_player_props=True,
+              max_wnba_players=24,
+          )
+          keys={"player_points","player_rebounds","player_assists","player_threes","player_points_rebounds_assists"}
+          player=[c for c in candidates if c.market_key in keys]
+          assessments=[assess_leg(c,"best") for c in player]
+          qualified=[a for a in assessments if a.qualified]
+          ticket=build_intelligent_parlay(player,mode="best",target_legs=4,max_per_event=1)
+
+          print("catalog_error",result.error)
+          print("candidate_by_key",dict(Counter(c.market_key for c in player)))
+          print("player_candidates",len(player))
+          print("qualified_total",len(qualified))
+          print("canonical_games",len({c.event_id for c in player}))
+          print("ticket_legs",len(ticket.legs))
+          print("ticket_unique_games",len({x.leg.event_id for x in ticket.legs}))
+          assert player, "strict pregame guard eliminated all current WNBA player candidates"
+          assert len(ticket.legs)==len({x.leg.event_id for x in ticket.legs})
+          PY
