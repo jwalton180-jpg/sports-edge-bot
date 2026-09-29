@@ -6,7 +6,11 @@ from math import prod
 import re
 from typing import Iterable
 
-from sports_edge.models.consensus import consensus_from_event, line_consensus_from_event
+from sports_edge.models.consensus import (
+    consensus_from_event,
+    line_consensus_from_event,
+    team_total_consensus_from_event,
+)
 from sports_edge.models.event_identity import (
     canonical_event_id_from_game,
     canonical_participant,
@@ -235,6 +239,33 @@ def candidate_book_context_for_model_lines(
                 event_payload,
                 market_key="totals",
                 target_name=side.title(),
+                target_point=line,
+                selection_label=target.selection,
+                now=now,
+            )
+
+        elif target.market_key in {"mlb_team_total", "nfl_team_total", "wnba_team_total"}:
+            match = re.fullmatch(
+                r"(.+?)\s+(Over|Under)\s+(-?\d+(?:\.\d+)?)\s+Team Total",
+                target.selection.strip(),
+                re.I,
+            )
+            if not match:
+                continue
+            raw_team, side, raw_line = match.groups()
+            line = float(raw_line)
+            # Integer team totals introduce a sportsbook push state that is not
+            # exactly equivalent to a binary Kalshi > / <= contract.
+            if abs(line * 2.0 - round(line * 2.0)) > 1e-8 or int(round(line * 2.0)) % 2 == 0:
+                continue
+            team_key = canonical_participant(game.sport, raw_team)
+            team_name = team_by_key.get(team_key)
+            if not team_name:
+                continue
+            quote = team_total_consensus_from_event(
+                event_payload,
+                target_team=team_name,
+                target_side=side.title(),
                 target_point=line,
                 selection_label=target.selection,
                 now=now,
