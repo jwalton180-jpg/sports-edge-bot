@@ -1,0 +1,96 @@
+name: WNBA minutes role challenger
+
+on:
+  push:
+    branches: [basketball-player-model-research-20260929]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Compare pregame minutes forecasts
+        run: |
+          python - <<'PY'
+          from collections import defaultdict
+          from statistics import mean
+          from sports_edge.data.basketball_prop_data import player_box_rows, minutes_value
+          from sports_edge.models.basketball_prop_models import _expected_minutes
+
+          def norm(s):
+              import re,unicodedata
+              x=unicodedata.normalize("NFKD",str(s or "").lower())
+              x="".join(ch for ch in x if not unicodedata.combining(ch))
+              return " ".join(re.findall(r"[a-z0-9]+",x))
+
+          def usable(r):
+              m=minutes_value(r)
+              return (
+                  m is not None and m>0
+                  and str(r.get("season_type") or "") in {"2","3","2.0","3.0"}
+                  and str(r.get("did_not_play") or "").lower() not in {"true","1","yes"}
+              )
+
+          def by_player(season):
+              d=defaultdict(list)
+              for r in player_box_rows("WNBA",season):
+                  if usable(r):
+                      d[norm(r.get("athlete_display_name"))].append(dict(r))
+              for rows in d.values():
+                  rows.sort(key=lambda r:(str(r.get("game_date") or ""),str(r.get("game_id") or "")))
+              return d
+
+          def predict(history,prior,mode):
+              mins=[float(minutes_value(x)) for x in history if minutes_value(x) is not None]
+              old=[float(minutes_value(x)) for x in prior[-20:] if minutes_value(x) is not None]
+              if not mins:return None
+              season=mean(mins)
+              recent=mean(mins[-5:])
+              if mode=="current_model":
+                  return _expected_minutes(tuple(history),tuple(prior))[0]
+              if mode=="season":
+                  return season
+              if mode=="25_recent":
+                  return .75*season+.25*recent
+              if mode=="40_recent":
+                  return .60*season+.40*recent
+              if mode=="60_recent":
+                  return .40*season+.60*recent
+              if mode=="prior_shrunk_40_recent":
+                  prior_mean=mean(old) if old else season
+                  w=min(.88,max(.50,.50+.04*len(mins)))
+                  base=w*season+(1-w)*prior_mean
+                  return .60*base+.40*recent
+              raise ValueError(mode)
+
+          modes=["current_model","season","25_recent","40_recent","60_recent","prior_shrunk_40_recent"]
+          for season in (2025,2026):
+              cur=by_player(season); prior=by_player(season-1)
+              err={m:[] for m in modes}; playoff={m:[] for m in modes}
+              for player,rows in cur.items():
+                  hist=[]
+                  prior_rows=prior.get(player,[])
+                  for row in rows:
+                      actual=minutes_value(row)
+                      if actual is not None and len(hist)>=6:
+                          for mode in modes:
+                              pred=predict(hist,prior_rows,mode)
+                              if pred is None:continue
+                              e=abs(pred-float(actual))
+                              err[mode].append(e)
+                              if str(row.get("season_type") or "") in {"3","3.0"}:
+                                  playoff[mode].append(e)
+                      hist.append(row)
+              print("SEASON",season)
+              for mode in modes:
+                  print("MINUTES",mode,"n",len(err[mode]),
+                        "mae",round(mean(err[mode]),5) if err[mode] else None,
+                        "playoff_n",len(playoff[mode]),
+                        "playoff_mae",round(mean(playoff[mode]),5) if playoff[mode] else None)
+          PY
