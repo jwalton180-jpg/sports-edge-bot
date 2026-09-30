@@ -207,18 +207,36 @@ def build_intelligent_parlay(
     target_legs: int,
     max_per_event: int = 3,
     diversify_sports: bool = False,
+    prioritize_payout_multiplier: bool = False,
 ) -> IntelligentParlay:
     assessments = [assess_leg(row, mode) for row in candidates]
     pool = [row for row in assessments if row.qualified]
-    pool.sort(
-        key=lambda row: (
-            row.score,
-            row.edge_points if row.edge_points is not None else -999.0,
-            row.evidence_quality,
-            row.fair_probability,
-        ),
-        reverse=True,
-    )
+    if prioritize_payout_multiplier:
+        # Only qualified positive-value legs reach this pool. For a single-game
+        # ticket, prefer cheaper qualified contracts (larger payout multiple)
+        # while retaining model score, edge and evidence as safeguards.
+        pool.sort(
+            key=lambda row: (
+                (1.0 / row.kalshi_probability)
+                if row.kalshi_probability is not None and row.kalshi_probability > 0
+                else 0.0,
+                row.expected_roi_on_cost if row.expected_roi_on_cost is not None else -999.0,
+                row.score,
+                row.edge_points if row.edge_points is not None else -999.0,
+                row.evidence_quality,
+            ),
+            reverse=True,
+        )
+    else:
+        pool.sort(
+            key=lambda row: (
+                row.score,
+                row.edge_points if row.edge_points is not None else -999.0,
+                row.evidence_quality,
+                row.fair_probability,
+            ),
+            reverse=True,
+        )
 
     if diversify_sports:
         first: list[LegAssessment] = []
