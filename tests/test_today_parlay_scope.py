@@ -92,3 +92,22 @@ def test_mlb_schedule_matchup_is_physical_game_not_child_market():
     assert f"{away} at {home}" == "Boston Red Sox at New York Yankees"
     assert "inning" not in f"{away} at {home}".lower()
     assert "hits" not in f"{away} at {home}".lower()
+
+
+def test_selected_mlb_game_build_dependency_is_importable():
+    from sports_edge.models.game_scope import GameEvent, market_matches_game
+
+    game = GameEvent(
+        event_id="MLB:1",
+        sport_key="baseball_mlb",
+        sport="MLB",
+        away_team="Philadelphia Phillies",
+        home_team="Atlanta Braves",
+        commence_time=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        state="UPCOMING",
+    )
+    market = {
+        "title": "Philadelphia at Atlanta",
+        "event_title": "Philadelphia Phillies at Atlanta Braves",
+    }
+    assert market_matches_game(market, game)
