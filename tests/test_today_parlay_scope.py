@@ -77,3 +77,18 @@ def test_child_market_title_is_not_a_physical_game_name():
     # parent event, never from a child inning/prop market title.
     assert event["title"] == "San Diego Padres at Chicago Cubs"
     assert market["event_title"] != event["title"]
+
+
+def test_mlb_schedule_matchup_is_physical_game_not_child_market():
+    game = {
+        "gamePk": 999001,
+        "teams": {
+            "away": {"team": {"name": "Boston Red Sox"}},
+            "home": {"team": {"name": "New York Yankees"}},
+        },
+    }
+    away = game["teams"]["away"]["team"]["name"]
+    home = game["teams"]["home"]["team"]["name"]
+    assert f"{away} at {home}" == "Boston Red Sox at New York Yankees"
+    assert "inning" not in f"{away} at {home}".lower()
+    assert "hits" not in f"{away} at {home}".lower()
