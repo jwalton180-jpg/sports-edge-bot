@@ -157,3 +157,12 @@ def test_parlay_event_metadata_failure_is_nonfatal():
     assert "except Exception as exc:" in helper
     assert "return events, error" in helper
     assert "parlay_events_by_ticker, parlay_events_error = get_parlay_kalshi_events()" in source
+
+
+def test_premium_ui_helpers_and_core_view_cards_are_present():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    assert "def _premium_empty(" in source
+    assert "def _premium_stat_strip(" in source
+    assert 'class="intel-strip"' in source
+    assert 'with st.expander("Full game slate")' in source
