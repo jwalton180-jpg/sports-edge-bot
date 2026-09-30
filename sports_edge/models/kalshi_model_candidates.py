@@ -2020,7 +2020,13 @@ def model_candidates_from_kalshi(
                 all_rows.extend(_team_event_candidates(sport, event_rows))
 
         if sport == "Tennis" and include_tennis_games_total:
-            all_rows.extend(_tennis_games_total_candidates(rows))
+            # Experimental/secondary model families must fail closed. A malformed
+            # live contract or upstream payload must never take down the entire
+            # Ticket Builder (moneyline and other sports can still be modeled).
+            try:
+                all_rows.extend(_tennis_games_total_candidates(rows))
+            except (TypeError, ValueError, KeyError, AttributeError):
+                pass
 
         if sport == "MLB" and include_mlb_hits:
             hit_rows = [row for row in rows if row.family == "Hits"]
