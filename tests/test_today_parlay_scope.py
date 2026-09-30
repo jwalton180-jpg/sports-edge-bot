@@ -111,3 +111,10 @@ def test_selected_mlb_game_build_dependency_is_importable():
         "event_title": "Philadelphia Phillies at Atlanta Braves",
     }
     assert market_matches_game(market, game)
+
+
+def test_parlay_build_uses_full_catalog_not_overview_source():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    needle = "model_candidates = model_candidates_from_kalshi(\\n                parlay_grouped,"
+    assert needle in source
