@@ -153,3 +153,21 @@ def test_extreme_gap_can_pass_when_fresh_secondary_confirmation_agrees():
     )
     assessed = assess_leg(row, "longshot")
     assert assessed.qualified is True
+
+
+def test_mlb_markets_compete_within_same_game_before_ticket_selection():
+    weaker = leg(event_id="MLB-G1", selection="Boston Over 2.5 Team Total", fair=0.62, price=0.57, sport="MLB")
+    stronger = leg(event_id="MLB-G1", selection="New York Over 2.5 Team Total", fair=0.68, price=0.57, sport="MLB")
+    other = leg(event_id="MLB-G2", selection="Atlanta", fair=0.65, price=0.58, sport="MLB")
+    result = build_intelligent_parlay([weaker, stronger, other], mode="best", target_legs=2)
+    selections = {row.leg.selection for row in result.legs}
+    assert "New York Over 2.5 Team Total" in selections
+    assert "Boston Over 2.5 Team Total" not in selections
+
+
+def test_mlb_same_game_moneyline_and_total_do_not_both_enter_default_ticket():
+    ml = leg(event_id="MLB-G1", selection="Atlanta to win", fair=0.66, price=0.58, sport="MLB")
+    total = leg(event_id="MLB-G1", selection="Over 5.5 Game Total", fair=0.64, price=0.55, sport="MLB")
+    other = leg(event_id="MLB-G2", selection="San Diego to win", fair=0.64, price=0.57, sport="MLB")
+    result = build_intelligent_parlay([ml, total, other], mode="best", target_legs=3)
+    assert sum(row.leg.event_id == "MLB-G1" for row in result.legs) == 1

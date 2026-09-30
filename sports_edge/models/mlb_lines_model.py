@@ -9,7 +9,7 @@ import re
 import requests
 
 from sports_edge.core.math import clamp
-from sports_edge.data.mlb_prop_data import schedule_for_day, team_season_stat
+from sports_edge.data.mlb_prop_data import player_season_stat, schedule_for_day, team_season_stat
 from sports_edge.models.game_scope import normalize
 from sports_edge.models.model_evidence import ModelEvidence
 
@@ -172,9 +172,46 @@ def _projection(event_date: date, event_ticker: str, event_title: str):
 
     away_mu = 0.55 * away_for + 0.45 * home_allowed - 0.08
     home_mu = 0.55 * home_for + 0.45 * away_allowed + 0.08
+
+    # Add official probable-starter quality when MLB publishes it. This is a
+    # pregame input, not hindsight: schedule_for_day hydrates probablePitcher.
+    # ERA is deliberately shrunk toward the opponent team's season RA/G so a
+    # small starter sample cannot dominate the projection.
+    games = schedule_for_day(event_date.isoformat())
+    game = next((g for g in games if _ticker_matches(
+        matchup.away_abbr, matchup.home_abbr, event_ticker
+    ) or _title_matches(matchup.away_name, matchup.home_name, event_title)), None)
+    starter_factors: list[str] = []
+    if game is not None:
+        teams = game.get("teams") or {}
+        for side, opponent_allowed, target in (
+            ("home", home_allowed, "away"),
+            ("away", away_allowed, "home"),
+        ):
+            probable = ((teams.get(side) or {}).get("probablePitcher") or {})
+            try:
+                pitcher_id = int(probable.get("id"))
+            except (TypeError, ValueError):
+                continue
+            stat = player_season_stat(pitcher_id, "pitching", event_date.year) or {}
+            era = _f(stat.get("era"))
+            innings = _f(stat.get("inningsPitched")) or 0.0
+            if era is None or innings < 20:
+                continue
+            weight = 0.22 * clamp(innings / 120.0, 0.25, 1.0)
+            starter_rate = clamp(era, 1.5, 7.5)
+            delta = weight * (starter_rate - opponent_allowed)
+            if target == "away":
+                away_mu += delta
+            else:
+                home_mu += delta
+            starter_factors.append(
+                f"{str(probable.get('fullName') or 'Probable starter')} ERA {era:.2f} over {innings:.1f} IP"
+            )
+
     away_mu = clamp(away_mu, 2.0, 7.5)
     home_mu = clamp(home_mu, 2.0, 7.5)
-    return matchup, away_mu, home_mu, min(away_gp, home_gp)
+    return matchup, away_mu, home_mu, min(away_gp, home_gp), tuple(starter_factors)
 
 
 def _confidence(games: int, kind: str) -> float:
@@ -186,7 +223,7 @@ def _confidence(games: int, kind: str) -> float:
 
 def _warnings() -> tuple[str, ...]:
     return (
-        "pregame scoring model; confirmed lineups, starting-pitcher quality, bullpen availability, park, and weather are not separately modeled here",
+        "pregame scoring model; probable-starter quality is modeled when officially available; confirmed lineups, bullpen availability, park, and weather are not yet separately modeled",
     )
 
 
@@ -239,7 +276,7 @@ def project_mlb_spread(
         result = _projection(event_date, event_ticker, event_title)
         if result is None:
             return None
-        matchup, away_mu, home_mu, games = result
+        matchup, away_mu, home_mu, games, starter_factors = result
         side = _team_side(matchup, team_name)
         if side is None:
             return None
@@ -257,6 +294,7 @@ def project_mlb_spread(
                 f"Projected score {matchup.away_name} {away_mu:.2f} – {matchup.home_name} {home_mu:.2f}",
                 f"Projected {team} margin {team_mu - opp_mu:+.2f} runs",
                 f"Season scoring depth {games} games minimum",
+                *starter_factors,
                 f"Forward-validated probability calibration: {MLB_SPREAD_CALIBRATION_ALPHA:.2f}× distance from 50% (raw {raw_prob:.1%})",
             ),
             warnings=_warnings(),

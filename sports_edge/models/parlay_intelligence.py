@@ -232,6 +232,33 @@ def build_intelligent_parlay(
                 rest.append(row)
         pool = first + rest
 
+    # Within each MLB game, let independently modeled contracts compete before
+    # ticket construction. This prevents a merely-qualified team total from
+    # surviving when another market on the same game has materially stronger
+    # model value. It also keeps correlated same-game legs out of the default
+    # independence calculation.
+    mlb_best_by_event: dict[str, LegAssessment] = {}
+    for row in pool:
+        if row.leg.sport != "MLB":
+            continue
+        current = mlb_best_by_event.get(row.leg.event_id)
+        if current is None or (
+            row.score,
+            row.edge_points if row.edge_points is not None else -999.0,
+            row.evidence_quality,
+            row.fair_probability,
+        ) > (
+            current.score,
+            current.edge_points if current.edge_points is not None else -999.0,
+            current.evidence_quality,
+            current.fair_probability,
+        ):
+            mlb_best_by_event[row.leg.event_id] = row
+    pool = [
+        row for row in pool
+        if row.leg.sport != "MLB" or mlb_best_by_event.get(row.leg.event_id) is row
+    ]
+
     selected: list[LegAssessment] = []
     per_event: dict[str, int] = {}
     seen_contracts: set[tuple[str, str | None]] = set()

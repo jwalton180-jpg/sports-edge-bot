@@ -224,6 +224,16 @@ def date_range_stat(
     return dict((splits[0].get("stat") or {})) if splits else None
 
 
+@lru_cache(maxsize=2048)
+def player_season_stat(
+    player_id: int,
+    group: str,
+    season: int,
+) -> dict | None:
+    """Official MLB season stat line for a known player id."""
+    return season_stat(int(player_id), group, int(season))
+
+
 @lru_cache(maxsize=256)
 def team_season_stat(
     team_id: int,
