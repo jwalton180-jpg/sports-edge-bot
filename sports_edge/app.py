@@ -60,7 +60,7 @@ catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diag
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
-from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context
+from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context, _market_local_date
 from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
@@ -1096,22 +1096,15 @@ visible_games: list[GameEvent] = []
 
 def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[str]:
     """Return exact open Kalshi event titles available on the requested local date."""
-    tz = ZoneInfo(ticket_timezone)
     choices: set[str] = set()
     sports = SUPPORTED_SPORTS if sport_filter_value == "All" else (sport_filter_value,)
     for sport in sports:
         for row in grouped.get(sport, []):
             market = getattr(row, "market", {}) or {}
-            raw_dt = market.get("occurrence_datetime") or market.get("close_time") or market.get("expected_expiration_time")
-            if not raw_dt:
-                continue
             try:
-                parsed = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                if parsed.astimezone(tz).date() != target_date:
+                if _market_local_date(market, ticket_timezone) != target_date:
                     continue
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, KeyError):
                 continue
             title = str(market.get("event_title") or "").strip()
             if title:
