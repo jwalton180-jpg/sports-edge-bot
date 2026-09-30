@@ -1722,11 +1722,17 @@ elif view == "Parlay Generator":
                 ),
             )
 
-            if selected_game_titles:
-                selected_set = set(selected_game_titles)
+            if selected_game_keys:
+                selected_key_set = set(selected_game_keys)
+                selected_title_set = set(selected_game_titles)
                 model_candidates = [
                     row for row in model_candidates
-                    if row.event_title in selected_set
+                    if (
+                        str(getattr(row, "kalshi_event_ticker", "") or "") in selected_key_set
+                        or str(getattr(row, "event_id", "") or "") in selected_key_set
+                        or str(getattr(getattr(row, "leg", None), "event_id", "") or "") in selected_key_set
+                        or str(getattr(row, "event_title", "") or "") in selected_title_set
+                    )
                 ]
             elif game_scope != "All games":
                 model_candidates = []
