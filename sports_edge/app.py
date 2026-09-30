@@ -210,6 +210,32 @@ def get_kalshi_markets(sport_filter_value: str):
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_parlay_kalshi_markets(sport_filter_value: str):
+    """Full current Kalshi universe for parlay game/date selection.
+
+    The main All-sports screen intentionally uses an overview catalog for speed;
+    parlay scoping cannot, because users must be able to select every eligible
+    game on the requested date.
+    """
+    selected = None if sport_filter_value == "All" else (sport_filter_value,)
+    result = fetch_supported_sport_catalog(
+        page_limit_per_series=50,
+        page_size=1000,
+        request_pause_s=0.0,
+        max_workers=6,
+        request_interval_s=0.15,
+        sports=selected,
+        overview_only=False,
+    )
+    return (
+        list(result.markets),
+        result.error,
+        result.cursor_exhausted,
+        result.incomplete_series,
+    )
+
+
 @st.cache_data(ttl=45, show_spinner=False)
 @st.cache_data(ttl=300, show_spinner=False)
 def get_active_sports(api_key: str):
@@ -1459,9 +1485,18 @@ elif view == "Parlay Generator":
         help="Parlay markets are scoped to this calendar date in Hawaiʻi time.",
         key=f"intel_ticket_date_v4_{sport_filter}",
     )
+    parlay_markets, parlay_catalog_error, parlay_catalog_complete, parlay_catalog_incomplete = get_parlay_kalshi_markets(sport_filter)
+    parlay_grouped = group_kalshi_sports(parlay_markets)
     available_game_titles = _parlay_game_choices(
-        kalshi_grouped, sport_filter, ticket_local_date, ticket_timezone
+        parlay_grouped, sport_filter, ticket_local_date, ticket_timezone
     )
+    if not parlay_catalog_complete:
+        st.warning("Game selector catalog is still loading/incomplete; Sports Edge will not pretend the visible list is exhaustive.")
+    if parlay_catalog_incomplete:
+        st.caption("Incomplete Kalshi series: " + ", ".join(parlay_catalog_incomplete[:8]))
+    if parlay_catalog_error:
+        st.warning(f"Game selector warning: {parlay_catalog_error}")
+    st.caption(f"{len(available_game_titles)} open game event(s) found for {ticket_local_date.isoformat()} · Hawaiʻi time")
     game_scope = st.segmented_control(
         "Game scope",
         ["All games", "Selected games", "Single game"],
