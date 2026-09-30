@@ -1601,16 +1601,23 @@ elif view == "Parlay Generator":
     if game_scope != "All games" and not selected_game_titles:
         st.caption("Choose at least one game before building the ticket.")
 
-    min_legs = 5 if mode == "longshot" else 2
-    default_legs = 6 if mode == "longshot" else 4
-    max_legs = 10 if mode == "longshot" else 8
+    if game_scope == "Single game":
+        min_legs = 2
+        default_legs = 4
+        max_legs = 4
+    else:
+        min_legs = 5 if mode == "longshot" else 2
+        default_legs = 6 if mode == "longshot" else 4
+        max_legs = 10 if mode == "longshot" else 8
     target = st.slider(
         "Target legs",
         min_value=min_legs,
         max_value=max_legs,
         value=default_legs,
-        key=f"intel_target_v3_{mode}",
+        key=f"intel_target_v3_{mode}_{game_scope}",
     )
+    if game_scope == "Single game":
+        st.caption("Single Game is capped at 4 legs and prioritizes the highest payout multiplier among model-qualified positive-value legs.")
 
     if sport_filter == "Tennis":
         scan_min, scan_max, scan_default = 8, 40, 24
@@ -1882,12 +1889,14 @@ elif view == "Parlay Generator":
 
             # Render from independent sport models first. Do not make the user
             # wait for optional sportsbook discovery/enrichment.
+            effective_target = min(target, 4) if game_scope == "Single game" else target
             result = build_intelligent_parlay(
                 model_candidates,
                 mode=mode,
-                target_legs=target,
-                max_per_event=(3 if sport_filter == "MLB" else 1),
-                diversify_sports=(sport_filter == "All"),
+                target_legs=effective_target,
+                max_per_event=(4 if game_scope == "Single game" else 3 if sport_filter == "MLB" else 1),
+                diversify_sports=(sport_filter == "All" and game_scope != "Single game"),
+                prioritize_payout_multiplier=(game_scope == "Single game"),
             )
 
             st.session_state["intel_parlay_v3"] = {
