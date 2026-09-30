@@ -1889,15 +1889,23 @@ elif view == "Parlay Generator":
 
             # Render from independent sport models first. Do not make the user
             # wait for optional sportsbook discovery/enrichment.
-            effective_target = min(target, 4) if game_scope == "Single game" else target
-            result = build_intelligent_parlay(
-                model_candidates,
-                mode=mode,
-                target_legs=effective_target,
-                max_per_event=(4 if game_scope == "Single game" else 3 if sport_filter == "MLB" else 1),
-                diversify_sports=(sport_filter == "All" and game_scope != "Single game"),
-                prioritize_payout_multiplier=(game_scope == "Single game"),
-            )
+            if game_scope == "Single game":
+                result = build_intelligent_parlay(
+                    model_candidates,
+                    mode=mode,
+                    target_legs=min(target, 4),
+                    max_per_event=4,
+                    diversify_sports=False,
+                    prioritize_payout_multiplier=True,
+                )
+            else:
+                result = build_intelligent_parlay(
+                    model_candidates,
+                    mode=mode,
+                    target_legs=target,
+                    max_per_event=(3 if sport_filter == "MLB" else 1),
+                    diversify_sports=(sport_filter == "All"),
+                )
 
             st.session_state["intel_parlay_v3"] = {
                 "result": result,
