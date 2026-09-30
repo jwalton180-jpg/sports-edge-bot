@@ -228,6 +228,24 @@ def get_parlay_kalshi_markets(sport_filter_value: str):
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_parlay_kalshi_events():
+    """Open Kalshi events used to recover physical matchup names for ticket scoping."""
+    client = KalshiPublicClient()
+    events: dict[str, dict] = {}
+    cursor = None
+    for _ in range(50):
+        payload = client.events(status="open", limit=200, cursor=cursor, with_nested_markets=True)
+        for event in payload.get("events", []) if isinstance(payload, dict) else []:
+            key = str(event.get("event_ticker") or event.get("ticker") or "").strip()
+            if key:
+                events[key] = event
+        cursor = str(payload.get("cursor") or "").strip() if isinstance(payload, dict) else ""
+        if not cursor:
+            break
+    return events
+
+
 @st.cache_data(ttl=45, show_spinner=False)
 @st.cache_data(ttl=300, show_spinner=False)
 def get_active_sports(api_key: str):
@@ -1121,8 +1139,17 @@ game_errors: list[str] = []
 scoped: dict[str, list[dict]] = {}
 visible_games: list[GameEvent] = []
 
-def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[tuple[str, str, str]]:
-    """Return stable (game_key, label, event_title) choices for a local date."""
+def _event_matchup_title(event: dict) -> str:
+    """Prefer the physical event title; never promote a child market title as a game."""
+    for key in ("title", "event_title", "subtitle"):
+        value = str(event.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str, events_by_ticker: dict[str, dict]) -> list[tuple[str, str, str]]:
+    """Return stable physical-game choices, resolved through Kalshi event metadata."""
     choices: dict[str, tuple[str, str, str]] = {}
     sports = SUPPORTED_SPORTS if sport_filter_value == "All" else (sport_filter_value,)
     for sport in sports:
@@ -1133,12 +1160,13 @@ def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ti
                     continue
             except (TypeError, ValueError, KeyError):
                 continue
-            title = str(market.get("event_title") or market.get("title") or "").strip()
-            if not title:
-                continue
             event_key = str(market.get("event_ticker") or "").strip()
             if not event_key:
-                event_key = f"{sport}|{target_date.isoformat()}|{title}"
+                continue
+            event = events_by_ticker.get(event_key) or {}
+            title = _event_matchup_title(event)
+            if not title:
+                continue
             label = f"{sport} · {title}"
             choices.setdefault(event_key, (event_key, label, title))
     return sorted(choices.values(), key=lambda item: (item[1].lower(), item[0]))
@@ -1492,8 +1520,9 @@ elif view == "Parlay Generator":
     )
     parlay_markets, parlay_catalog_error, parlay_catalog_complete, parlay_catalog_incomplete = get_parlay_kalshi_markets(sport_filter)
     parlay_grouped = group_kalshi_sports(parlay_markets)
+    parlay_events_by_ticker = get_parlay_kalshi_events()
     available_games = _parlay_game_choices(
-        parlay_grouped, sport_filter, ticket_local_date, ticket_timezone
+        parlay_grouped, sport_filter, ticket_local_date, ticket_timezone, parlay_events_by_ticker
     )
     available_game_titles = [title for _, _, title in available_games]
     game_labels = {key: label for key, label, _ in available_games}
