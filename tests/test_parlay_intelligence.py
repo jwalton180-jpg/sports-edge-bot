@@ -188,9 +188,9 @@ def test_single_game_multiplier_priority_prefers_cheaper_qualified_positive_valu
     rows = [
         leg(event_id="MLB-G1", selection="Safer", fair=0.70, price=0.62, sport="MLB"),
         leg(event_id="MLB-G1", selection="Value A", fair=0.54, price=0.44, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value B", fair=0.50, price=0.39, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value C", fair=0.48, price=0.36, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value D", fair=0.46, price=0.34, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value B", fair=0.54, price=0.39, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value C", fair=0.54, price=0.36, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value D", fair=0.54, price=0.34, sport="MLB"),
     ]
     result = build_intelligent_parlay(
         rows,
