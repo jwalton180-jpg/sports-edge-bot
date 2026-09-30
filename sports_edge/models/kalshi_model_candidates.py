@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 import re
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 from sports_edge.data.public_team_data import team_game_model
 from sports_edge.models.event_identity import (
@@ -91,6 +92,36 @@ def _parse_date(market: dict) -> date:
 
 def _event_key(market: dict) -> str:
     return str(market.get("event_ticker") or market.get("ticker") or "").strip()
+
+
+def _market_local_date(market: dict, timezone_name: str) -> date:
+    """Resolve the actual event calendar date in the ticket timezone.
+
+    Prefer Kalshi's explicit occurrence timestamp. Older/non-tennis contracts
+    that do not expose it fall back to the event/ticker date, never settlement
+    time when a ticker date is available.
+    """
+    raw = market.get("occurrence_datetime")
+    if raw:
+        parsed = _parse_timestamp(raw)
+        if parsed is not None:
+            try:
+                return parsed.astimezone(ZoneInfo(timezone_name)).date()
+            except (KeyError, ValueError):
+                pass
+    return _parse_date(market)
+
+
+def _rows_for_local_date(
+    rows: list[KalshiSportMarket],
+    *,
+    target_date: date,
+    timezone_name: str,
+) -> list[KalshiSportMarket]:
+    return [
+        row for row in rows
+        if _market_local_date(row.market, timezone_name) == target_date
+    ]
 
 
 def _canonical_game_id(sport: str, game_title: str, event_date: date) -> str:
@@ -1954,6 +1985,8 @@ def model_candidates_from_kalshi(
     max_wnba_players: int | None = None,
     include_tennis_match_winner: bool = True,
     include_tennis_games_total: bool = False,
+    target_local_date: date | None = None,
+    ticket_timezone: str = "Pacific/Honolulu",
 ) -> list[ParlayCandidateLeg]:
     sports = (
         ("MLB", "NBA", "WNBA", "NFL", "Tennis")
@@ -1964,6 +1997,12 @@ def model_candidates_from_kalshi(
 
     for sport in sports:
         rows = grouped.get(sport, [])
+        if target_local_date is not None:
+            rows = _rows_for_local_date(
+                rows,
+                target_date=target_local_date,
+                timezone_name=ticket_timezone,
+            )
         target_family = "Match Winner" if sport == "Tennis" else "Moneyline"
         events: dict[str, list[KalshiSportMarket]] = {}
         for row in rows:
