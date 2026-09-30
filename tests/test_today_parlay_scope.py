@@ -111,3 +111,14 @@ def test_selected_mlb_game_build_dependency_is_importable():
         "event_title": "Philadelphia Phillies at Atlanta Braves",
     }
     assert market_matches_game(market, game)
+
+
+def test_parlay_build_uses_full_catalog_not_overview_source():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    build_start = source.index('if st.button("Build Sports Edge ticket"')
+    build_end = source.index('supported_model_presets = {', build_start)
+    build_path = source[build_start:build_end]
+    assert "model_candidates_from_kalshi(" in build_path
+    assert "parlay_grouped," in build_path
+    assert "kalshi_grouped," not in build_path
