@@ -23,7 +23,7 @@ from sports_edge.data.tennis_live import (
     fetch_open_tennis_match_markets,
     fetch_tennis_candle_history,
 )
-from sports_edge.models.event_identity import canonical_event_id_from_game
+from sports_edge.models.event_identity import canonical_event_id_from_game, canonical_event_id_from_title
 from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets, market_matches_game
 from sports_edge.models.intelligence import (
     PREMIUM_BOOKMAKER_KEYS,
@@ -1752,35 +1752,17 @@ elif view == "Parlay Generator":
             if selected_game_keys:
                 selected_key_set = set(selected_game_keys)
                 selected_title_set = set(selected_game_titles)
-                selected_mlb_titles = {
-                    mlb_schedule_titles[key] for key in selected_key_set if key in mlb_schedule_titles
+                selected_canonical_ids = {
+                    canonical_event_id_from_title("MLB", title, ticket_local_date)
+                    for key, title in mlb_schedule_titles.items()
+                    if key in selected_key_set
                 }
                 model_candidates = [
                     row for row in model_candidates
                     if (
-                        str(getattr(row, "kalshi_event_ticker", "") or "") in selected_key_set
-                        or str(getattr(row, "event_id", "") or "") in selected_key_set
-                        or str(getattr(getattr(row, "leg", None), "event_id", "") or "") in selected_key_set
+                        str(getattr(row, "event_id", "") or "") in selected_key_set
+                        or str(getattr(row, "event_id", "") or "") in selected_canonical_ids
                         or str(getattr(row, "event_title", "") or "") in selected_title_set
-                        or (
-                            selected_mlb_titles
-                            and any(
-                                market_matches_game(
-                                    getattr(row, "market", {}) or {},
-                                    GameEvent(
-                                        event_id=key,
-                                        sport_key="baseball_mlb",
-                                        sport="MLB",
-                                        away_team=title.split(" at ", 1)[0],
-                                        home_team=title.split(" at ", 1)[1],
-                                        commence_time=datetime.now(timezone.utc),
-                                        state="UPCOMING",
-                                    ),
-                                )
-                                for key, title in mlb_schedule_titles.items()
-                                if key in selected_key_set and " at " in title
-                            )
-                        )
                     )
                 ]
             elif game_scope != "All games":
