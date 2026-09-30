@@ -24,7 +24,7 @@ from sports_edge.data.tennis_live import (
     fetch_tennis_candle_history,
 )
 from sports_edge.models.event_identity import canonical_event_id_from_game
-from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets
+from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets, market_matches_game
 from sports_edge.models.intelligence import (
     PREMIUM_BOOKMAKER_KEYS,
     h2h_intelligence,
