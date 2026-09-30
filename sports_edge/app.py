@@ -1552,6 +1552,9 @@ elif view == "Parlay Generator":
     game_labels = {key: label for key, label, _ in available_games}
     game_titles = {key: title for key, _, title in available_games}
     game_event_keys = {key for key, _, _ in available_games}
+    mlb_schedule_titles = {
+        key: title for key, _, title in available_games if key.startswith("MLB:")
+    }
     if not parlay_catalog_complete:
         st.warning("Game selector catalog is still loading/incomplete; Sports Edge will not pretend the visible list is exhaustive.")
     if parlay_catalog_incomplete:
@@ -1749,6 +1752,9 @@ elif view == "Parlay Generator":
             if selected_game_keys:
                 selected_key_set = set(selected_game_keys)
                 selected_title_set = set(selected_game_titles)
+                selected_mlb_titles = {
+                    mlb_schedule_titles[key] for key in selected_key_set if key in mlb_schedule_titles
+                }
                 model_candidates = [
                     row for row in model_candidates
                     if (
@@ -1756,6 +1762,25 @@ elif view == "Parlay Generator":
                         or str(getattr(row, "event_id", "") or "") in selected_key_set
                         or str(getattr(getattr(row, "leg", None), "event_id", "") or "") in selected_key_set
                         or str(getattr(row, "event_title", "") or "") in selected_title_set
+                        or (
+                            selected_mlb_titles
+                            and any(
+                                market_matches_game(
+                                    getattr(row, "market", {}) or {},
+                                    GameEvent(
+                                        event_id=key,
+                                        sport_key="baseball_mlb",
+                                        sport="MLB",
+                                        away_team=title.split(" at ", 1)[0],
+                                        home_team=title.split(" at ", 1)[1],
+                                        commence_time=datetime.now(timezone.utc),
+                                        state="UPCOMING",
+                                    ),
+                                )
+                                for key, title in mlb_schedule_titles.items()
+                                if key in selected_key_set and " at " in title
+                            )
+                        )
                     )
                 ]
             elif game_scope != "All games":
