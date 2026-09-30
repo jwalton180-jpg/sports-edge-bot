@@ -1660,7 +1660,7 @@ elif view == "Parlay Generator":
             st.caption(f"Ticket scope: {ticket_local_date.isoformat()} · Hawaiʻi time")
 
             model_candidates = model_candidates_from_kalshi(
-                kalshi_grouped,
+                parlay_grouped,
                 sport_filter=sport_filter,
                 target_local_date=ticket_local_date,
                 ticket_timezone=ticket_timezone,
