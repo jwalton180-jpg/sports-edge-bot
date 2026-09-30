@@ -61,3 +61,19 @@ def test_future_ticket_scope_keeps_only_requested_tomorrow_date():
         timezone_name="Pacific/Honolulu",
     )
     assert [row.market["ticker"] for row in kept] == ["KXMLB-26OCT01-B"]
+
+
+def test_child_market_title_is_not_a_physical_game_name():
+    market = {
+        "event_ticker": "KXMLB-26SEP30-SDCHC",
+        "event_title": "1st inning: Over 0.5 runs",
+        "title": "Will there be over 0.5 runs in the 1st inning?",
+    }
+    event = {
+        "event_ticker": "KXMLB-26SEP30-SDCHC",
+        "title": "San Diego Padres at Chicago Cubs",
+    }
+    # Regression contract: selectors must resolve display identity from the
+    # parent event, never from a child inning/prop market title.
+    assert event["title"] == "San Diego Padres at Chicago Cubs"
+    assert market["event_title"] != event["title"]
