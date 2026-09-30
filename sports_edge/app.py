@@ -1100,6 +1100,23 @@ def _section_hero(kicker: str, title: str, copy: str) -> None:
     )
 
 
+def _premium_empty(title: str, copy: str, status: str = "WAITING") -> None:
+    st.markdown(
+        f'<div class="surface"><div class="section-eyebrow">{status}</div>'
+        f'<div class="game-title">{title}</div><div class="section-copy">{copy}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _premium_stat_strip(items: list[tuple[str, str]]) -> None:
+    cards = "".join(
+        f'<div class="intel-stat"><div class="intel-stat-value">{value}</div>'
+        f'<div class="intel-stat-label">{label}</div></div>'
+        for label, value in items
+    )
+    st.markdown(f'<div class="intel-strip">{cards}</div>', unsafe_allow_html=True)
+
+
 if "view" not in st.session_state:
     st.session_state.view = "Edge Board"
 if "prop_signal_cache" not in st.session_state:
@@ -1230,10 +1247,12 @@ if view == "Games":
             st.info("No current Kalshi markets exist for this sport in the fully fetched open catalog.")
     else:
         event_df = kalshi_event_table(kalshi_rows)
-        c1, c2 = st.columns(2)
-        c1.metric("Kalshi events", len(event_df))
-        c2.metric("Kalshi markets", len(kalshi_rows))
-        st.dataframe(event_df, use_container_width=True, hide_index=True)
+        _premium_stat_strip([("Game events", str(len(event_df))), ("Open markets", str(len(kalshi_rows)))])
+        for _, row in event_df.head(18).iterrows():
+            title = str(row.get("Event") or row.get("event") or row.get("Title") or row.get("title") or "Current game")
+            st.markdown(f'<div class="game-card"><div class="game-title">{title}</div></div>', unsafe_allow_html=True)
+        with st.expander("Full game slate"):
+            st.dataframe(event_df, use_container_width=True, hide_index=True)
     st.caption(
         f"Catalog: {len(markets)} open markets · {kseries} series requested · {kpages} market page(s) · "
         f"{'complete' if kcursor_exhausted else 'INCOMPLETE'} · "
@@ -1259,7 +1278,7 @@ elif view == "Game Lines":
     # Props is a focused view, but no current Kalshi family is hidden here.
     line_rows = list(kalshi_rows)
     if not line_rows:
-        st.info("No current Kalshi markets found for this sport.")
+        _premium_empty("No current markets", "No eligible current Kalshi contracts are available for this sport. Sports Edge will not fill the screen with futures or stale markets.")
     else:
         family_options = ["All"] + sorted({row.family for row in line_rows})
         family = st.selectbox("Market type", family_options, key=f"kalshi_lines_{sport_filter}")
@@ -1281,7 +1300,7 @@ elif view == "Player Props":
         prop_rows.extend([row for row in kalshi_grouped.get(sport_name, []) if row.family in allowed])
 
     if not prop_rows:
-        st.info("No current Kalshi prop markets found for this sport.")
+        _premium_empty("No current player props", "No eligible current Kalshi player-prop contracts are available for this sport. Unsupported markets remain hidden from model recommendations.")
     else:
         family_options = ["All"] + sorted({row.family for row in prop_rows})
         family = st.selectbox("Prop type", family_options, key=f"kalshi_props_{sport_filter}")
