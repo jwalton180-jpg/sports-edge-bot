@@ -7,6 +7,7 @@ import inspect
 import os
 from statistics import median
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -1466,9 +1467,15 @@ elif view == "Parlay Generator":
             focused_wnba_cap = max(12, min(24, target * 3))
             broad_wnba_cap = max(10, min(18, target * 3))
 
+            ticket_timezone = "Pacific/Honolulu"
+            ticket_local_date = datetime.now(ZoneInfo(ticket_timezone)).date()
+            st.caption(f"Today-only ticket scope: {ticket_local_date.isoformat()} · Hawaiʻi time")
+
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
                 sport_filter=sport_filter,
+                target_local_date=ticket_local_date,
+                ticket_timezone=ticket_timezone,
                 include_mlb_hits=(preset == "MLB Hits" or use_all_mlb_models),
                 max_mlb_hit_players=(
                     focused_mlb_cap if preset == "MLB Hits"
