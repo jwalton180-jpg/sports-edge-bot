@@ -262,7 +262,6 @@ def get_parlay_kalshi_events():
     return events, error
 
 
-@st.cache_data(ttl=45, show_spinner=False)
 @st.cache_data(ttl=300, show_spinner=False)
 def get_active_sports(api_key: str):
     try:
