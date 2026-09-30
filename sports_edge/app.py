@@ -231,12 +231,17 @@ def get_parlay_kalshi_markets(sport_filter_value: str):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_parlay_kalshi_events():
-    """Open Kalshi events used to recover physical matchup names for ticket scoping."""
+    """Best-effort open-event metadata for ticket labels; never a fatal dependency."""
     client = KalshiPublicClient()
     events: dict[str, dict] = {}
     cursor = None
+    error = None
     for _ in range(50):
-        payload = client.events(status="open", limit=200, cursor=cursor, with_nested_markets=True)
+        try:
+            payload = client.events(status="open", limit=200, cursor=cursor, with_nested_markets=True)
+        except Exception as exc:
+            error = _safe_error(exc)
+            break
         for event in payload.get("events", []) if isinstance(payload, dict) else []:
             key = str(event.get("event_ticker") or event.get("ticker") or "").strip()
             if key:
@@ -244,7 +249,7 @@ def get_parlay_kalshi_events():
         cursor = str(payload.get("cursor") or "").strip() if isinstance(payload, dict) else ""
         if not cursor:
             break
-    return events
+    return events, error
 
 
 @st.cache_data(ttl=45, show_spinner=False)
