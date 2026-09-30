@@ -1549,7 +1549,9 @@ elif view == "Parlay Generator":
     )
     parlay_markets, parlay_catalog_error, parlay_catalog_complete, parlay_catalog_incomplete = get_parlay_kalshi_markets(sport_filter)
     parlay_grouped = group_kalshi_sports(parlay_markets)
-    parlay_events_by_ticker = get_parlay_kalshi_events()
+    parlay_events_by_ticker, parlay_events_error = get_parlay_kalshi_events()
+    if parlay_events_error:
+        st.caption("Kalshi event-label metadata is temporarily unavailable; using market/schedule identities instead.")
     available_games = _parlay_game_choices(
         parlay_grouped, sport_filter, ticket_local_date, ticket_timezone, parlay_events_by_ticker
     )
