@@ -1530,6 +1530,13 @@ elif view == "Parlay Generator":
             key=f"intel_multi_games_v5_{sport_filter}_{ticket_local_date}",
         )
         selected_game_titles = [game_titles[key] for key in selected_keys]
+    if selected_game_titles:
+        st.markdown(
+            '<div class="ticket-shell"><div class="ticket-kicker">Selected slate</div>'
+            + "".join(f'<div class="game-title">✓ {title}</div>' for title in selected_game_titles)
+            + '</div>',
+            unsafe_allow_html=True,
+        )
     if game_scope != "All games" and not selected_game_titles:
         st.caption("Choose at least one game before building the ticket.")
 
