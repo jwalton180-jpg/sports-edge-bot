@@ -146,3 +146,14 @@ def test_selected_games_keeps_legacy_builder_call_without_single_game_option():
     single, other = block.split("else:", 1)
     assert "prioritize_payout_multiplier=True" in single
     assert "prioritize_payout_multiplier" not in other
+
+
+def test_parlay_event_metadata_failure_is_nonfatal():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    helper_start = source.index("def get_parlay_kalshi_events():")
+    helper_end = source.index("@st.cache_data", helper_start)
+    helper = source[helper_start:helper_end]
+    assert "except Exception as exc:" in helper
+    assert "return events, error" in helper
+    assert "parlay_events_by_ticker, parlay_events_error = get_parlay_kalshi_events()" in source
