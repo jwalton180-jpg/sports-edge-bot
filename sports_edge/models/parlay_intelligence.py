@@ -205,7 +205,7 @@ def build_intelligent_parlay(
     *,
     mode: str,
     target_legs: int,
-    max_per_event: int = 1,
+    max_per_event: int = 6,
     diversify_sports: bool = False,
 ) -> IntelligentParlay:
     assessments = [assess_leg(row, mode) for row in candidates]
@@ -232,32 +232,10 @@ def build_intelligent_parlay(
                 rest.append(row)
         pool = first + rest
 
-    # Within each MLB game, let independently modeled contracts compete before
-    # ticket construction. This prevents a merely-qualified team total from
-    # surviving when another market on the same game has materially stronger
-    # model value. It also keeps correlated same-game legs out of the default
-    # independence calculation.
-    mlb_best_by_event: dict[str, LegAssessment] = {}
-    for row in pool:
-        if row.leg.sport != "MLB":
-            continue
-        current = mlb_best_by_event.get(row.leg.event_id)
-        if current is None or (
-            row.score,
-            row.edge_points if row.edge_points is not None else -999.0,
-            row.evidence_quality,
-            row.fair_probability,
-        ) > (
-            current.score,
-            current.edge_points if current.edge_points is not None else -999.0,
-            current.evidence_quality,
-            current.fair_probability,
-        ):
-            mlb_best_by_event[row.leg.event_id] = row
-    pool = [
-        row for row in pool
-        if row.leg.sport != "MLB" or mlb_best_by_event.get(row.leg.event_id) is row
-    ]
+    # MLB can legitimately contribute multiple distinct contracts from one game
+    # (side, team total, player props, etc.). Do not collapse those independent
+    # model signals merely because they share an event. Correlation is handled
+    # as ticket risk rather than by silently deleting otherwise-qualified legs.
 
     selected: list[LegAssessment] = []
     per_event: dict[str, int] = {}
@@ -290,11 +268,20 @@ def build_intelligent_parlay(
         )
 
     sports = [row.leg.sport for row in selected]
+    event_counts: dict[str, int] = {}
+    for row in selected:
+        event_counts[row.leg.event_id] = event_counts.get(row.leg.event_id, 0) + 1
+    same_event_max = max(event_counts.values(), default=0)
     correlation = "LOW"
-    if len(selected) >= 5 or (len(set(sports)) == 1 and len(selected) >= 3):
+    if same_event_max >= 3:
+        correlation = "HIGH"
+        warnings.append(
+            "Multiple legs share one physical game; displayed joint probability is an independence benchmark, not a correlation-adjusted estimate"
+        )
+    elif same_event_max >= 2 or len(selected) >= 5 or (len(set(sports)) == 1 and len(selected) >= 3):
         correlation = "MEDIUM"
         warnings.append(
-            "Joint probability is an independence benchmark; same-sport/long-ticket dependence is not fully calibrated"
+            "Joint probability is an independence benchmark; same-game/same-sport dependence is not fully calibrated"
         )
 
     return IntelligentParlay(

@@ -155,19 +155,28 @@ def test_extreme_gap_can_pass_when_fresh_secondary_confirmation_agrees():
     assert assessed.qualified is True
 
 
-def test_mlb_markets_compete_within_same_game_before_ticket_selection():
-    weaker = leg(event_id="MLB-G1", selection="Boston Over 2.5 Team Total", fair=0.62, price=0.57, sport="MLB")
-    stronger = leg(event_id="MLB-G1", selection="New York Over 2.5 Team Total", fair=0.68, price=0.57, sport="MLB")
+def test_mlb_distinct_qualified_markets_can_share_a_game():
+    team_total = leg(event_id="MLB-G1", selection="Boston Over 2.5 Team Total", fair=0.62, price=0.57, sport="MLB")
+    opponent_total = leg(event_id="MLB-G1", selection="New York Over 2.5 Team Total", fair=0.68, price=0.57, sport="MLB")
     other = leg(event_id="MLB-G2", selection="Atlanta", fair=0.65, price=0.58, sport="MLB")
-    result = build_intelligent_parlay([weaker, stronger, other], mode="best", target_legs=2)
+    result = build_intelligent_parlay([team_total, opponent_total, other], mode="best", target_legs=3)
     selections = {row.leg.selection for row in result.legs}
-    assert "New York Over 2.5 Team Total" in selections
-    assert "Boston Over 2.5 Team Total" not in selections
+    assert selections == {"Boston Over 2.5 Team Total", "New York Over 2.5 Team Total", "Atlanta"}
+    assert result.correlation_risk == "MEDIUM"
 
 
-def test_mlb_same_game_moneyline_and_total_do_not_both_enter_default_ticket():
-    ml = leg(event_id="MLB-G1", selection="Atlanta to win", fair=0.66, price=0.58, sport="MLB")
-    total = leg(event_id="MLB-G1", selection="Over 5.5 Game Total", fair=0.64, price=0.55, sport="MLB")
-    other = leg(event_id="MLB-G2", selection="San Diego to win", fair=0.64, price=0.57, sport="MLB")
-    result = build_intelligent_parlay([ml, total, other], mode="best", target_legs=3)
-    assert sum(row.leg.event_id == "MLB-G1" for row in result.legs) == 1
+def test_mlb_same_game_cluster_is_allowed_but_flagged_high_correlation():
+    ml = leg(event_id="MLB-G1", selection="San Diego to win", fair=0.66, price=0.58, sport="MLB")
+    team_total = leg(event_id="MLB-G1", selection="San Diego Over 4.5 Team Total", fair=0.64, price=0.55, sport="MLB")
+    hitter = leg(event_id="MLB-G1", selection="Tatis 1+ hits", fair=0.72, price=0.64, sport="MLB")
+    result = build_intelligent_parlay([ml, team_total, hitter], mode="best", target_legs=3)
+    assert len(result.legs) == 3
+    assert result.correlation_risk == "HIGH"
+    assert any("independence benchmark" in warning for warning in result.warnings)
+
+
+def test_explicit_max_per_event_still_caps_same_game_legs():
+    a = leg(event_id="MLB-G1", selection="A", fair=0.66, price=0.58, sport="MLB")
+    b = leg(event_id="MLB-G1", selection="B", fair=0.64, price=0.55, sport="MLB")
+    result = build_intelligent_parlay([a, b], mode="best", target_legs=2, max_per_event=1)
+    assert len(result.legs) == 1
