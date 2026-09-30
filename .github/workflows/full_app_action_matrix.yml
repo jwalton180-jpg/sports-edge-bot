@@ -1,0 +1,86 @@
+name: Full app action matrix
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  action-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt pytest
+      - name: Full unit and regression suite
+        run: pytest -q
+      - name: Navigation and action contract matrix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path("sports_edge/app.py").read_text()
+          required_views = [
+              '"For You": "Edge Board"',
+              '"Games": "Games"',
+              '"Markets": "Game Lines"',
+              '"Props": "Player Props"',
+              '"Parlays": "Parlay Generator"',
+              '"Live": "Live Feed"',
+          ]
+          required_actions = [
+              'Run intelligence scan',
+              'Build Sports Edge ticket',
+              'All games',
+              'Selected games',
+              'Single game',
+              'Best Available',
+              'Priced Longshot (5+ legs)',
+              'Games date',
+              'Market focus',
+          ]
+          missing = [x for x in required_views + required_actions if x not in s]
+          assert not missing, f"missing UI action contracts: {missing}"
+          assert 'prioritize_payout_multiplier=True' in s
+          assert 'target_legs=min(target, 4)' in s
+          assert 'parlay_events_by_ticker, parlay_events_error = get_parlay_kalshi_events()' in s
+          print("navigation-action-contracts-ok")
+          PY
+      - name: Focused interaction logic
+        run: |
+          pytest -q \
+            tests/test_today_parlay_scope.py \
+            tests/test_parlay_intelligence.py \
+            tests/test_parlay_candidates.py \
+            tests/test_game_first.py \
+            tests/test_event_slate.py \
+            tests/test_event_identity.py \
+            tests/test_model_candidates.py \
+            tests/test_model_first.py \
+            tests/test_live_integrity_restored.py \
+            tests/test_live_signals.py \
+            tests/test_tennis_live_reversal.py
+      - name: Compile and critical imports
+        run: |
+          python -m compileall -q sports_edge app.py launch_on_demand.py
+          python - <<'PY'
+          import sports_edge.app
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.parlay_intelligence import build_intelligent_parlay
+          print("critical-imports-ok")
+          PY
+      - name: Streamlit boot and health
+        shell: bash
+        run: |
+          streamlit run app.py --server.headless=true --server.port=8501 >/tmp/streamlit.log 2>&1 &
+          PID=$!
+          trap 'kill $PID || true' EXIT
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8501/_stcore/health && exit 0
+            sleep 1
+          done
+          cat /tmp/streamlit.log
+          exit 1
