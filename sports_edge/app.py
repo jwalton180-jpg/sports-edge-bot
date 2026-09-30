@@ -124,6 +124,14 @@ st.markdown(
 .hero{font-size:2.05rem;font-weight:850;letter-spacing:-1px;line-height:1.05;margin:.15rem 0 .25rem}
 .good{color:#62e6a7}.section-note{color:#a7bbb3;font-size:.92rem;margin-top:-.25rem;margin-bottom:.8rem}
 .nav-hint{padding:.7rem .85rem;border:1px solid #24463a;border-radius:12px;background:rgba(14,31,26,.72);margin:.35rem 0 .7rem}
+[data-testid="stSegmentedControl"]{background:rgba(8,20,16,.72);border:1px solid #1f3d32;border-radius:16px;padding:4px;overflow-x:auto}
+[data-testid="stSegmentedControl"] button{border-radius:12px!important;white-space:nowrap}
+[data-testid="stSelectbox"]>div>div,[data-testid="stDateInput"]>div>div,[data-testid="stMultiSelect"]>div>div{border-radius:12px!important}
+[data-testid="stButton"] button{border-radius:12px;font-weight:720}
+.ticket-shell{padding:1rem;border:1px solid #2a5747;border-radius:18px;background:linear-gradient(145deg,rgba(19,48,38,.95),rgba(7,19,15,.96));box-shadow:0 12px 36px rgba(0,0,0,.22);margin:.5rem 0 .9rem}
+.ticket-kicker{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:#72f0b3;font-weight:850}
+.ticket-title{font-size:1.35rem;font-weight:850;letter-spacing:-.02em;margin:.15rem 0}
+.ticket-sub{font-size:.84rem;color:#9cb2a8}
 .game-card{padding:.72rem .78rem;border:1px solid #24463a;border-radius:13px;background:rgba(12,28,23,.72);margin:.45rem 0}
 .game-title{font-weight:760;font-size:1.02rem}.live{color:#62e6a7;font-weight:800}.soon{color:#f1cf6d;font-weight:800}
 .market-card{padding:.85rem .9rem;border:1px solid #284a3e;border-radius:16px;background:linear-gradient(180deg,rgba(18,39,32,.94),rgba(8,21,17,.96));margin:.55rem 0;box-shadow:0 8px 28px rgba(0,0,0,.16)}
@@ -136,10 +144,13 @@ st.markdown(
 div[data-testid="stExpander"]{border:1px solid #203c33;border-radius:12px;background:rgba(7,17,14,.55)}
 hr{border-color:#173127!important}
 @media (max-width:700px){
- .block-container{padding-top:.3rem;padding-left:.5rem;padding-right:.5rem}
+ .block-container{padding-top:.3rem;padding-left:.45rem;padding-right:.45rem;padding-bottom:5rem}
  .hero{font-size:1.72rem}
  [data-testid="stMetric"]{padding:8px}
- button[kind="secondary"],button[kind="primary"]{min-height:2.7rem}
+ [data-testid="stSegmentedControl"]{position:relative;scrollbar-width:none}
+ [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}
+ button[kind="secondary"],button[kind="primary"]{min-height:2.85rem}
+ .ticket-shell{padding:.85rem;border-radius:16px}
 }
 </style>
 """,
@@ -1430,14 +1441,21 @@ elif view == "Parlay Generator":
         unsafe_allow_html=True,
     )
 
-    builder_label = st.selectbox(
-        "Builder",
-        ["Best Available", "Priced Longshot (5+ legs)"],
-        key="intel_builder_v3",
+    st.markdown(
+        '<div class="ticket-shell"><div class="ticket-kicker">Ticket Lab</div>'
+        '<div class="ticket-title">Build from the games you want</div>'
+        '<div class="ticket-sub">Sports Edge models the eligible Kalshi contracts first, then applies price, EV, confidence, and correlation gates.</div></div>',
+        unsafe_allow_html=True,
     )
+    builder_label = st.segmented_control(
+        "Build style",
+        ["Best Available", "Priced Longshot (5+ legs)"],
+        default="Best Available",
+        key="intel_builder_v4",
+    ) or "Best Available"
     mode = "longshot" if builder_label.startswith("Priced Longshot") else "best"
     preset_options = parlay_presets_for_sport(sport_filter)
-    preset = st.selectbox("Analysis type", preset_options, key=f"intel_preset_v3_{sport_filter}")
+    preset = st.selectbox("Market focus", preset_options, key=f"intel_preset_v4_{sport_filter}")
     ticket_timezone = "Pacific/Honolulu"
     local_today = datetime.now(ZoneInfo(ticket_timezone)).date()
     ticket_local_date = st.date_input(
@@ -1514,7 +1532,8 @@ elif view == "Parlay Generator":
             "Exact Kalshi contract and adequate sport-model confidence remain mandatory. It is not a favorite detector."
         )
 
-    if st.button("Analyze models & build ticket", type="primary", use_container_width=True):
+    build_disabled = game_scope != "All games" and not selected_game_titles
+    if st.button("Build Sports Edge ticket", type="primary", use_container_width=True, disabled=build_disabled):
         with st.spinner("Running sport models against current Kalshi markets…"):
             use_all_mlb_models = preset in {"Best Available", "Mixed Sports"}
             use_mlb_game_lines = preset in {"Best Available", "Mixed Sports", "MLB Game Markets"}
