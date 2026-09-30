@@ -1527,6 +1527,7 @@ elif view == "Parlay Generator":
     available_game_titles = [title for _, _, title in available_games]
     game_labels = {key: label for key, label, _ in available_games}
     game_titles = {key: title for key, _, title in available_games}
+    game_event_keys = {key for key, _, _ in available_games}
     if not parlay_catalog_complete:
         st.warning("Game selector catalog is still loading/incomplete; Sports Edge will not pretend the visible list is exhaustive.")
     if parlay_catalog_incomplete:
@@ -1541,6 +1542,7 @@ elif view == "Parlay Generator":
         key=f"intel_game_scope_v4_{sport_filter}",
     )
     selected_game_titles: list[str] = []
+    selected_game_keys: list[str] = []
     if game_scope == "Single game":
         if available_games:
             selected_key = st.selectbox(
@@ -1549,6 +1551,7 @@ elif view == "Parlay Generator":
                 format_func=lambda key: game_labels.get(key, key),
                 key=f"intel_single_game_v5_{sport_filter}_{ticket_local_date}",
             )
+            selected_game_keys = [selected_key]
             selected_game_titles = [game_titles[selected_key]]
         else:
             st.caption("No open Kalshi game events found for this date/sport yet.")
@@ -1559,6 +1562,7 @@ elif view == "Parlay Generator":
             format_func=lambda key: game_labels.get(key, key),
             key=f"intel_multi_games_v5_{sport_filter}_{ticket_local_date}",
         )
+        selected_game_keys = list(selected_keys)
         selected_game_titles = [game_titles[key] for key in selected_keys]
     if selected_game_titles:
         st.markdown(
