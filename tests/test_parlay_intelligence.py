@@ -182,3 +182,37 @@ def test_mlb_same_game_builder_never_uses_negative_ev_filler():
     result = build_intelligent_parlay([good, bad], mode="best", target_legs=2)
     assert len(result.legs) == 1
     assert result.legs[0].leg.selection == "San Diego to win"
+
+
+def test_single_game_multiplier_priority_prefers_cheaper_qualified_positive_value_legs():
+    rows = [
+        leg(event_id="MLB-G1", selection="Safer", fair=0.70, price=0.62, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value A", fair=0.54, price=0.44, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value B", fair=0.50, price=0.39, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value C", fair=0.48, price=0.36, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Value D", fair=0.46, price=0.34, sport="MLB"),
+    ]
+    result = build_intelligent_parlay(
+        rows,
+        mode="best",
+        target_legs=4,
+        max_per_event=4,
+        prioritize_payout_multiplier=True,
+    )
+    assert len(result.legs) == 4
+    assert "Safer" not in {row.leg.selection for row in result.legs}
+    prices = [row.kalshi_probability for row in result.legs]
+    assert prices == sorted(prices)
+
+
+def test_single_game_multiplier_priority_still_rejects_negative_value():
+    good = leg(event_id="MLB-G1", selection="Good", fair=0.55, price=0.45, sport="MLB")
+    bad = leg(event_id="MLB-G1", selection="Cheap but bad", fair=0.20, price=0.25, sport="MLB")
+    result = build_intelligent_parlay(
+        [good, bad],
+        mode="best",
+        target_legs=4,
+        max_per_event=4,
+        prioritize_payout_multiplier=True,
+    )
+    assert [row.leg.selection for row in result.legs] == ["Good"]
