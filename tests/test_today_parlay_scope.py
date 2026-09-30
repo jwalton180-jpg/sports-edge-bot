@@ -38,3 +38,26 @@ def test_today_scope_applies_across_sports_and_uses_ticker_date_fallback():
         timezone_name="Pacific/Honolulu",
     )
     assert [row.market["ticker"] for row in kept] == ["KXMLB-26SEP29-NYYBOS"]
+
+
+def test_market_local_date_prefers_ticker_date_over_settlement_time():
+    market = {
+        "ticker": "KXMLB-26SEP30-NYYBOS",
+        "close_time": "2026-10-01T08:00:00Z",
+        "expected_expiration_time": "2026-10-01T09:00:00Z",
+    }
+    assert _market_local_date(market, "Pacific/Honolulu") == date(2026, 9, 30)
+
+
+def test_future_ticket_scope_keeps_only_requested_tomorrow_date():
+    rows = [
+        _row(occurrence_datetime="2026-09-30T20:00:00Z", ticker="KXMLB-26SEP30-A"),
+        _row(occurrence_datetime="2026-10-01T20:00:00Z", ticker="KXMLB-26OCT01-B"),
+        _row(occurrence_datetime="2026-10-02T20:00:00Z", ticker="KXMLB-26OCT02-C"),
+    ]
+    kept = _rows_for_local_date(
+        rows,
+        target_date=date(2026, 10, 1),
+        timezone_name="Pacific/Honolulu",
+    )
+    assert [row.market["ticker"] for row in kept] == ["KXMLB-26OCT01-B"]
