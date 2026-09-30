@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import importlib
 import inspect
 import os
@@ -1395,6 +1395,31 @@ elif view == "Edge Board":
         st.info("No current game contract clears the live edge/watch gates. Sports Edge will not manufacture a pick.")
 
 
+def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[str]:
+    """Return exact open Kalshi event titles available on the requested local date."""
+    tz = ZoneInfo(ticket_timezone)
+    choices: set[str] = set()
+    sports = SUPPORTED_SPORTS if sport_filter_value == "All" else (sport_filter_value,)
+    for sport in sports:
+        for row in grouped.get(sport, []):
+            market = getattr(row, "market", {}) or {}
+            raw_dt = market.get("occurrence_datetime") or market.get("close_time") or market.get("expected_expiration_time")
+            if not raw_dt:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                if parsed.astimezone(tz).date() != target_date:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            title = str(market.get("event_title") or "").strip()
+            if title:
+                choices.add(title)
+    return sorted(choices)
+
+
 elif view == "Parlay Generator":
     st.header("Sports Edge Parlay Intelligence")
     st.markdown(
@@ -1411,6 +1436,43 @@ elif view == "Parlay Generator":
     mode = "longshot" if builder_label.startswith("Priced Longshot") else "best"
     preset_options = parlay_presets_for_sport(sport_filter)
     preset = st.selectbox("Analysis type", preset_options, key=f"intel_preset_v3_{sport_filter}")
+    ticket_timezone = "Pacific/Honolulu"
+    local_today = datetime.now(ZoneInfo(ticket_timezone)).date()
+    ticket_local_date = st.date_input(
+        "Games date",
+        value=local_today,
+        min_value=local_today,
+        max_value=local_today + timedelta(days=7),
+        help="Parlay markets are scoped to this calendar date in Hawaiʻi time.",
+        key=f"intel_ticket_date_v4_{sport_filter}",
+    )
+    available_game_titles = _parlay_game_choices(
+        kalshi_grouped, sport_filter, ticket_local_date, ticket_timezone
+    )
+    game_scope = st.segmented_control(
+        "Game scope",
+        ["All games", "Selected games", "Single game"],
+        default="All games",
+        key=f"intel_game_scope_v4_{sport_filter}",
+    )
+    selected_game_titles: list[str] = []
+    if game_scope == "Single game":
+        if available_game_titles:
+            selected_game_titles = [st.selectbox(
+                "Choose game",
+                available_game_titles,
+                key=f"intel_single_game_v4_{sport_filter}_{ticket_local_date}",
+            )]
+        else:
+            st.caption("No open Kalshi game events found for this date/sport yet.")
+    elif game_scope == "Selected games":
+        selected_game_titles = st.multiselect(
+            "Choose games",
+            available_game_titles,
+            key=f"intel_multi_games_v4_{sport_filter}_{ticket_local_date}",
+        )
+    if game_scope != "All games" and not selected_game_titles:
+        st.caption("Choose at least one game before building the ticket.")
 
     min_legs = 5 if mode == "longshot" else 2
     default_legs = 6 if mode == "longshot" else 4
@@ -1467,9 +1529,7 @@ elif view == "Parlay Generator":
             focused_wnba_cap = max(12, min(24, target * 3))
             broad_wnba_cap = max(10, min(18, target * 3))
 
-            ticket_timezone = "Pacific/Honolulu"
-            ticket_local_date = datetime.now(ZoneInfo(ticket_timezone)).date()
-            st.caption(f"Today-only ticket scope: {ticket_local_date.isoformat()} · Hawaiʻi time")
+            st.caption(f"Ticket scope: {ticket_local_date.isoformat()} · Hawaiʻi time")
 
             model_candidates = model_candidates_from_kalshi(
                 kalshi_grouped,
@@ -1560,6 +1620,15 @@ elif view == "Parlay Generator":
                     preset == "Tennis Games Total" or use_all_tennis_models
                 ),
             )
+
+            if selected_game_titles:
+                selected_set = set(selected_game_titles)
+                model_candidates = [
+                    row for row in model_candidates
+                    if row.event_title in selected_set
+                ]
+            elif game_scope != "All games":
+                model_candidates = []
 
             supported_model_presets = {
                 "Best Available",
@@ -1679,7 +1748,7 @@ elif view == "Parlay Generator":
                 model_candidates,
                 mode=mode,
                 target_legs=target,
-                max_per_event=1,
+                max_per_event=(3 if sport_filter == "MLB" else 1),
                 diversify_sports=(sport_filter == "All"),
             )
 
@@ -1689,6 +1758,9 @@ elif view == "Parlay Generator":
                 "mode": mode,
                 "sport": sport_filter,
                 "target": target,
+                "ticket_date": ticket_local_date.isoformat(),
+                "game_scope": game_scope,
+                "selected_games": tuple(selected_game_titles),
                 "model_candidates": len(model_candidates),
                 "model_covered": sum(1 for row in model_candidates if row.model_probability is not None),
                 "book_confirmed": 0,
@@ -1707,6 +1779,9 @@ elif view == "Parlay Generator":
         and state.get("preset") == preset
         and state.get("sport") == sport_filter
         and state.get("target") == target
+        and state.get("ticket_date") == ticket_local_date.isoformat()
+        and state.get("game_scope") == game_scope
+        and tuple(state.get("selected_games") or ()) == tuple(selected_game_titles)
     )
 
     if state_matches and api_key and state.get("model_candidate_rows") and not state.get("secondary_done"):
@@ -1733,7 +1808,7 @@ elif view == "Parlay Generator":
                     candidates,
                     mode=mode,
                     target_legs=target,
-                    max_per_event=1,
+                    max_per_event=(3 if sport_filter == "MLB" else 1),
                     diversify_sports=(sport_filter == "All"),
                 )
                 st.session_state["intel_parlay_v3"] = {
