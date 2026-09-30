@@ -1083,6 +1083,32 @@ game_errors: list[str] = []
 scoped: dict[str, list[dict]] = {}
 visible_games: list[GameEvent] = []
 
+def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[str]:
+    """Return exact open Kalshi event titles available on the requested local date."""
+    tz = ZoneInfo(ticket_timezone)
+    choices: set[str] = set()
+    sports = SUPPORTED_SPORTS if sport_filter_value == "All" else (sport_filter_value,)
+    for sport in sports:
+        for row in grouped.get(sport, []):
+            market = getattr(row, "market", {}) or {}
+            raw_dt = market.get("occurrence_datetime") or market.get("close_time") or market.get("expected_expiration_time")
+            if not raw_dt:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                if parsed.astimezone(tz).date() != target_date:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            title = str(market.get("event_title") or "").strip()
+            if title:
+                choices.add(title)
+    return sorted(choices)
+
+
+
 if view == "Games":
     st.header("Kalshi Sports")
     st.markdown(
@@ -1394,30 +1420,6 @@ elif view == "Edge Board":
     else:
         st.info("No current game contract clears the live edge/watch gates. Sports Edge will not manufacture a pick.")
 
-
-def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[str]:
-    """Return exact open Kalshi event titles available on the requested local date."""
-    tz = ZoneInfo(ticket_timezone)
-    choices: set[str] = set()
-    sports = SUPPORTED_SPORTS if sport_filter_value == "All" else (sport_filter_value,)
-    for sport in sports:
-        for row in grouped.get(sport, []):
-            market = getattr(row, "market", {}) or {}
-            raw_dt = market.get("occurrence_datetime") or market.get("close_time") or market.get("expected_expiration_time")
-            if not raw_dt:
-                continue
-            try:
-                parsed = datetime.fromisoformat(str(raw_dt).replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                if parsed.astimezone(tz).date() != target_date:
-                    continue
-            except (TypeError, ValueError):
-                continue
-            title = str(market.get("event_title") or "").strip()
-            if title:
-                choices.add(title)
-    return sorted(choices)
 
 
 elif view == "Parlay Generator":
