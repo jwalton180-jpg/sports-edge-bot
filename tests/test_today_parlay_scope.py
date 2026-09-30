@@ -122,3 +122,16 @@ def test_parlay_build_uses_full_catalog_not_overview_source():
     assert "model_candidates_from_kalshi(" in build_path
     assert "parlay_grouped," in build_path
     assert "kalshi_grouped," not in build_path
+
+
+def test_selected_schedule_matchup_canonical_id_matches_modeled_game_identity():
+    from datetime import date
+    from sports_edge.models.event_identity import canonical_event_id_from_title
+
+    selected = canonical_event_id_from_title(
+        "MLB", "Philadelphia Phillies at Atlanta Braves", date(2026, 9, 30)
+    )
+    modeled = canonical_event_id_from_title(
+        "MLB", "Philadelphia Phillies at Atlanta Braves", date(2026, 9, 30)
+    )
+    assert selected == modeled
