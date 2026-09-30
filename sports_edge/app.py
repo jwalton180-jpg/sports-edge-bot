@@ -1120,9 +1120,9 @@ game_errors: list[str] = []
 scoped: dict[str, list[dict]] = {}
 visible_games: list[GameEvent] = []
 
-def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[str]:
-    """Return exact open Kalshi event titles available on the requested local date."""
-    choices: set[str] = set()
+def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ticket_timezone: str) -> list[tuple[str, str, str]]:
+    """Return stable (game_key, label, event_title) choices for a local date."""
+    choices: dict[str, tuple[str, str, str]] = {}
     sports = SUPPORTED_SPORTS if sport_filter_value == "All" else (sport_filter_value,)
     for sport in sports:
         for row in grouped.get(sport, []):
@@ -1132,11 +1132,15 @@ def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ti
                     continue
             except (TypeError, ValueError, KeyError):
                 continue
-            title = str(market.get("event_title") or "").strip()
-            if title:
-                choices.add(title)
-    return sorted(choices)
-
+            title = str(market.get("event_title") or market.get("title") or "").strip()
+            if not title:
+                continue
+            event_key = str(market.get("event_ticker") or "").strip()
+            if not event_key:
+                event_key = f"{sport}|{target_date.isoformat()}|{title}"
+            label = f"{sport} · {title}"
+            choices.setdefault(event_key, (event_key, label, title))
+    return sorted(choices.values(), key=lambda item: (item[1].lower(), item[0]))
 
 
 if view == "Games":
@@ -1487,16 +1491,19 @@ elif view == "Parlay Generator":
     )
     parlay_markets, parlay_catalog_error, parlay_catalog_complete, parlay_catalog_incomplete = get_parlay_kalshi_markets(sport_filter)
     parlay_grouped = group_kalshi_sports(parlay_markets)
-    available_game_titles = _parlay_game_choices(
+    available_games = _parlay_game_choices(
         parlay_grouped, sport_filter, ticket_local_date, ticket_timezone
     )
+    available_game_titles = [title for _, _, title in available_games]
+    game_labels = {key: label for key, label, _ in available_games}
+    game_titles = {key: title for key, _, title in available_games}
     if not parlay_catalog_complete:
         st.warning("Game selector catalog is still loading/incomplete; Sports Edge will not pretend the visible list is exhaustive.")
     if parlay_catalog_incomplete:
         st.caption("Incomplete Kalshi series: " + ", ".join(parlay_catalog_incomplete[:8]))
     if parlay_catalog_error:
         st.warning(f"Game selector warning: {parlay_catalog_error}")
-    st.caption(f"{len(available_game_titles)} open game event(s) found for {ticket_local_date.isoformat()} · Hawaiʻi time")
+    st.caption(f"{len(available_games)} open game event(s) found for {ticket_local_date.isoformat()} · Hawaiʻi time")
     game_scope = st.segmented_control(
         "Game scope",
         ["All games", "Selected games", "Single game"],
@@ -1505,20 +1512,24 @@ elif view == "Parlay Generator":
     )
     selected_game_titles: list[str] = []
     if game_scope == "Single game":
-        if available_game_titles:
-            selected_game_titles = [st.selectbox(
+        if available_games:
+            selected_key = st.selectbox(
                 "Choose game",
-                available_game_titles,
-                key=f"intel_single_game_v4_{sport_filter}_{ticket_local_date}",
-            )]
+                [key for key, _, _ in available_games],
+                format_func=lambda key: game_labels.get(key, key),
+                key=f"intel_single_game_v5_{sport_filter}_{ticket_local_date}",
+            )
+            selected_game_titles = [game_titles[selected_key]]
         else:
             st.caption("No open Kalshi game events found for this date/sport yet.")
     elif game_scope == "Selected games":
-        selected_game_titles = st.multiselect(
+        selected_keys = st.multiselect(
             "Choose games",
-            available_game_titles,
-            key=f"intel_multi_games_v4_{sport_filter}_{ticket_local_date}",
+            [key for key, _, _ in available_games],
+            format_func=lambda key: game_labels.get(key, key),
+            key=f"intel_multi_games_v5_{sport_filter}_{ticket_local_date}",
         )
+        selected_game_titles = [game_titles[key] for key in selected_keys]
     if game_scope != "All games" and not selected_game_titles:
         st.caption("Choose at least one game before building the ticket.")
 
