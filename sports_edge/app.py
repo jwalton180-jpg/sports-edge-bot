@@ -117,41 +117,33 @@ st.set_page_config(page_title="Sports Edge", page_icon="◈", layout="wide")
 st.markdown(
     """
 <style>
-.block-container{padding-top:.55rem;max-width:1180px;padding-left:.7rem;padding-right:.7rem}
-.stApp{background:radial-gradient(circle at 15% 0%,#10251d 0,#08110f 38%,#060b0a 100%)}
-[data-testid="stMetric"]{background:linear-gradient(180deg,rgba(24,49,41,.72),rgba(10,22,18,.9));border:1px solid #24463a;border-radius:14px;padding:10px}
-.badge{display:inline-block;padding:4px 9px;border-radius:999px;border:1px solid #335c4d;background:#12241e;color:#9decc9;font-size:.72rem;margin:0 5px 5px 0}
-.hero{font-size:2.05rem;font-weight:850;letter-spacing:-1px;line-height:1.05;margin:.15rem 0 .25rem}
-.good{color:#62e6a7}.section-note{color:#a7bbb3;font-size:.92rem;margin-top:-.25rem;margin-bottom:.8rem}
-.nav-hint{padding:.7rem .85rem;border:1px solid #24463a;border-radius:12px;background:rgba(14,31,26,.72);margin:.35rem 0 .7rem}
-[data-testid="stSegmentedControl"]{background:rgba(8,20,16,.72);border:1px solid #1f3d32;border-radius:16px;padding:4px;overflow-x:auto}
-[data-testid="stSegmentedControl"] button{border-radius:12px!important;white-space:nowrap}
-[data-testid="stSelectbox"]>div>div,[data-testid="stDateInput"]>div>div,[data-testid="stMultiSelect"]>div>div{border-radius:12px!important}
-[data-testid="stButton"] button{border-radius:12px;font-weight:720}
-.ticket-shell{padding:1rem;border:1px solid #2a5747;border-radius:18px;background:linear-gradient(145deg,rgba(19,48,38,.95),rgba(7,19,15,.96));box-shadow:0 12px 36px rgba(0,0,0,.22);margin:.5rem 0 .9rem}
-.ticket-kicker{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:#72f0b3;font-weight:850}
-.ticket-title{font-size:1.35rem;font-weight:850;letter-spacing:-.02em;margin:.15rem 0}
-.ticket-sub{font-size:.84rem;color:#9cb2a8}
-.game-card{padding:.72rem .78rem;border:1px solid #24463a;border-radius:13px;background:rgba(12,28,23,.72);margin:.45rem 0}
-.game-title{font-weight:760;font-size:1.02rem}.live{color:#62e6a7;font-weight:800}.soon{color:#f1cf6d;font-weight:800}
-.market-card{padding:.85rem .9rem;border:1px solid #284a3e;border-radius:16px;background:linear-gradient(180deg,rgba(18,39,32,.94),rgba(8,21,17,.96));margin:.55rem 0;box-shadow:0 8px 28px rgba(0,0,0,.16)}
-.market-card-top{display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start}
-.market-title{font-weight:760;font-size:1.03rem;line-height:1.25}.market-price{font-size:1.42rem;font-weight:850;white-space:nowrap;color:#e8fff5}
-.market-meta{font-size:.82rem;color:#93aaa0;margin-top:.35rem;line-height:1.45}
-.edge-pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#153d2f;border:1px solid #2b6c54;color:#72f0b3;font-size:.72rem;font-weight:750;margin-right:5px}
-.watch-pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#3b3417;border:1px solid #75672a;color:#f0d777;font-size:.72rem;font-weight:750;margin-right:5px}
-.score{font-weight:850;color:#72f0b3}
-div[data-testid="stExpander"]{border:1px solid #203c33;border-radius:12px;background:rgba(7,17,14,.55)}
-hr{border-color:#173127!important}
-@media (max-width:700px){
- .block-container{padding-top:.3rem;padding-left:.45rem;padding-right:.45rem;padding-bottom:5rem}
- .hero{font-size:1.72rem}
- [data-testid="stMetric"]{padding:8px}
- [data-testid="stSegmentedControl"]{position:relative;scrollbar-width:none}
- [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}
- button[kind="secondary"],button[kind="primary"]{min-height:2.85rem}
- .ticket-shell{padding:.85rem;border-radius:16px}
-}
+:root{--se-bg:#050807;--se-panel:#0b1512;--se-panel2:#10201a;--se-line:#203c32;--se-text:#f1faf6;--se-muted:#8fa59b;--se-green:#65f0ad;--se-gold:#e9c86b}
+html,body,[class*="css"]{font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
+.block-container{padding-top:.5rem;max-width:1220px;padding-left:.8rem;padding-right:.8rem;padding-bottom:5.5rem}
+.stApp{background:radial-gradient(circle at 50% -15%,#18372c 0,#09120f 35%,#050807 70%);color:var(--se-text)}
+header[data-testid="stHeader"]{background:transparent}
+.hero{font-size:2.15rem;font-weight:900;letter-spacing:-1.5px;line-height:1;margin:.15rem 0 .3rem}
+.good{color:var(--se-green)} .section-note{color:var(--se-muted);font-size:.9rem;margin:-.2rem 0 .85rem;line-height:1.45}
+.badge,.edge-pill,.watch-pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:.7rem;font-weight:800;letter-spacing:.02em}
+.badge,.edge-pill{border:1px solid #2e7057;background:#12372a;color:#78f2b7}.watch-pill{border:1px solid #716126;background:#383115;color:#f0d777}
+.nav-hint,.surface{padding:.8rem .9rem;border:1px solid var(--se-line);border-radius:16px;background:linear-gradient(145deg,rgba(16,34,28,.93),rgba(7,16,13,.94));margin:.4rem 0 .8rem}
+.section-hero{padding:1.05rem;border:1px solid #295241;border-radius:20px;background:linear-gradient(135deg,rgba(24,58,46,.96),rgba(7,18,14,.98));box-shadow:0 16px 45px rgba(0,0,0,.24);margin:.45rem 0 1rem}
+.section-eyebrow{font-size:.68rem;letter-spacing:.13em;text-transform:uppercase;color:var(--se-green);font-weight:900}
+.section-title{font-size:1.55rem;font-weight:900;letter-spacing:-.04em;margin:.15rem 0}.section-copy{font-size:.85rem;color:#9db2a8;max-width:760px;line-height:1.45}
+[data-testid="stMetric"]{background:linear-gradient(180deg,rgba(19,42,34,.9),rgba(8,19,15,.95));border:1px solid var(--se-line);border-radius:16px;padding:11px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+[data-testid="stMetricLabel"]{color:var(--se-muted)} [data-testid="stMetricValue"]{font-weight:850}
+[data-testid="stSegmentedControl"]{background:rgba(6,15,12,.9);border:1px solid #1c382e;border-radius:16px;padding:4px;overflow-x:auto;scrollbar-width:none}
+[data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}[data-testid="stSegmentedControl"] button{border-radius:12px!important;white-space:nowrap;font-weight:750}
+[data-testid="stSelectbox"]>div>div,[data-testid="stDateInput"]>div>div,[data-testid="stMultiSelect"]>div>div,[data-testid="stSlider"]{border-radius:13px!important}
+[data-testid="stButton"] button{border-radius:13px;font-weight:800;min-height:2.7rem;border-color:#28503f}
+[data-testid="stButton"] button[kind="primary"]{box-shadow:0 8px 24px rgba(44,184,123,.14)}
+.ticket-shell{padding:1rem;border:1px solid #2b5b48;border-radius:20px;background:linear-gradient(145deg,rgba(20,51,40,.97),rgba(7,18,14,.98));box-shadow:0 14px 38px rgba(0,0,0,.22);margin:.5rem 0 .9rem}
+.ticket-kicker{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--se-green);font-weight:900}.ticket-title{font-size:1.4rem;font-weight:900;letter-spacing:-.03em;margin:.15rem 0}.ticket-sub{font-size:.84rem;color:#9cb2a8}
+.game-card,.market-card{padding:.9rem;border:1px solid #25463a;border-radius:17px;background:linear-gradient(180deg,rgba(16,35,29,.94),rgba(7,18,14,.97));margin:.55rem 0;box-shadow:0 8px 28px rgba(0,0,0,.16)}
+.game-title,.market-title{font-weight:800;font-size:1.04rem;line-height:1.25}.market-card-top{display:flex;justify-content:space-between;gap:.7rem;align-items:flex-start}.market-price{font-size:1.45rem;font-weight:900;white-space:nowrap}.market-meta{font-size:.82rem;color:#93aaa0;margin-top:.4rem;line-height:1.5}.live{color:var(--se-green);font-weight:900}.soon{color:var(--se-gold);font-weight:900}.score{font-weight:900;color:var(--se-green)}
+[data-testid="stDataFrame"]{border:1px solid var(--se-line);border-radius:16px;overflow:hidden;background:rgba(7,16,13,.8)}
+div[data-testid="stExpander"]{border:1px solid var(--se-line);border-radius:14px;background:rgba(7,17,14,.7)} hr{border-color:#173127!important}
+@media(max-width:700px){.block-container{padding:.3rem .45rem 6.2rem}.hero{font-size:1.8rem}.section-hero{padding:.85rem;border-radius:17px}.section-title{font-size:1.3rem}[data-testid="stMetric"]{padding:8px}.ticket-shell{padding:.85rem;border-radius:17px}.market-card{padding:.8rem}.market-price{font-size:1.25rem}button[kind="secondary"],button[kind="primary"]{min-height:3rem}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1067,6 +1059,14 @@ def scan_parlay_candidates(
     return list(dedup.values()), errors, calls
 
 
+def _section_hero(kicker: str, title: str, copy: str) -> None:
+    st.markdown(
+        f'<div class="section-hero"><div class="section-eyebrow">{kicker}</div>'
+        f'<div class="section-title">{title}</div><div class="section-copy">{copy}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 if "view" not in st.session_state:
     st.session_state.view = "Edge Board"
 if "prop_signal_cache" not in st.session_state:
@@ -1084,6 +1084,7 @@ reverse_nav = {value: key for key, value in nav_map.items()}
 current_nav = reverse_nav.get(st.session_state.view, "For You")
 nav_labels = list(nav_map)
 
+st.markdown('<div class="section-eyebrow">EXPLORE</div>', unsafe_allow_html=True)
 selected_nav = st.segmented_control(
     "Navigation",
     nav_labels,
@@ -1144,7 +1145,7 @@ def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ti
 
 
 if view == "Games":
-    st.header("Kalshi Sports")
+    _section_hero("GAME HUB", "Today’s sports universe", "Browse the current Kalshi game slate first. Choose a sport for its complete market catalog; futures stay out of the way.")
     st.markdown(
         '<div class="nav-hint"><b>Kalshi-first universe.</b> All loads a fast game overview; selecting MLB, NBA, WNBA, NFL or Tennis loads that sport’s full current game/prop catalog. '
         'Futures/championship markets are removed before they reach the app.</div>',
@@ -1183,7 +1184,7 @@ if view == "Games":
         st.warning(f"Kalshi warning: {kerr}")
 
 elif view == "Game Lines":
-    st.header("Kalshi Markets")
+    _section_hero("MARKET DESK", "Every current contract", "Scan the Kalshi market universe by family, then let Sports Edge intelligence decide whether price and evidence create an actionable edge.")
     st.markdown(
         '<div class="section-note">Direct from current Kalshi sport markets. Sportsbook data is enrichment, not the source of this list.</div>',
         unsafe_allow_html=True,
@@ -1200,7 +1201,7 @@ elif view == "Game Lines":
         st.dataframe(kalshi_market_table(show_rows[:250]), use_container_width=True, hide_index=True)
 
 elif view == "Player Props":
-    st.header("Kalshi Props")
+    _section_hero("PLAYER LAB", "Props with model accountability", "See the real Kalshi prop board, then run independent Sports Edge models only where production-grade player evidence exists.")
     st.markdown(
         '<div class="section-note">Direct Kalshi prop markets first. MLB/NBA/WNBA/NFL player props and Tennis match/set/game/stat props appear here even when sportsbook enrichment is unavailable.</div>',
         unsafe_allow_html=True,
@@ -1378,7 +1379,7 @@ elif view == "Player Props":
             )
 
 elif view == "Edge Board":
-    st.header("Edge Board")
+    _section_hero("FOR YOU", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
     st.markdown(
         '<div class="section-note">Ranked by Sports Edge Intelligence: executable Kalshi gap + source quality + freshness + cross-book agreement. '
         'Only real current games are eligible; futures are excluded.</div>',
@@ -1457,7 +1458,7 @@ elif view == "Edge Board":
 
 
 elif view == "Parlay Generator":
-    st.header("Sports Edge Parlay Intelligence")
+    _section_hero("PARLAY LAB", "Build an intelligent ticket", "Choose the slate you want. Sports Edge models eligible contracts first, then applies price, EV, confidence, and correlation controls.")
     st.markdown(
         '<div class="section-note"><b>Model-first.</b> Kalshi defines what is tradable, but Kalshi price and sportsbook consensus do not define the pick. '
         'Each qualifying leg needs a sport-specific model probability first. Sportsbooks are secondary calibration when an exact match exists.</div>',
@@ -1978,7 +1979,7 @@ elif view == "Parlay Generator":
                     st.caption("• " + str(error))
 
 elif view == "Live Feed":
-    st.header("Live Feed")
+    _section_hero("LIVE COMMAND", "What is changing now", "Current game state and live reversal intelligence, with freshness checks and fail-closed evidence rules.")
     st.markdown('<div class="section-note">Fast official/public game-state feeds plus Tennis price-path reversal intelligence. This page is for what is happening now, not futures.</div>', unsafe_allow_html=True)
     nfl, nerr = get_nfl_live()
     mlb, merr = get_mlb_live()
