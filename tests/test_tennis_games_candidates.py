@@ -231,3 +231,19 @@ def test_games_total_refuses_mens_best_of_five_until_separately_validated(monkey
         now=datetime(2099, 1, 1, 0, 0, tzinfo=timezone.utc),
     ) == []
     assert not called
+
+
+def test_tennis_games_total_live_typeerror_fails_closed(monkeypatch):
+    import sports_edge.models.kalshi_model_candidates as candidates
+
+    monkeypatch.setattr(
+        candidates,
+        "_tennis_games_total_candidates",
+        lambda rows: (_ for _ in ()).throw(TypeError("malformed live payload")),
+    )
+    assert candidates.model_candidates_from_kalshi(
+        {"Tennis": []},
+        sport_filter="Tennis",
+        include_tennis_match_winner=False,
+        include_tennis_games_total=True,
+    ) == []
