@@ -16,6 +16,7 @@ from sports_edge.core.startup import deployment_mode
 from sports_edge.data.kalshi import KalshiPublicClient
 from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
 from sports_edge.data.mlb import MLBClient
+from sports_edge.data.mlb_prop_data import schedule_for_day
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.data.tennis_live import (
@@ -1139,6 +1140,21 @@ game_errors: list[str] = []
 scoped: dict[str, list[dict]] = {}
 visible_games: list[GameEvent] = []
 
+def _mlb_schedule_game_choices(target_date: date) -> list[tuple[str, str, str]]:
+    """Physical MLB games from the official MLB schedule, independent of child market titles."""
+    choices: list[tuple[str, str, str]] = []
+    for game in schedule_for_day(target_date.isoformat()):
+        teams = game.get("teams") or {}
+        away = str((((teams.get("away") or {}).get("team") or {}).get("name")) or "").strip()
+        home = str((((teams.get("home") or {}).get("team") or {}).get("name")) or "").strip()
+        game_pk = str(game.get("gamePk") or "").strip()
+        if not away or not home or not game_pk:
+            continue
+        title = f"{away} at {home}"
+        choices.append((f"MLB:{game_pk}", f"MLB · {title}", title))
+    return sorted(choices, key=lambda item: item[1].lower())
+
+
 def _event_matchup_title(event: dict) -> str:
     """Prefer the physical event title; never promote a child market title as a game."""
     for key in ("title", "event_title", "subtitle"):
@@ -1169,6 +1185,14 @@ def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ti
                 continue
             label = f"{sport} · {title}"
             choices.setdefault(event_key, (event_key, label, title))
+    if sport_filter_value in {"All", "MLB"}:
+        try:
+            for game_key, label, title in _mlb_schedule_game_choices(target_date):
+                choices.setdefault(game_key, (game_key, label, title))
+        except Exception:
+            # Kalshi-resolved games for other sports remain available; MLB
+            # schedule failure must not invent child-market game identities.
+            pass
     return sorted(choices.values(), key=lambda item: (item[1].lower(), item[0]))
 
 
