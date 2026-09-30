@@ -135,3 +135,14 @@ def test_selected_schedule_matchup_canonical_id_matches_modeled_game_identity():
         "MLB", "Philadelphia Phillies at Atlanta Braves", date(2026, 9, 30)
     )
     assert selected == modeled
+
+
+def test_selected_games_keeps_legacy_builder_call_without_single_game_option():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    start = source.index('if game_scope == "Single game":', source.index('build_disabled ='))
+    end = source.index('st.session_state["intel_parlay_v3"]', start)
+    block = source[start:end]
+    single, other = block.split("else:", 1)
+    assert "prioritize_payout_multiplier=True" in single
+    assert "prioritize_payout_multiplier" not in other
