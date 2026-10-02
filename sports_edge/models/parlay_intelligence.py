@@ -13,6 +13,7 @@ from sports_edge.models.ticket_policy import (
     role_rank,
     variance_rank,
 )
+from sports_edge.research.social_intelligence import community_methodology_fit
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class LegAssessment:
     involvement_rating: str
     variance_rating: str
     role_check: str
+    community_methodology_score: float
+    community_methodology_notes: tuple[str, ...]
     reasons: tuple[str, ...]
     warnings: tuple[str, ...]
 
@@ -204,6 +207,18 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
 
     if roi is not None:
         reasons.append(f"Expected ROI on cost {roi:+.0%}; value multiple {multiple:.2f}x")
+
+    methodology_score, methodology_notes = community_methodology_fit(
+        leg,
+        fair_probability=fair,
+        kalshi_probability=price,
+        mode=mode,
+    )
+    if methodology_notes:
+        reasons.append(
+            "Public-sharp methodology fit: "
+            + "; ".join(methodology_notes)
+        )
     warnings.extend(failures)
 
     return LegAssessment(
@@ -220,6 +235,8 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
         involvement_rating=policy.involvement,
         variance_rating=policy.variance,
         role_check=policy.role_check,
+        community_methodology_score=methodology_score,
+        community_methodology_notes=methodology_notes,
         reasons=tuple(reasons),
         warnings=tuple(dict.fromkeys(warnings)),
     )
@@ -245,6 +262,7 @@ def build_intelligent_parlay(
                 involvement_rank(row.involvement_rating),
                 role_rank(row.role_check),
                 variance_rank(row.variance_rating),
+                row.community_methodology_score,
                 row.score,
                 row.edge_points if row.edge_points is not None else -999.0,
                 row.expected_roi_on_cost if row.expected_roi_on_cost is not None else -999.0,
@@ -260,6 +278,7 @@ def build_intelligent_parlay(
                 involvement_rank(row.involvement_rating),
                 role_rank(row.role_check),
                 variance_rank(row.variance_rating),
+                row.community_methodology_score,
                 row.score,
                 row.edge_points if row.edge_points is not None else -999.0,
                 row.evidence_quality,

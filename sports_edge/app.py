@@ -124,6 +124,7 @@ except ImportError:
         )
 from sports_edge.models.prop_edges import build_prop_signals
 from sports_edge.models.props import PROP_GROUPS, prop_consensus
+from sports_edge.research.social_intelligence import research_source_rows
 
 st.set_page_config(page_title="Sports Edge", page_icon="◈", layout="wide")
 
@@ -1558,9 +1559,19 @@ elif view == "Parlay Generator":
     _section_hero("PARLAY LAB", "Build an intelligent ticket", "Choose the slate you want. Sports Edge models eligible contracts first, then applies price, EV, confidence, and correlation controls.")
     st.markdown(
         '<div class="section-note"><b>Model-first.</b> Kalshi defines what is tradable, but Kalshi price and sportsbook consensus do not define the pick. '
-        'Each qualifying leg needs a sport-specific model probability first. Sportsbooks are secondary calibration when an exact match exists.</div>',
+        'Each qualifying leg needs a sport-specific model probability first. Sportsbooks and public sharp/social research are secondary confirmation only.</div>',
         unsafe_allow_html=True,
     )
+    with st.expander("Public sharp / social research layer"):
+        st.caption(
+            "SportEdge studies public Kalshi profiles, tracked betting communities and public X/process sources for repeatable methodology. "
+            "It does not copy viral parlays or alter fair probability because a popular account posted a pick. The layer only ranks already-qualified legs by process fit."
+        )
+        st.dataframe(
+            pd.DataFrame(research_source_rows()),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.markdown(
         '<div class="ticket-shell"><div class="ticket-kicker">Ticket Lab</div>'
@@ -2119,6 +2130,7 @@ elif view == "Parlay Generator":
                         "Involvement": row.involvement_rating,
                         "Variance": row.variance_rating,
                         "Role check": row.role_check,
+                        "Sharp-method fit": f"{row.community_methodology_score:.0%}",
                         "Fair": f"{row.fair_probability:.1%}",
                         "Kalshi": f"{row.kalshi_probability:.1%}",
                         "Edge": f"{row.edge_points:+.1f} pp",
@@ -2148,6 +2160,12 @@ elif view == "Parlay Generator":
                         f"**Variance:** {row.variance_rating} · "
                         f"**Role check:** {row.role_check}"
                     )
+                    st.write(
+                        f"**Public-sharp methodology fit:** "
+                        f"{row.community_methodology_score:.0%}"
+                    )
+                    for note in row.community_methodology_notes:
+                        st.caption("• Social/process: " + note)
                     for reason in row.reasons:
                         st.caption("• " + reason)
                     if row.warnings:
