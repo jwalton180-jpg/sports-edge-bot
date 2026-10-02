@@ -7,6 +7,12 @@ from typing import Iterable
 from sports_edge.core.math import clamp
 from sports_edge.models.model_evidence import ModelEvidence, model_dominant_fair
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
+from sports_edge.models.ticket_policy import (
+    involvement_rank,
+    profile_leg,
+    role_rank,
+    variance_rank,
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +27,9 @@ class LegAssessment:
     expected_roi_on_cost: float | None
     value_multiple: float | None
     evidence_quality: float
+    involvement_rating: str
+    variance_rating: str
+    role_check: str
     reasons: tuple[str, ...]
     warnings: tuple[str, ...]
 
@@ -32,7 +41,13 @@ class IntelligentParlay:
     fair_joint_probability: float
     market_joint_probability: float
     ticket_value_multiple: float
+    market_payout_multiplier: float
     correlation_risk: str
+    risk_label: str
+    strongest_leg: str | None
+    weakest_leg: str | None
+    highest_variance_leg: str | None
+    primary_failure_scenario: str | None
     warnings: tuple[str, ...]
 
 
@@ -70,6 +85,7 @@ def _best_value_gate(model: ModelEvidence | None) -> tuple[float, float, float, 
 
 def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
     model = _model_evidence(leg)
+    policy = profile_leg(leg)
     price = None if leg.kalshi_price is None else clamp(float(leg.kalshi_price))
     failures: list[str] = []
     warnings: list[str] = []
@@ -93,6 +109,9 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
 
     if price is None or not leg.kalshi_ticker:
         failures.append("no exact current Kalshi price match")
+    if policy.role_check == "BLOCK":
+        failures.append("material role/availability uncertainty blocks recommendation")
+    reasons.extend(policy.reasons)
 
     # Sportsbook evidence is secondary. Stale book data is ignored, not allowed
     # to veto a valid model signal.
@@ -195,6 +214,9 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
         expected_roi_on_cost=roi,
         value_multiple=multiple,
         evidence_quality=quality,
+        involvement_rating=policy.involvement,
+        variance_rating=policy.variance,
+        role_check=policy.role_check,
         reasons=tuple(reasons),
         warnings=tuple(dict.fromkeys(warnings)),
     )
@@ -212,24 +234,28 @@ def build_intelligent_parlay(
     assessments = [assess_leg(row, mode) for row in candidates]
     pool = [row for row in assessments if row.qualified]
     if prioritize_payout_multiplier:
-        # Only qualified positive-value legs reach this pool. For a single-game
-        # ticket, prefer cheaper qualified contracts (larger payout multiple)
-        # while retaining model score, edge and evidence as safeguards.
+        # Build the strongest survivable core first. Payout is only a tiebreaker
+        # after involvement, role stability, variance, model score and value.
         pool.sort(
             key=lambda row: (
+                involvement_rank(row.involvement_rating),
+                role_rank(row.role_check),
+                variance_rank(row.variance_rating),
+                row.score,
+                row.edge_points if row.edge_points is not None else -999.0,
+                row.expected_roi_on_cost if row.expected_roi_on_cost is not None else -999.0,
                 (1.0 / row.kalshi_probability)
                 if row.kalshi_probability is not None and row.kalshi_probability > 0
                 else 0.0,
-                row.expected_roi_on_cost if row.expected_roi_on_cost is not None else -999.0,
-                row.score,
-                row.edge_points if row.edge_points is not None else -999.0,
-                row.evidence_quality,
             ),
             reverse=True,
         )
     else:
         pool.sort(
             key=lambda row: (
+                involvement_rank(row.involvement_rating),
+                role_rank(row.role_check),
+                variance_rank(row.variance_rating),
                 row.score,
                 row.edge_points if row.edge_points is not None else -999.0,
                 row.evidence_quality,
@@ -277,6 +303,7 @@ def build_intelligent_parlay(
         if selected else 0.0
     )
     value_multiple = fair_joint / market_joint if market_joint > 0 else 0.0
+    payout_multiple = (1.0 / market_joint) if market_joint > 0 else 0.0
 
     warnings: list[str] = []
     if len(selected) < target_legs:
@@ -307,12 +334,73 @@ def build_intelligent_parlay(
             "Joint probability is an independence benchmark; same-sport/long-ticket dependence is not fully calibrated"
         )
 
+    if payout_multiple >= 50.0:
+        risk_label = "VERY LOW-PROBABILITY LONG SHOT"
+    elif payout_multiple >= 20.0:
+        risk_label = "LONG SHOT"
+    elif payout_multiple >= 8.0 or len(selected) >= 5:
+        risk_label = "MODERATE/HIGH RISK"
+    else:
+        risk_label = "CONSERVATIVE RELATIVE TO THIS SLATE"
+
+    strongest = max(
+        selected,
+        key=lambda row: (
+            involvement_rank(row.involvement_rating),
+            role_rank(row.role_check),
+            variance_rank(row.variance_rating),
+            row.score,
+            row.fair_probability,
+        ),
+        default=None,
+    )
+    weakest = min(
+        selected,
+        key=lambda row: (
+            involvement_rank(row.involvement_rating),
+            role_rank(row.role_check),
+            variance_rank(row.variance_rating),
+            row.score,
+            row.fair_probability,
+        ),
+        default=None,
+    )
+    highest_variance = min(
+        selected,
+        key=lambda row: (
+            variance_rank(row.variance_rating),
+            row.fair_probability,
+            row.score,
+        ),
+        default=None,
+    )
+
+    if same_game_max >= 3:
+        failure_scenario = "A narrow same-game script breaks several correlated legs at once."
+    elif weakest is not None and weakest.role_check == "RECHECK":
+        failure_scenario = f"Late role/availability news invalidates {weakest.leg.selection}."
+    elif weakest is not None:
+        failure_scenario = f"The lowest-strength leg ({weakest.leg.selection}) misses despite the modeled edge."
+    else:
+        failure_scenario = None
+
+    if any(row.role_check == "RECHECK" for row in selected):
+        warnings.append(
+            "At least one selected leg still requires a pre-event role/availability recheck before treating the ticket as ready."
+        )
+
     return IntelligentParlay(
         mode=mode,
         legs=tuple(selected),
         fair_joint_probability=fair_joint,
         market_joint_probability=market_joint,
         ticket_value_multiple=value_multiple,
+        market_payout_multiplier=payout_multiple,
         correlation_risk=correlation,
+        risk_label=risk_label,
+        strongest_leg=strongest.leg.selection if strongest else None,
+        weakest_leg=weakest.leg.selection if weakest else None,
+        highest_variance_leg=highest_variance.leg.selection if highest_variance else None,
+        primary_failure_scenario=failure_scenario,
         warnings=tuple(warnings),
     )
