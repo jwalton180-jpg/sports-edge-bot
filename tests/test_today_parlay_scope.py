@@ -183,5 +183,5 @@ def test_selected_games_builder_guards_new_kwarg_against_stale_streamlit_module(
     assert 'importlib.import_module("sports_edge.models.parlay_intelligence")' in source
     assert "importlib.reload(_pi)" in source
     assert '"preferred_event_ids"\n                        in inspect.signature(build_intelligent_parlay).parameters' in source
-    assert "build_candidates = _selected_games_compat_core(" in source
+    assert "build_candidates = selected_games_compat_candidates(" in source
     assert "getattr(result, \"requested_event_count\", 0)" in source

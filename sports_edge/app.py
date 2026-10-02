@@ -82,6 +82,7 @@ from sports_edge.models.parlay_candidates import (
     combo_blueprint,
     generate_candidate_parlay,
 )
+from sports_edge.models.selected_games_compat import selected_games_compat_candidates
 
 try:
     from sports_edge.models.parlay_candidates import research_fallback_candidates as _research_fallback_candidates
@@ -199,69 +200,6 @@ def _safe_error(exc: Exception) -> str:
     if "apiKey=" in msg:
         msg = msg.split("apiKey=", 1)[0] + "apiKey=REDACTED"
     return msg[:300]
-
-
-def _selected_games_compat_core(
-    candidates: list[ParlayCandidateLeg],
-    *,
-    preferred_event_ids: list[str],
-    mode: str,
-    target_legs: int,
-) -> list[ParlayCandidateLeg]:
-    """Compatibility fallback for a stale parlay module.
-
-    Keep one strongest qualified candidate per selected event, then fill the
-    remaining target from the strongest qualified leftovers. This preserves
-    Selected Games coverage even if Streamlit briefly retains an older builder
-    that does not yet accept preferred_event_ids.
-    """
-    if not preferred_event_ids or target_legs <= 0:
-        return candidates
-
-    assessed = []
-    for candidate in candidates:
-        try:
-            row = assess_leg(candidate, mode)
-        except Exception:
-            continue
-        if getattr(row, "qualified", False):
-            assessed.append((candidate, row))
-
-    assessed.sort(
-        key=lambda pair: (
-            float(getattr(pair[1], "score", 0.0)),
-            float(getattr(pair[1], "edge_points", -999.0) or -999.0),
-            float(getattr(pair[1], "fair_probability", 0.0)),
-        ),
-        reverse=True,
-    )
-
-    picked: list[ParlayCandidateLeg] = []
-    used_ids: set[int] = set()
-    for event_id in preferred_event_ids:
-        match = next(
-            (
-                (candidate, row)
-                for candidate, row in assessed
-                if str(getattr(candidate, "event_id", "") or "") == event_id
-                and id(candidate) not in used_ids
-            ),
-            None,
-        )
-        if match is not None and len(picked) < target_legs:
-            candidate, _ = match
-            picked.append(candidate)
-            used_ids.add(id(candidate))
-
-    for candidate, _ in assessed:
-        if len(picked) >= target_legs:
-            break
-        if id(candidate) in used_ids:
-            continue
-        picked.append(candidate)
-        used_ids.add(id(candidate))
-
-    return picked or candidates
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -2066,11 +2004,13 @@ elif view == "Parlay Generator":
                 if preferred_ids and supports_preferred:
                     parlay_kwargs["preferred_event_ids"] = preferred_ids
                 elif preferred_ids:
-                    build_candidates = _selected_games_compat_core(
+                    build_candidates = selected_games_compat_candidates(
                         list(model_candidates),
                         preferred_event_ids=list(preferred_ids),
                         mode=mode,
                         target_legs=target,
+                        max_per_event=parlay_kwargs["max_per_event"],
+                        assess=assess_leg,
                     )
 
                 result = build_intelligent_parlay(
