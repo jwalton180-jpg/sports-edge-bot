@@ -1637,12 +1637,15 @@ elif view == "Parlay Generator":
         st.caption("Choose at least one game before building the ticket.")
 
     if game_scope == "Single game":
+        # Preserve the existing Single Game cap: four strong legs max.
         min_legs = 2
         default_legs = 4
         max_legs = 4
     else:
-        min_legs = 5 if mode == "longshot" else 2
-        default_legs = 6 if mode == "longshot" else 4
+        # Low-stake strong-core profile: default to five qualified legs and do
+        # not shrink Best Available below four merely to produce a ticket.
+        min_legs = 5 if mode == "longshot" else 4
+        default_legs = 6 if mode == "longshot" else 5
         max_legs = 10 if mode == "longshot" else 8
     target = st.slider(
         "Target legs",
@@ -1652,7 +1655,9 @@ elif view == "Parlay Generator":
         key=f"intel_target_v3_{mode}_{game_scope}",
     )
     if game_scope == "Single game":
-        st.caption("Single Game is capped at 4 legs and prioritizes the highest payout multiplier among model-qualified positive-value legs.")
+        st.caption("Single Game remains capped at 4 strong model-qualified positive-value legs.")
+    else:
+        st.caption("Strong-core default: 5 legs for Best Available (6 for Longshot). If 4–5+ strong legs do not qualify, Sports Edge returns fewer rather than adding weak filler.")
 
     if sport_filter == "Tennis":
         scan_min, scan_max, scan_default = 8, 40, 24
