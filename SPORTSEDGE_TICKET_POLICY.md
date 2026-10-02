@@ -24,3 +24,8 @@ This policy applies to every supported sport and to both pre-event and live tick
 20. Universal principle: obvious high-volume/high-opportunity edges first; sophistication never outranks repeatability and price quality.
 
 Implementation note: the code must fail closed when exact identity, independent model evidence, current price, or material role/availability requirements are not satisfied.
+
+
+## Low-stake default profile
+
+For the current SportEdge combo workflow, the normal stake profile is USD 1–3. Multi-game Best Available tickets therefore default to a 5-leg strong core with a minimum user-selectable target of 4 legs; Priced Longshot defaults to 6 with a minimum of 5. Single Game remains capped at 4 legs. These are target sizes, not quotas: if enough strong, model-qualified, positive-EV legs do not clear the gates, return fewer legs rather than adding weak filler.
