@@ -60,7 +60,18 @@ def _fallback_catalog_diagnostics(markets):
 catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
 from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
-from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
+
+# Streamlit Community Cloud can hot-reload the app entrypoint before every
+# dependency module is refreshed. Keep the parlay engine in lockstep with the
+# UI so newly-added builder kwargs cannot crash production with a stale module.
+_pi = importlib.import_module("sports_edge.models.parlay_intelligence")
+try:
+    _pi = importlib.reload(_pi)
+except Exception:
+    pass
+assess_leg = _pi.assess_leg
+build_intelligent_parlay = _pi.build_intelligent_parlay
+
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context, _market_local_date
 from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
 from sports_edge.models.parlay_candidates import (
@@ -188,6 +199,69 @@ def _safe_error(exc: Exception) -> str:
     if "apiKey=" in msg:
         msg = msg.split("apiKey=", 1)[0] + "apiKey=REDACTED"
     return msg[:300]
+
+
+def _selected_games_compat_core(
+    candidates: list[ParlayCandidateLeg],
+    *,
+    preferred_event_ids: list[str],
+    mode: str,
+    target_legs: int,
+) -> list[ParlayCandidateLeg]:
+    """Compatibility fallback for a stale parlay module.
+
+    Keep one strongest qualified candidate per selected event, then fill the
+    remaining target from the strongest qualified leftovers. This preserves
+    Selected Games coverage even if Streamlit briefly retains an older builder
+    that does not yet accept preferred_event_ids.
+    """
+    if not preferred_event_ids or target_legs <= 0:
+        return candidates
+
+    assessed = []
+    for candidate in candidates:
+        try:
+            row = assess_leg(candidate, mode)
+        except Exception:
+            continue
+        if getattr(row, "qualified", False):
+            assessed.append((candidate, row))
+
+    assessed.sort(
+        key=lambda pair: (
+            float(getattr(pair[1], "score", 0.0)),
+            float(getattr(pair[1], "edge_points", -999.0) or -999.0),
+            float(getattr(pair[1], "fair_probability", 0.0)),
+        ),
+        reverse=True,
+    )
+
+    picked: list[ParlayCandidateLeg] = []
+    used_ids: set[int] = set()
+    for event_id in preferred_event_ids:
+        match = next(
+            (
+                (candidate, row)
+                for candidate, row in assessed
+                if str(getattr(candidate, "event_id", "") or "") == event_id
+                and id(candidate) not in used_ids
+            ),
+            None,
+        )
+        if match is not None and len(picked) < target_legs:
+            candidate, _ = match
+            picked.append(candidate)
+            used_ids.add(id(candidate))
+
+    for candidate, _ in assessed:
+        if len(picked) >= target_legs:
+            break
+        if id(candidate) in used_ids:
+            continue
+        picked.append(candidate)
+        used_ids.add(id(candidate))
+
+    return picked or candidates
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -1971,15 +2045,37 @@ elif view == "Parlay Generator":
                     prioritize_payout_multiplier=True,
                 )
             else:
+                parlay_kwargs = {
+                    "mode": mode,
+                    "target_legs": target,
+                    "max_per_event": (3 if sport_filter == "MLB" else 1),
+                    "diversify_sports": (sport_filter == "All"),
+                }
+                preferred_ids = (
+                    selected_coverage_ids if game_scope == "Selected games" else []
+                )
+                try:
+                    supports_preferred = (
+                        "preferred_event_ids"
+                        in inspect.signature(build_intelligent_parlay).parameters
+                    )
+                except (TypeError, ValueError):
+                    supports_preferred = False
+
+                build_candidates = model_candidates
+                if preferred_ids and supports_preferred:
+                    parlay_kwargs["preferred_event_ids"] = preferred_ids
+                elif preferred_ids:
+                    build_candidates = _selected_games_compat_core(
+                        list(model_candidates),
+                        preferred_event_ids=list(preferred_ids),
+                        mode=mode,
+                        target_legs=target,
+                    )
+
                 result = build_intelligent_parlay(
-                    model_candidates,
-                    mode=mode,
-                    target_legs=target,
-                    max_per_event=(3 if sport_filter == "MLB" else 1),
-                    diversify_sports=(sport_filter == "All"),
-                    preferred_event_ids=(
-                        selected_coverage_ids if game_scope == "Selected games" else None
-                    ),
+                    build_candidates,
+                    **parlay_kwargs,
                 )
 
             st.session_state["intel_parlay_v3"] = {
@@ -2123,16 +2219,40 @@ elif view == "Parlay Generator":
             f1.write(f"**Weakest leg:** {result.weakest_leg or '—'}")
             f2.write(f"**Highest-variance leg:** {result.highest_variance_leg or '—'}")
             f2.write(f"**Primary failure scenario:** {result.primary_failure_scenario or '—'}")
-            if game_scope == "Selected games" and result.requested_event_count:
+            if game_scope == "Selected games":
                 coverage_labels = state.get("selected_coverage_labels") or {}
-                st.caption(
-                    f"Selected-game coverage: {result.represented_event_count}/"
-                    f"{result.requested_event_count} represented."
+                requested_count = int(
+                    getattr(result, "requested_event_count", 0)
+                    or len(coverage_labels)
                 )
-                if result.missing_event_ids:
+                represented_count = int(
+                    getattr(result, "represented_event_count", 0)
+                    or len({
+                        str(getattr(row.leg, "event_id", "") or "")
+                        for row in result.legs
+                        if str(getattr(row.leg, "event_id", "") or "") in coverage_labels
+                    })
+                )
+                missing_ids = tuple(
+                    getattr(result, "missing_event_ids", ())
+                    or tuple(
+                        event_id
+                        for event_id in coverage_labels
+                        if event_id not in {
+                            str(getattr(row.leg, "event_id", "") or "")
+                            for row in result.legs
+                        }
+                    )
+                )
+                if requested_count:
+                    st.caption(
+                        f"Selected-game coverage: {represented_count}/"
+                        f"{requested_count} represented."
+                    )
+                if missing_ids:
                     missing_labels = [
                         coverage_labels.get(event_id, event_id)
-                        for event_id in result.missing_event_ids
+                        for event_id in missing_ids
                     ]
                     st.warning(
                         "No qualifying leg from: " + " · ".join(missing_labels)
