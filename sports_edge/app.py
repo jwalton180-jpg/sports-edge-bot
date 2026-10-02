@@ -1796,14 +1796,46 @@ elif view == "Parlay Generator":
                 ),
             )
 
+            selected_coverage_ids: list[str] = []
+            selected_coverage_labels: dict[str, str] = {}
             if selected_game_keys:
                 selected_key_set = set(selected_game_keys)
                 selected_title_set = set(selected_game_titles)
-                selected_canonical_ids = {
-                    canonical_event_id_from_title("MLB", title, ticket_local_date)
-                    for key, title in mlb_schedule_titles.items()
-                    if key in selected_key_set
-                }
+                selected_canonical_ids: set[str] = set()
+
+                for key, title in zip(selected_game_keys, selected_game_titles):
+                    coverage_sport = sport_filter
+                    if coverage_sport == "All" and ":" in key:
+                        coverage_sport = key.split(":", 1)[0]
+                    if coverage_sport in SUPPORTED_SPORTS:
+                        canonical_id = canonical_event_id_from_title(
+                            coverage_sport, title, ticket_local_date
+                        )
+                        if canonical_id:
+                            selected_canonical_ids.add(canonical_id)
+                            selected_coverage_ids.append(canonical_id)
+                            selected_coverage_labels[canonical_id] = title
+
+                # Prefer actual model event IDs when already available. This
+                # protects Selected Games coverage across schedule/Kalshi title
+                # differences while retaining canonical fallbacks for a game
+                # that produces zero qualified candidates.
+                for key, title in zip(selected_game_keys, selected_game_titles):
+                    matches = [
+                        str(getattr(row, "event_id", "") or "")
+                        for row in model_candidates
+                        if (
+                            str(getattr(row, "event_id", "") or "") == key
+                            or str(getattr(row, "event_title", "") or "") == title
+                            or str(getattr(row, "event_id", "") or "") in selected_canonical_ids
+                            and str(getattr(row, "event_title", "") or "") == title
+                        )
+                    ]
+                    for event_id in matches:
+                        if event_id and event_id not in selected_coverage_ids:
+                            selected_coverage_ids.append(event_id)
+                            selected_coverage_labels[event_id] = title
+
                 model_candidates = [
                     row for row in model_candidates
                     if (
@@ -1945,6 +1977,9 @@ elif view == "Parlay Generator":
                     target_legs=target,
                     max_per_event=(3 if sport_filter == "MLB" else 1),
                     diversify_sports=(sport_filter == "All"),
+                    preferred_event_ids=(
+                        selected_coverage_ids if game_scope == "Selected games" else None
+                    ),
                 )
 
             st.session_state["intel_parlay_v3"] = {
@@ -1956,6 +1991,7 @@ elif view == "Parlay Generator":
                 "ticket_date": ticket_local_date.isoformat(),
                 "game_scope": game_scope,
                 "selected_games": tuple(selected_game_titles),
+                "selected_coverage_labels": dict(selected_coverage_labels),
                 "model_candidates": len(model_candidates),
                 "model_covered": sum(1 for row in model_candidates if row.model_probability is not None),
                 "book_confirmed": 0,
@@ -2087,6 +2123,21 @@ elif view == "Parlay Generator":
             f1.write(f"**Weakest leg:** {result.weakest_leg or '—'}")
             f2.write(f"**Highest-variance leg:** {result.highest_variance_leg or '—'}")
             f2.write(f"**Primary failure scenario:** {result.primary_failure_scenario or '—'}")
+            if game_scope == "Selected games" and result.requested_event_count:
+                coverage_labels = state.get("selected_coverage_labels") or {}
+                st.caption(
+                    f"Selected-game coverage: {result.represented_event_count}/"
+                    f"{result.requested_event_count} represented."
+                )
+                if result.missing_event_ids:
+                    missing_labels = [
+                        coverage_labels.get(event_id, event_id)
+                        for event_id in result.missing_event_ids
+                    ]
+                    st.warning(
+                        "No qualifying leg from: " + " · ".join(missing_labels)
+                        + ". Sports Edge will not force a weak leg just to represent the game."
+                    )
             if result.warnings:
                 st.warning(" · ".join(result.warnings))
             st.caption(
