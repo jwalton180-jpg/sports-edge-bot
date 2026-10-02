@@ -262,3 +262,50 @@ def test_ticket_reports_payout_risk_and_failure_map():
     assert result.weakest_leg in {"A", "B"}
     assert result.highest_variance_leg in {"A", "B"}
     assert result.primary_failure_scenario
+
+
+def test_selected_games_prioritize_one_qualified_leg_per_requested_event_before_extras():
+    rows = [
+        leg(event_id="E1", selection="E1 strongest", fair=0.76, price=0.60, sport="MLB"),
+        leg(event_id="E1", selection="E1 extra", fair=0.74, price=0.59, sport="MLB"),
+        leg(event_id="E2", selection="E2 strongest", fair=0.74, price=0.58, sport="MLB"),
+        leg(event_id="E2", selection="E2 extra", fair=0.72, price=0.57, sport="MLB"),
+        leg(event_id="E3", selection="E3 strongest", fair=0.66, price=0.59, sport="MLB"),
+        leg(event_id="E4", selection="E4 qualified", fair=0.58, price=0.54, sport="MLB"),
+    ]
+    result = build_intelligent_parlay(
+        rows,
+        mode="best",
+        target_legs=5,
+        max_per_event=3,
+        preferred_event_ids=["E1", "E2", "E3", "E4"],
+    )
+    assert len(result.legs) == 5
+    assert {row.leg.event_id for row in result.legs} == {"E1", "E2", "E3", "E4"}
+    assert result.requested_event_count == 4
+    assert result.represented_event_count == 4
+    assert result.missing_event_ids == ()
+
+
+def test_selected_games_never_force_bad_leg_and_report_unrepresented_event():
+    rows = [
+        leg(event_id="E1", selection="E1 A", fair=0.70, price=0.60, sport="MLB"),
+        leg(event_id="E1", selection="E1 B", fair=0.68, price=0.59, sport="MLB"),
+        leg(event_id="E2", selection="E2 A", fair=0.68, price=0.58, sport="MLB"),
+        leg(event_id="E2", selection="E2 B", fair=0.66, price=0.57, sport="MLB"),
+        leg(event_id="E3", selection="E3 A", fair=0.65, price=0.57, sport="MLB"),
+        leg(event_id="E4", selection="E4 bad price", fair=0.50, price=0.56, sport="MLB"),
+    ]
+    result = build_intelligent_parlay(
+        rows,
+        mode="best",
+        target_legs=5,
+        max_per_event=3,
+        preferred_event_ids=["E1", "E2", "E3", "E4"],
+    )
+    assert len(result.legs) == 5
+    assert "E4" not in {row.leg.event_id for row in result.legs}
+    assert result.requested_event_count == 4
+    assert result.represented_event_count == 3
+    assert result.missing_event_ids == ("E4",)
+    assert any("3/4 selected game(s) are represented" in warning for warning in result.warnings)

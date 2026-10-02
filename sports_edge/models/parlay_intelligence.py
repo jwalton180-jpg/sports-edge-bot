@@ -48,6 +48,9 @@ class IntelligentParlay:
     weakest_leg: str | None
     highest_variance_leg: str | None
     primary_failure_scenario: str | None
+    requested_event_count: int
+    represented_event_count: int
+    missing_event_ids: tuple[str, ...]
     warnings: tuple[str, ...]
 
 
@@ -230,6 +233,7 @@ def build_intelligent_parlay(
     max_per_event: int = 3,
     diversify_sports: bool = False,
     prioritize_payout_multiplier: bool = False,
+    preferred_event_ids: Iterable[str] | None = None,
 ) -> IntelligentParlay:
     assessments = [assess_leg(row, mode) for row in candidates]
     pool = [row for row in assessments if row.qualified]
@@ -285,17 +289,53 @@ def build_intelligent_parlay(
     per_event: dict[str, int] = {}
     seen_contracts: set[tuple[str, str | None]] = set()
 
-    for row in pool:
+    def _try_add(row: LegAssessment) -> bool:
         contract = (row.leg.kalshi_ticker or row.leg.selection, row.leg.kalshi_side)
         if contract in seen_contracts:
-            continue
+            return False
         if per_event.get(row.leg.event_id, 0) >= max_per_event:
-            continue
+            return False
         selected.append(row)
         seen_contracts.add(contract)
         per_event[row.leg.event_id] = per_event.get(row.leg.event_id, 0) + 1
+        return True
+
+    preferred = tuple(dict.fromkeys(
+        str(event_id).strip()
+        for event_id in (preferred_event_ids or ())
+        if str(event_id).strip()
+    ))
+
+    # Selected Games means "consider all of these games", not "globally rank
+    # every leg and silently omit one selected game." Build a one-leg-per-game
+    # qualified core first whenever the target size can support it, then fill
+    # remaining slots from the globally ranked pool. Weak/unqualified legs are
+    # never forced just to satisfy coverage.
+    if preferred:
+        best_by_event: dict[str, LegAssessment] = {}
+        for row in pool:
+            if row.leg.event_id in preferred and row.leg.event_id not in best_by_event:
+                best_by_event[row.leg.event_id] = row
+
+        coverage_rows = [
+            best_by_event[event_id]
+            for event_id in preferred
+            if event_id in best_by_event
+        ]
+        if len(coverage_rows) > target_legs:
+            pool_rank = {id(row): idx for idx, row in enumerate(pool)}
+            coverage_rows.sort(key=lambda row: pool_rank.get(id(row), 10**9))
+            coverage_rows = coverage_rows[:target_legs]
+
+        for row in coverage_rows:
+            if len(selected) >= target_legs:
+                break
+            _try_add(row)
+
+    for row in pool:
         if len(selected) >= target_legs:
             break
+        _try_add(row)
 
     fair_joint = prod(row.fair_probability for row in selected) if selected else 0.0
     market_joint = (
@@ -306,6 +346,18 @@ def build_intelligent_parlay(
     payout_multiple = (1.0 / market_joint) if market_joint > 0 else 0.0
 
     warnings: list[str] = []
+    represented_preferred = {
+        row.leg.event_id for row in selected if row.leg.event_id in preferred
+    }
+    missing_preferred = tuple(
+        event_id for event_id in preferred if event_id not in represented_preferred
+    )
+    if preferred and missing_preferred:
+        warnings.append(
+            f"{len(represented_preferred)}/{len(preferred)} selected game(s) are represented; "
+            f"{len(missing_preferred)} selected game(s) had no model-qualified positive-EV leg "
+            "or could not fit within the requested leg target"
+        )
     if len(selected) < target_legs:
         warnings.append(
             f"Only {len(selected)} model-qualified positive-EV leg(s) cleared the {mode} gates "
@@ -402,5 +454,8 @@ def build_intelligent_parlay(
         weakest_leg=weakest.leg.selection if weakest else None,
         highest_variance_leg=highest_variance.leg.selection if highest_variance else None,
         primary_failure_scenario=failure_scenario,
+        requested_event_count=len(preferred),
+        represented_event_count=len(represented_preferred),
+        missing_event_ids=missing_preferred,
         warnings=tuple(warnings),
     )
