@@ -216,3 +216,49 @@ def test_single_game_multiplier_priority_still_rejects_negative_value():
         prioritize_payout_multiplier=True,
     )
     assert [row.leg.selection for row in result.legs] == ["Good"]
+
+
+def test_stable_volume_leg_beats_high_variance_leg_for_single_game_core():
+    stable = leg(event_id="MLB-G1", selection="Hitter 1+ hit", fair=0.64, price=0.54, sport="MLB")
+    stable = ParlayCandidateLeg(**{**stable.__dict__, "market_key": "batter_hits"})
+    volatile = leg(event_id="MLB-G1", selection="Hitter home run", fair=0.61, price=0.40, sport="MLB")
+    volatile = ParlayCandidateLeg(**{**volatile.__dict__, "market_key": "batter_home_runs"})
+    result = build_intelligent_parlay(
+        [volatile, stable],
+        mode="best",
+        target_legs=1,
+        max_per_event=4,
+        prioritize_payout_multiplier=True,
+    )
+    assert result.legs[0].leg.selection == "Hitter 1+ hit"
+    assert result.legs[0].involvement_rating == "HIGH"
+    assert result.legs[0].variance_rating == "LOW"
+
+
+def test_material_role_uncertainty_blocks_leg():
+    row = leg(event_id="NFL-G1", selection="Player receptions", fair=0.66, price=0.56, sport="NFL")
+    row = ParlayCandidateLeg(
+        **{
+            **row.__dict__,
+            "market_key": "receptions",
+            "model_warnings": ("Player has a snap restriction",),
+        }
+    )
+    assessed = assess_leg(row, "best")
+    assert assessed.qualified is False
+    assert assessed.role_check == "BLOCK"
+    assert any("role/availability" in warning for warning in assessed.warnings)
+
+
+def test_ticket_reports_payout_risk_and_failure_map():
+    rows = [
+        ParlayCandidateLeg(**{**leg(event_id="E1", selection="A", fair=0.70, price=0.60).__dict__, "market_key": "model_h2h"}),
+        ParlayCandidateLeg(**{**leg(event_id="E2", selection="B", fair=0.65, price=0.55).__dict__, "market_key": "model_h2h"}),
+    ]
+    result = build_intelligent_parlay(rows, mode="best", target_legs=2)
+    assert result.market_payout_multiplier > 1.0
+    assert result.risk_label
+    assert result.strongest_leg in {"A", "B"}
+    assert result.weakest_leg in {"A", "B"}
+    assert result.highest_variance_leg in {"A", "B"}
+    assert result.primary_failure_scenario
