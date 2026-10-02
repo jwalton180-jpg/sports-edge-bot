@@ -1803,38 +1803,38 @@ elif view == "Parlay Generator":
                 selected_title_set = set(selected_game_titles)
                 selected_canonical_ids: set[str] = set()
 
+                # Resolve exactly one preferred event identity per selected
+                # game. Prefer the identity already emitted by the model
+                # candidates; otherwise retain a canonical fallback so a
+                # zero-qualified game can still be reported explicitly.
                 for key, title in zip(selected_game_keys, selected_game_titles):
                     coverage_sport = sport_filter
                     if coverage_sport == "All" and ":" in key:
                         coverage_sport = key.split(":", 1)[0]
+                    canonical_id = ""
                     if coverage_sport in SUPPORTED_SPORTS:
                         canonical_id = canonical_event_id_from_title(
                             coverage_sport, title, ticket_local_date
                         )
                         if canonical_id:
                             selected_canonical_ids.add(canonical_id)
-                            selected_coverage_ids.append(canonical_id)
-                            selected_coverage_labels[canonical_id] = title
 
-                # Prefer actual model event IDs when already available. This
-                # protects Selected Games coverage across schedule/Kalshi title
-                # differences while retaining canonical fallbacks for a game
-                # that produces zero qualified candidates.
-                for key, title in zip(selected_game_keys, selected_game_titles):
-                    matches = [
+                    actual_ids = [
                         str(getattr(row, "event_id", "") or "")
                         for row in model_candidates
                         if (
                             str(getattr(row, "event_id", "") or "") == key
                             or str(getattr(row, "event_title", "") or "") == title
-                            or str(getattr(row, "event_id", "") or "") in selected_canonical_ids
-                            and str(getattr(row, "event_title", "") or "") == title
+                            or (
+                                canonical_id
+                                and str(getattr(row, "event_id", "") or "") == canonical_id
+                            )
                         )
                     ]
-                    for event_id in matches:
-                        if event_id and event_id not in selected_coverage_ids:
-                            selected_coverage_ids.append(event_id)
-                            selected_coverage_labels[event_id] = title
+                    coverage_id = next((event_id for event_id in actual_ids if event_id), canonical_id or key)
+                    if coverage_id and coverage_id not in selected_coverage_ids:
+                        selected_coverage_ids.append(coverage_id)
+                        selected_coverage_labels[coverage_id] = title
 
                 model_candidates = [
                     row for row in model_candidates
