@@ -166,3 +166,12 @@ def test_premium_ui_helpers_and_core_view_cards_are_present():
     assert "def _premium_stat_strip(" in source
     assert 'class="intel-strip"' in source
     assert 'with st.expander("Full game slate")' in source
+
+
+def test_low_stake_ticket_defaults_to_strong_four_to_five_leg_core():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    assert 'min_legs = 5 if mode == "longshot" else 4' in source
+    assert 'default_legs = 6 if mode == "longshot" else 5' in source
+    assert 'max_legs = 4' in source
+    assert "returns fewer rather than adding weak filler" in source
