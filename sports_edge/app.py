@@ -2026,8 +2026,9 @@ elif view == "Parlay Generator":
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Qualified legs", len(result.legs))
             c2.metric("Model fair", f"{result.fair_joint_probability:.2%}")
-            c3.metric("Kalshi price product", f"{result.market_joint_probability:.2%}")
-            c4.metric("Ticket value", f"{result.ticket_value_multiple:.2f}x")
+            c3.metric("Kalshi implied", f"{result.market_joint_probability:.2%}")
+            c4.metric("Current payout", f"{result.market_payout_multiplier:.2f}x")
+            st.caption(f"Risk: {result.risk_label} · model/market value ratio {result.ticket_value_multiple:.2f}x")
 
             rows = pd.DataFrame(
                 [
@@ -2038,6 +2039,9 @@ elif view == "Parlay Generator":
                         "Selection": row.leg.selection,
                         "Model": row.leg.model_name or "—",
                         "Model conf": f"{row.leg.model_confidence:.0%}",
+                        "Involvement": row.involvement_rating,
+                        "Variance": row.variance_rating,
+                        "Role check": row.role_check,
                         "Fair": f"{row.fair_probability:.1%}",
                         "Kalshi": f"{row.kalshi_probability:.1%}",
                         "Edge": f"{row.edge_points:+.1f} pp",
@@ -2062,11 +2066,22 @@ elif view == "Parlay Generator":
                     st.write(f"**Expected value:** USD {row.ev_per_contract:+.2f} per USD 1 payout contract")
                     st.write(f"**Expected ROI on cost:** {row.expected_roi_on_cost:+.0%}")
                     st.write(f"**Sports Edge leg score:** {row.score:.0f}/100")
+                    st.write(
+                        f"**Involvement:** {row.involvement_rating} · "
+                        f"**Variance:** {row.variance_rating} · "
+                        f"**Role check:** {row.role_check}"
+                    )
                     for reason in row.reasons:
                         st.caption("• " + reason)
                     if row.warnings:
                         st.warning(" · ".join(row.warnings))
 
+            st.markdown("### Failure map")
+            f1, f2 = st.columns(2)
+            f1.write(f"**Strongest leg:** {result.strongest_leg or '—'}")
+            f1.write(f"**Weakest leg:** {result.weakest_leg or '—'}")
+            f2.write(f"**Highest-variance leg:** {result.highest_variance_leg or '—'}")
+            f2.write(f"**Primary failure scenario:** {result.primary_failure_scenario or '—'}")
             if result.warnings:
                 st.warning(" · ".join(result.warnings))
             st.caption(
