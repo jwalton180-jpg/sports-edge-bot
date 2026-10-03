@@ -1704,9 +1704,10 @@ elif view == "Parlay Generator":
         )
     else:
         st.info(
-            "Best Available: every leg must have positive independent-model value. Standard evidence still requires +3pp / 1.05x; "
-            "deep, high-confidence model evidence may qualify smaller +1–2pp positive edges with stricter fair-probability floors. "
-            "Exact Kalshi contract and adequate sport-model confidence remain mandatory. It is not a favorite detector."
+            "Best Available is the strong-core builder: every leg must have positive independent-model value and a model-first fair probability "
+            "of at least 55–58% depending on evidence depth. Standard evidence still requires +3pp / 1.05x; deep, high-confidence model evidence "
+            "may qualify smaller +1–2pp positive edges. Exact Kalshi contract and adequate sport-model confidence remain mandatory. "
+            "A 5-leg ticket can still be mathematically high-risk because probabilities multiply, but Best Available never switches into the longshot price band."
         )
 
     build_disabled = game_scope != "All games" and not selected_game_titles
@@ -2116,7 +2117,10 @@ elif view == "Parlay Generator":
             c2.metric("Model fair", f"{result.fair_joint_probability:.2%}")
             c3.metric("Kalshi implied", f"{result.market_joint_probability:.2%}")
             c4.metric("Current payout", f"{result.market_payout_multiplier:.2f}x")
-            st.caption(f"Risk: {result.risk_label} · model/market value ratio {result.ticket_value_multiple:.2f}x")
+            st.caption(
+                f"Build: {builder_label.upper()} · Ticket math risk: {result.risk_label} · "
+                f"model/market value ratio {result.ticket_value_multiple:.2f}x"
+            )
 
             rows = pd.DataFrame(
                 [

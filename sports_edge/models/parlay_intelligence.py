@@ -81,13 +81,18 @@ def _best_value_gate(model: ModelEvidence | None) -> tuple[float, float, float, 
     tighter positive-value gates only when both model confidence and sample
     depth are materially stronger. Negative/zero model edge never qualifies.
     """
+    # Best Available is the strong-core builder, not the longshot builder.
+    # Keep fair-probability floors meaningfully above coin-flip territory so
+    # a five-leg ticket is built from genuinely strong individual legs. Deeper
+    # evidence can relax the floor slightly, but never into longshot-style
+    # candidate territory.
     if model is None:
-        return 3.0, 1.05, 0.45, "standard"
+        return 3.0, 1.05, 0.58, "standard"
     if model.confidence >= 0.72 and model.sample_size >= 15:
-        return 1.0, 1.015, 0.52, "deep-evidence"
+        return 1.0, 1.015, 0.55, "deep-evidence"
     if model.confidence >= 0.60 and model.sample_size >= 8:
-        return 2.0, 1.03, 0.50, "strong-evidence"
-    return 3.0, 1.05, 0.45, "standard"
+        return 2.0, 1.03, 0.56, "strong-evidence"
+    return 3.0, 1.05, 0.58, "standard"
 
 
 def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
