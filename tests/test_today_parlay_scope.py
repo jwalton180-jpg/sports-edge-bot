@@ -137,15 +137,14 @@ def test_selected_schedule_matchup_canonical_id_matches_modeled_game_identity():
     assert selected == modeled
 
 
-def test_selected_games_keeps_legacy_builder_call_without_single_game_option():
+def test_initial_and_secondary_ticket_builds_share_scope_aware_policy():
     from pathlib import Path
     source = Path("sports_edge/app.py").read_text()
-    start = source.index('if game_scope == "Single game":', source.index('build_disabled ='))
-    end = source.index('st.session_state["intel_parlay_v3"]', start)
-    block = source[start:end]
-    single, other = block.split("else:", 1)
-    assert "prioritize_payout_multiplier=True" in single
-    assert "prioritize_payout_multiplier" not in other
+    assert source.count("result = build_ticket_for_scope(") == 2
+    assert '"selected_coverage_ids": tuple(selected_coverage_ids)' in source
+    assert 'preferred_event_ids=state.get("selected_coverage_ids") or ()' in source
+    assert "**state," in source
+    assert "if state_matches:" in source
 
 
 def test_parlay_event_metadata_failure_is_nonfatal():
@@ -180,8 +179,9 @@ def test_low_stake_ticket_defaults_to_strong_four_to_five_leg_core():
 def test_selected_games_builder_guards_new_kwarg_against_stale_streamlit_module():
     from pathlib import Path
     source = Path("sports_edge/app.py").read_text()
+    helper = Path("sports_edge/models/ticket_build.py").read_text()
     assert 'importlib.import_module("sports_edge.models.parlay_intelligence")' in source
     assert "importlib.reload(_pi)" in source
-    assert '"preferred_event_ids"\n                        in inspect.signature(build_intelligent_parlay).parameters' in source
-    assert "build_candidates = selected_games_compat_candidates(" in source
+    assert '"preferred_event_ids" in inspect.signature(builder).parameters' in helper
+    assert "rows = selected_games_compat_candidates(" in helper
     assert "getattr(result, \"requested_event_count\", 0)" in source

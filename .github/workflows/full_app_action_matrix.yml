@@ -23,6 +23,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           s = Path("sports_edge/app.py").read_text()
+          ticket_build = Path("sports_edge/models/ticket_build.py").read_text()
           required_views = [
               '"For You": "Edge Board"',
               '"Games": "Games"',
@@ -44,8 +45,10 @@ jobs:
           ]
           missing = [x for x in required_views + required_actions if x not in s]
           assert not missing, f"missing UI action contracts: {missing}"
-          assert 'prioritize_payout_multiplier=True' in s
-          assert 'target_legs=min(target, 4)' in s
+          assert 'prioritize_payout_multiplier=True' in ticket_build
+          assert 'target_legs=min(target_legs, 4)' in ticket_build
+          assert s.count('result = build_ticket_for_scope(') == 2
+          assert 'if state_matches:' in s
           assert 'parlay_events_by_ticker, parlay_events_error = get_parlay_kalshi_events()' in s
           print("navigation-action-contracts-ok")
           PY
