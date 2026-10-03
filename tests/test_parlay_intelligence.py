@@ -184,13 +184,13 @@ def test_mlb_same_game_builder_never_uses_negative_ev_filler():
     assert result.legs[0].leg.selection == "San Diego to win"
 
 
-def test_single_game_multiplier_priority_prefers_cheaper_qualified_positive_value_legs():
+def test_single_game_multiplier_priority_keeps_strongest_core_before_payout():
     rows = [
         leg(event_id="MLB-G1", selection="Safer", fair=0.70, price=0.62, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value A", fair=0.54, price=0.44, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value B", fair=0.54, price=0.39, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value C", fair=0.54, price=0.36, sport="MLB"),
-        leg(event_id="MLB-G1", selection="Value D", fair=0.54, price=0.34, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Strong A", fair=0.64, price=0.52, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Strong B", fair=0.62, price=0.48, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Strong C", fair=0.60, price=0.44, sport="MLB"),
+        leg(event_id="MLB-G1", selection="Cheaper but weaker", fair=0.58, price=0.40, sport="MLB"),
     ]
     result = build_intelligent_parlay(
         rows,
@@ -200,9 +200,9 @@ def test_single_game_multiplier_priority_prefers_cheaper_qualified_positive_valu
         prioritize_payout_multiplier=True,
     )
     assert len(result.legs) == 4
-    assert "Safer" not in {row.leg.selection for row in result.legs}
-    prices = [row.kalshi_probability for row in result.legs]
-    assert prices == sorted(prices)
+    names = [row.leg.selection for row in result.legs]
+    assert names[0] == "Safer"
+    assert "Cheaper but weaker" not in names
 
 
 def test_single_game_multiplier_priority_still_rejects_negative_value():
@@ -326,6 +326,6 @@ def test_best_available_prefers_higher_fair_probability_after_stability_gates():
 
 
 def test_best_available_and_longshot_remain_distinct_modes():
-    row = leg(fair=0.57, price=0.30, model_conf=0.80)
+    row = leg(fair=0.57, price=0.35, model_conf=0.80)
     assert assess_leg(row, "best").qualified is True
     assert assess_leg(row, "longshot").qualified is True
