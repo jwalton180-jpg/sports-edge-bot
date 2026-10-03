@@ -167,3 +167,46 @@ def variance_rank(value: str) -> int:
 
 def role_rank(value: str) -> int:
     return {"BLOCK": 0, "RECHECK": 1, "CLEAR": 2}.get(value, 0)
+
+
+
+def construction_rank_key(
+    assessment,
+    *,
+    prioritize_payout_multiplier: bool = False,
+) -> tuple[float, ...]:
+    """Return the single canonical stability-first ticket ranking key.
+
+    Public/social methodology is intentionally the final tie-breaker. It may
+    distinguish otherwise equivalent qualified legs, but it cannot outrank the
+    independent model score, price edge, evidence quality, or payout policy.
+    Keeping this key here also prevents the stale-builder compatibility path
+    from drifting away from normal ticket construction.
+    """
+
+    def number(name: str, default: float) -> float:
+        value = getattr(assessment, name, None)
+        return default if value is None else float(value)
+
+    base = (
+        float(involvement_rank(str(getattr(assessment, "involvement_rating", "LOW")))),
+        float(role_rank(str(getattr(assessment, "role_check", "RECHECK")))),
+        float(variance_rank(str(getattr(assessment, "variance_rating", "HIGH")))),
+        number("score", 0.0),
+        number("edge_points", -999.0),
+    )
+
+    if prioritize_payout_multiplier:
+        price = getattr(assessment, "kalshi_probability", None)
+        payout = 1.0 / float(price) if price is not None and float(price) > 0 else 0.0
+        core = base + (
+            number("expected_roi_on_cost", -999.0),
+            payout,
+        )
+    else:
+        core = base + (
+            number("evidence_quality", 0.0),
+            number("fair_probability", 0.0),
+        )
+
+    return core + (number("community_methodology_score", 0.0),)

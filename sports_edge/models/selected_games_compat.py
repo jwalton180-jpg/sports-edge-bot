@@ -5,9 +5,7 @@ from typing import Any
 
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.ticket_policy import (
-    involvement_rank,
-    role_rank,
-    variance_rank,
+    construction_rank_key,
 )
 
 
@@ -48,15 +46,7 @@ def selected_games_compat_candidates(
             assessed.append((candidate, row))
 
     assessed.sort(
-        key=lambda pair: (
-            involvement_rank(str(getattr(pair[1], "involvement_rating", "LOW"))),
-            role_rank(str(getattr(pair[1], "role_check", "RECHECK"))),
-            variance_rank(str(getattr(pair[1], "variance_rating", "HIGH"))),
-            float(getattr(pair[1], "score", 0.0)),
-            float(getattr(pair[1], "edge_points", -999.0) or -999.0),
-            float(getattr(pair[1], "evidence_quality", 0.0)),
-            float(getattr(pair[1], "fair_probability", 0.0)),
-        ),
+        key=lambda pair: construction_rank_key(pair[1]),
         reverse=True,
     )
 

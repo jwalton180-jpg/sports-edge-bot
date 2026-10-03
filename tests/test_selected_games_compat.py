@@ -103,3 +103,26 @@ def test_compat_core_uses_strongest_games_when_coverage_exceeds_target():
     ]
     picked = compat(rows, ["E4", "E3", "E2", "E1"], 2)
     assert {row.event_id for row in picked} == {"E1", "E2"}
+
+
+
+def test_compat_core_keeps_social_fit_as_final_tie_breaker_only():
+    stronger_model = leg(
+        "E1",
+        "Stronger independent model",
+        fair=0.70,
+        price=0.58,
+    )
+    context_rich_but_weaker = ParlayCandidateLeg(
+        **{
+            **leg(
+                "E1",
+                "Context-rich weaker model",
+                fair=0.62,
+                price=0.58,
+            ).__dict__,
+            "model_reasons": ("stable role", "favorable matchup", "recent form"),
+        }
+    )
+    picked = compat([context_rich_but_weaker, stronger_model], ["E1"], 1)
+    assert [row.selection for row in picked] == ["Stronger independent model"]

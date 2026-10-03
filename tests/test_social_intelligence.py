@@ -1,5 +1,5 @@
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
-from sports_edge.models.parlay_intelligence import assess_leg
+from sports_edge.models.parlay_intelligence import assess_leg, build_intelligent_parlay
 from sports_edge.research.social_intelligence import (
     SOCIAL_RESEARCH_SOURCES,
     community_methodology_fit,
@@ -90,3 +90,42 @@ def test_social_registry_is_transparent_and_cautioned():
     assert all(row["Caution"] for row in rows)
     assert any("RIBBRIT" in row["Source"] for row in rows)
     assert any("LT_Picks" in row["Source"] for row in rows)
+
+
+
+def test_public_sharp_fit_cannot_outrank_a_stronger_independent_model_edge():
+    stronger_model = leg(
+        selection="Stronger independent model",
+        fair=0.70,
+        price=0.58,
+        reasons=("independent projection",),
+    )
+    context_rich_but_weaker = leg(
+        selection="Context-rich weaker model",
+        fair=0.62,
+        price=0.58,
+        reasons=("stable role", "favorable matchup", "recent form"),
+    )
+    result = build_intelligent_parlay(
+        [context_rich_but_weaker, stronger_model],
+        mode="best",
+        target_legs=1,
+    )
+    assert result.legs[0].leg.selection == "Stronger independent model"
+
+
+def test_public_sharp_fit_breaks_only_an_otherwise_equal_core_model_tie():
+    plain = leg(
+        selection="Plain evidence",
+        reasons=("independent projection",),
+    )
+    context_rich = leg(
+        selection="Context-rich evidence",
+        reasons=("stable role", "favorable matchup", "recent form"),
+    )
+    result = build_intelligent_parlay(
+        [plain, context_rich],
+        mode="best",
+        target_legs=1,
+    )
+    assert result.legs[0].leg.selection == "Context-rich evidence"
