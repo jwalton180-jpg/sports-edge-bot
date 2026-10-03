@@ -82,7 +82,7 @@ from sports_edge.models.parlay_candidates import (
     combo_blueprint,
     generate_candidate_parlay,
 )
-from sports_edge.models.selected_games_compat import selected_games_compat_candidates
+from sports_edge.models.ticket_build import build_ticket_for_scope, ticket_state_matches
 
 try:
     from sports_edge.models.parlay_candidates import research_fallback_candidates as _research_fallback_candidates
@@ -1983,52 +1983,18 @@ elif view == "Parlay Generator":
             elif preset not in supported_model_presets:
                 model_candidates = []
 
-            # Render from independent sport models first. Do not make the user
-            # wait for optional sportsbook discovery/enrichment.
-            if game_scope == "Single game":
-                result = build_intelligent_parlay(
-                    model_candidates,
-                    mode=mode,
-                    target_legs=min(target, 4),
-                    max_per_event=4,
-                    diversify_sports=False,
-                    prioritize_payout_multiplier=True,
-                )
-            else:
-                parlay_kwargs = {
-                    "mode": mode,
-                    "target_legs": target,
-                    "max_per_event": (3 if sport_filter == "MLB" else 1),
-                    "diversify_sports": (sport_filter == "All"),
-                }
-                preferred_ids = (
-                    selected_coverage_ids if game_scope == "Selected games" else []
-                )
-                try:
-                    supports_preferred = (
-                        "preferred_event_ids"
-                        in inspect.signature(build_intelligent_parlay).parameters
-                    )
-                except (TypeError, ValueError):
-                    supports_preferred = False
-
-                build_candidates = model_candidates
-                if preferred_ids and supports_preferred:
-                    parlay_kwargs["preferred_event_ids"] = preferred_ids
-                elif preferred_ids:
-                    build_candidates = selected_games_compat_candidates(
-                        list(model_candidates),
-                        preferred_event_ids=list(preferred_ids),
-                        mode=mode,
-                        target_legs=target,
-                        max_per_event=parlay_kwargs["max_per_event"],
-                        assess=assess_leg,
-                    )
-
-                result = build_intelligent_parlay(
-                    build_candidates,
-                    **parlay_kwargs,
-                )
+            # Render from independent sport models first. Initial construction
+            # and optional enrichment must share the exact same scope policy.
+            result = build_ticket_for_scope(
+                model_candidates,
+                builder=build_intelligent_parlay,
+                assessor=assess_leg,
+                mode=mode,
+                target_legs=target,
+                sport_filter=sport_filter,
+                game_scope=game_scope,
+                preferred_event_ids=selected_coverage_ids,
+            )
 
             st.session_state["intel_parlay_v3"] = {
                 "result": result,
@@ -2039,6 +2005,7 @@ elif view == "Parlay Generator":
                 "ticket_date": ticket_local_date.isoformat(),
                 "game_scope": game_scope,
                 "selected_games": tuple(selected_game_titles),
+                "selected_coverage_ids": tuple(selected_coverage_ids),
                 "selected_coverage_labels": dict(selected_coverage_labels),
                 "model_candidates": len(model_candidates),
                 "model_covered": sum(1 for row in model_candidates if row.model_probability is not None),
@@ -2052,15 +2019,15 @@ elif view == "Parlay Generator":
             }
 
     state = st.session_state.get("intel_parlay_v3")
-    state_matches = (
-        state
-        and state.get("mode") == mode
-        and state.get("preset") == preset
-        and state.get("sport") == sport_filter
-        and state.get("target") == target
-        and state.get("ticket_date") == ticket_local_date.isoformat()
-        and state.get("game_scope") == game_scope
-        and tuple(state.get("selected_games") or ()) == tuple(selected_game_titles)
+    state_matches = ticket_state_matches(
+        state,
+        mode=mode,
+        preset=preset,
+        sport=sport_filter,
+        target=target,
+        ticket_date=ticket_local_date.isoformat(),
+        game_scope=game_scope,
+        selected_games=selected_game_titles,
     )
 
     if state_matches and api_key and state.get("model_candidate_rows") and not state.get("secondary_done"):
@@ -2083,19 +2050,19 @@ elif view == "Parlay Generator":
                     model_targets=model_candidates,
                 )
                 candidates = attach_sportsbook_context(model_candidates, book_candidates)
-                result = build_intelligent_parlay(
+                result = build_ticket_for_scope(
                     candidates,
+                    builder=build_intelligent_parlay,
+                    assessor=assess_leg,
                     mode=mode,
                     target_legs=target,
-                    max_per_event=(3 if sport_filter == "MLB" else 1),
-                    diversify_sports=(sport_filter == "All"),
+                    sport_filter=sport_filter,
+                    game_scope=game_scope,
+                    preferred_event_ids=state.get("selected_coverage_ids") or (),
                 )
                 st.session_state["intel_parlay_v3"] = {
+                    **state,
                     "result": result,
-                    "preset": preset,
-                    "mode": mode,
-                    "sport": sport_filter,
-                    "target": target,
                     "model_candidates": len(model_candidates),
                     "model_covered": sum(1 for row in candidates if row.model_probability is not None),
                     "book_confirmed": sum(1 for row in candidates if row.book_count > 0),
@@ -2109,7 +2076,7 @@ elif view == "Parlay Generator":
                 st.rerun()
 
     state = st.session_state.get("intel_parlay_v3")
-    if state and state.get("mode") == mode and state.get("preset") == preset and state.get("sport") == sport_filter and state.get("target") == target:
+    if state_matches:
         result = state["result"]
         if result.legs:
             c1, c2, c3, c4 = st.columns(4)
