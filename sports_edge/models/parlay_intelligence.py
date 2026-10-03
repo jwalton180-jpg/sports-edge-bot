@@ -8,6 +8,7 @@ from sports_edge.core.math import clamp
 from sports_edge.models.model_evidence import ModelEvidence, model_dominant_fair
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.ticket_policy import (
+    construction_rank_key,
     involvement_rank,
     profile_leg,
     role_rank,
@@ -258,32 +259,15 @@ def build_intelligent_parlay(
         # Build the strongest survivable core first. Payout is only a tiebreaker
         # after involvement, role stability, variance, model score and value.
         pool.sort(
-            key=lambda row: (
-                involvement_rank(row.involvement_rating),
-                role_rank(row.role_check),
-                variance_rank(row.variance_rating),
-                row.community_methodology_score,
-                row.score,
-                row.edge_points if row.edge_points is not None else -999.0,
-                row.expected_roi_on_cost if row.expected_roi_on_cost is not None else -999.0,
-                (1.0 / row.kalshi_probability)
-                if row.kalshi_probability is not None and row.kalshi_probability > 0
-                else 0.0,
+            key=lambda row: construction_rank_key(
+                row,
+                prioritize_payout_multiplier=True,
             ),
             reverse=True,
         )
     else:
         pool.sort(
-            key=lambda row: (
-                involvement_rank(row.involvement_rating),
-                role_rank(row.role_check),
-                variance_rank(row.variance_rating),
-                row.community_methodology_score,
-                row.score,
-                row.edge_points if row.edge_points is not None else -999.0,
-                row.evidence_quality,
-                row.fair_probability,
-            ),
+            key=construction_rank_key,
             reverse=True,
         )
 
