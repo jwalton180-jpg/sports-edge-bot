@@ -362,7 +362,6 @@ def build_tennis_reversal_radar(
         old = best.get(row.event_id)
         if old is None or (
             row.status == "DEEP REVERSAL",
-            row.status == "DEEP REVERSAL",
             row.status == "REVERSAL SIGNAL",
             row.score,
             row.prior_gap_points,
@@ -379,6 +378,7 @@ def build_tennis_reversal_radar(
     return sorted(
         best.values(),
         key=lambda row: (
+            row.status == "DEEP REVERSAL",
             row.status == "REVERSAL SIGNAL",
             row.score,
             row.prior_gap_points,
