@@ -135,6 +135,15 @@ def canonical_participant(sport: str, name: str) -> str:
         if code:
             return code.lower()
 
+    if sport_key == "TENNIS":
+        # Tennis feeds disagree on family/given-name order, especially for
+        # East Asian names (e.g. "Rigele Te" vs "Te Rigele"). Make two-token
+        # identities order-invariant while preserving all tokens. This is only
+        # an event-join key; player-model name resolution remains stricter.
+        tokens = q.split()
+        if len(tokens) == 2:
+            return " ".join(sorted(tokens))
+
     return q
 
 
