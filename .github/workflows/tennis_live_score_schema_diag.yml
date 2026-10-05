@@ -1,0 +1,50 @@
+name: Tennis live-score schema diagnostic
+
+on:
+  push:
+    branches: [tennis-deep-reversal-20261004]
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Inspect ESPN ATP WTA score payloads
+        run: |
+          python - <<'PY'
+          import json, requests
+          for league in ("atp","wta"):
+              url=f"https://site.api.espn.com/apis/site/v2/sports/tennis/{league}/scoreboard"
+              r=requests.get(url,timeout=20)
+              print("STATUS",league,r.status_code)
+              r.raise_for_status()
+              data=r.json()
+              events=data.get("events",[]) or []
+              print("EVENTS",league,len(events))
+              for ev in events[:8]:
+                  comp=(ev.get("competitions") or [{}])[0]
+                  status=ev.get("status") or {}
+                  competitors=[]
+                  for x in comp.get("competitors",[]) or []:
+                      athlete=x.get("athlete") or x.get("team") or {}
+                      competitors.append({
+                          "name":athlete.get("displayName") or athlete.get("shortDisplayName"),
+                          "winner":x.get("winner"),
+                          "score":x.get("score"),
+                          "linescores":x.get("linescores"),
+                          "statistics":x.get("statistics"),
+                      })
+                  print("EVENT",json.dumps({
+                      "id":ev.get("id"),
+                      "name":ev.get("name"),
+                      "shortName":ev.get("shortName"),
+                      "date":ev.get("date"),
+                      "status":status,
+                      "competitors":competitors,
+                  },default=str)[:12000])
+          PY
