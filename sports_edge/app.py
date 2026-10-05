@@ -19,10 +19,37 @@ from sports_edge.data.mlb import MLBClient
 from sports_edge.data.mlb_prop_data import schedule_for_day
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
-from sports_edge.data.tennis_live import (
-    fetch_open_tennis_match_markets,
-    fetch_tennis_candle_history,
-    fetch_espn_live_tennis_states,
+from sports_edge.core.hot_reload import import_module_fresh
+
+# Streamlit Community Cloud can hot-reload this entrypoint while dependency
+# modules from the previous deploy remain in sys.modules. Tennis live helpers
+# must therefore be resolved dynamically: a stale export should degrade the
+# radar, never crash the entire app at import time.
+_tennis_live = import_module_fresh("sports_edge.data.tennis_live")
+
+def _empty_tennis_markets(*args, **kwargs):
+    return ()
+
+def _empty_tennis_candles(*args, **kwargs):
+    return {}
+
+def _empty_tennis_scores(*args, **kwargs):
+    return ()
+
+fetch_open_tennis_match_markets = getattr(
+    _tennis_live,
+    "fetch_open_tennis_match_markets",
+    _empty_tennis_markets,
+)
+fetch_tennis_candle_history = getattr(
+    _tennis_live,
+    "fetch_tennis_candle_history",
+    _empty_tennis_candles,
+)
+fetch_espn_live_tennis_states = getattr(
+    _tennis_live,
+    "fetch_espn_live_tennis_states",
+    _empty_tennis_scores,
 )
 from sports_edge.models.event_identity import (
     canonical_event_id_from_game,
@@ -78,7 +105,18 @@ assess_leg = _pi.assess_leg
 build_intelligent_parlay = _pi.build_intelligent_parlay
 
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context, _market_local_date
-from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
+
+_tennis_reversal = import_module_fresh("sports_edge.models.tennis_live_reversal")
+
+def _empty_tennis_reversal_radar(*args, **kwargs):
+    return []
+
+build_tennis_reversal_radar = getattr(
+    _tennis_reversal,
+    "build_tennis_reversal_radar",
+    _empty_tennis_reversal_radar,
+)
+
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
