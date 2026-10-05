@@ -1,0 +1,174 @@
+name: Rigele Walton retrospective replay
+
+on:
+  push:
+    branches: [tennis-deep-reversal-20261004]
+  workflow_dispatch:
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Replay Rigele Te vs Adam Walton through current Tennis radar
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          import json
+          from sports_edge.data.kalshi import KalshiPublicClient
+          from sports_edge.models.game_scope import normalize
+          from sports_edge.models.kalshi_model_candidates import (
+              _parse_date,
+              _tennis_model,
+              tennis_level_from_series,
+          )
+          from sports_edge.models.parlay_candidates import ParlayCandidateLeg
+          from sports_edge.models.tennis_live_reversal import assess_tennis_reversal
+
+          client=KalshiPublicClient()
+          start=int(datetime(2026,10,4,0,0,tzinfo=timezone.utc).timestamp())
+          end=int(datetime(2026,10,6,0,0,tzinfo=timezone.utc).timestamp())
+          matches=[]
+          for series in ("KXATPMATCH","KXATPCHALLENGERMATCH","KXITFMATCH"):
+              cursor=None
+              for _ in range(6):
+                  payload=client.markets(
+                      status="settled",
+                      limit=1000,
+                      cursor=cursor,
+                      series_ticker=series,
+                      min_close_ts=start,
+                      max_close_ts=end,
+                  )
+                  rows=(payload or {}).get("markets",[]) or []
+                  for m in rows:
+                      text=" ".join(str(m.get(k) or "") for k in (
+                          "title","subtitle","event_title","yes_sub_title","no_sub_title",
+                          "yes_title","no_title","event_ticker","ticker"
+                      ))
+                      n=normalize(text)
+                      if "walton" in n and ("rigele" in n or "te rigele" in n):
+                          matches.append(m)
+                  cursor=(payload or {}).get("cursor")
+                  if not cursor:
+                      break
+
+          print("MATCH_COUNT",len(matches))
+          for m in matches:
+              print("MARKET",json.dumps({
+                  k:m.get(k) for k in (
+                      "ticker","series_ticker","event_ticker","title","subtitle",
+                      "event_title","yes_sub_title","no_sub_title","yes_title","no_title",
+                      "open_time","close_time","expiration_time","settlement_value",
+                      "result","status","volume_fp"
+                  )
+              },default=str))
+
+          if not matches:
+              raise SystemExit("Rigele/Walton settled Kalshi market not found")
+
+          m=matches[0]
+          yes=str(m.get("yes_sub_title") or m.get("yes_title") or "").strip()
+          no=str(m.get("no_sub_title") or m.get("no_title") or "").strip()
+          if "rigele" in normalize(yes):
+              target,opponent,side=yes,no,"YES"
+          elif "rigele" in normalize(no):
+              target,opponent,side=no,yes,"NO"
+          else:
+              raise SystemExit("Could not identify Rigele side")
+
+          event_date=_parse_date(m)
+          gender,level=tennis_level_from_series(str(m.get("series_ticker") or ""))
+          model=_tennis_model(gender,event_date.year)
+          evidence=model.probability(target,opponent,level=level,as_of=event_date)
+          if evidence is None:
+              raise SystemExit("No pregame Tennis model evidence")
+          print("MODEL",target,opponent,"date",event_date,"level",level,
+                "fair",round(evidence.fair_probability,4),
+                "confidence",round(evidence.confidence,4),
+                "sample",evidence.sample_size,
+                "factors",list(evidence.factors),
+                "warnings",list(evidence.warnings))
+
+          def ts(raw):
+              if not raw:return None
+              dt=datetime.fromisoformat(str(raw).replace("Z","+00:00"))
+              if dt.tzinfo is None:dt=dt.replace(tzinfo=timezone.utc)
+              return int(dt.timestamp())
+          close=ts(m.get("close_time") or m.get("expiration_time")) or end
+          candle_start=max(start,close-12*3600)
+          payload=client.market_candlesticks(
+              str(m.get("series_ticker") or "KXATPMATCH"),
+              str(m.get("ticker")),
+              start_ts=candle_start,
+              end_ts=min(end,close+600),
+              period_interval=1,
+              include_latest_before_start=True,
+          )
+          candles=list((payload or {}).get("candlesticks",[]) or [])
+          print("CANDLES",len(candles))
+          if candles:
+              print("CANDLE_RANGE",candles[0].get("end_period_ts"),candles[-1].get("end_period_ts"))
+
+          leg=ParlayCandidateLeg(
+              sport="Tennis",
+              event_id=f"TENNIS:{event_date.isoformat()}:{'|'.join(sorted((normalize(target),normalize(opponent))))}",
+              event_title=str(m.get("event_title") or m.get("title") or ""),
+              market_key="model_h2h",
+              market_label="Match Winner",
+              selection=target,
+              consensus_probability=evidence.fair_probability,
+              book_count=0,
+              source_age_s=0.0,
+              median_odds=None,
+              kalshi_ticker=str(m.get("ticker") or ""),
+              kalshi_side=side,
+              kalshi_price=0.13,
+              kalshi_edge_points=100*(evidence.fair_probability-.13),
+              kalshi_status="MODEL",
+              evidence_class="MODEL",
+              model_probability=evidence.fair_probability,
+              model_confidence=evidence.confidence,
+              model_name=evidence.model_name,
+              model_sample_size=evidence.sample_size,
+              model_reasons=evidence.factors,
+              model_warnings=evidence.warnings,
+          )
+
+          signals=[]
+          for i in range(4,len(candles)+1):
+              prefix=candles[:i]
+              last_ts=int(prefix[-1].get("end_period_ts") or 0)
+              now=datetime.fromtimestamp(last_ts+1,tz=timezone.utc)
+              sig=assess_tennis_reversal(
+                  leg,prefix,confirmed_live=True,now=now
+              )
+              if sig and sig.status!="PASS":
+                  signals.append(sig)
+                  if len(signals)<=15:
+                      print("SIGNAL",i,sig.status,
+                            "time",datetime.fromtimestamp(last_ts,tz=timezone.utc).isoformat(),
+                            "current",round(sig.current_price,4),
+                            "peak",round(sig.local_peak,4),
+                            "trough",round(sig.trough_price,4),
+                            "dip_pp",round(sig.dip_points,2),
+                            "rebound_pp",round(sig.rebound_points,2),
+                            "momentum_pp",round(sig.recent_momentum_points,2),
+                            "prior_gap_pp",round(sig.prior_gap_points,2),
+                            "score",round(sig.score,1))
+          print("SIGNAL_COUNT",len(signals))
+          if signals:
+              first=signals[0]
+              strong=next((s for s in signals if s.status=="REVERSAL SIGNAL"),None)
+              print("FIRST_WATCH",first.status,round(first.current_price,4),round(first.score,1))
+              print("FIRST_STRONG",
+                    None if strong is None else (
+                        strong.status,round(strong.current_price,4),round(strong.score,1),
+                        round(strong.dip_points,2),round(strong.rebound_points,2)
+                    ))
+          PY
