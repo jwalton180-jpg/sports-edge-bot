@@ -212,9 +212,20 @@ def assess_tennis_reversal(
     score_turnaround = bool(live_state and live_state.turnaround)
     deciding_set = bool(live_state and live_state.deciding_set)
     current_set_lead = int(live_state.current_set_lead) if live_state else 0
-    score_support = score_turnaround or (
-        deciding_set and current_set_lead >= 2
-    )
+
+    # A completed-set turnaround is useful corroboration only while the current
+    # deciding-set score is not materially contradicting it. Without this guard,
+    # a player who lost Set 1 and won Set 2 could stay "turnaround=True" even
+    # after falling multiple games behind in Set 3, allowing stale score context
+    # to promote a cheap-price rebound that the live score no longer supports.
+    score_contradiction = deciding_set and current_set_lead <= -2
+    if deciding_set:
+        score_support = (
+            (score_turnaround and current_set_lead >= 0)
+            or current_set_lead >= 2
+        )
+    else:
+        score_support = score_turnaround
     deep_price = 0.04 <= current <= 0.25
     deep_drawdown = (
         trough <= 0.12
@@ -262,6 +273,10 @@ def assess_tennis_reversal(
         warnings.append("live match-start/state not independently confirmed; treat as radar WATCH only")
     if latest_age > 150:
         warnings.append("latest Kalshi candle is stale")
+    if score_contradiction:
+        warnings.append(
+            "current deciding-set score materially contradicts the earlier turnaround; deep reversal promotion blocked"
+        )
 
     score = 0.0
     score += min(24.0, dip_points * 1.35)
