@@ -2364,6 +2364,59 @@ elif view == "Live Feed":
         strong = [row for row in radar if row.status == "REVERSAL SIGNAL"]
         watch = [row for row in radar if row.status == "WATCH"]
 
+        # Put the cheapest already-qualified live opportunities at the top so a
+        # fast-moving 4–15c reversal is visible before the full radar table.
+        # This is presentation-only: a low price never creates a signal.
+        cheap_status_priority = {
+            "DEEP REVERSAL": 0,
+            "REVERSAL SIGNAL": 1,
+            "WATCH": 2,
+        }
+        cheap_live = sorted(
+            [
+                row for row in radar
+                if row.current_price <= 0.15
+                and row.status in cheap_status_priority
+            ],
+            key=lambda row: (
+                cheap_status_priority[row.status],
+                -float(row.score),
+                -float(row.rebound_points),
+                float(row.current_price),
+            ),
+        )
+
+        st.markdown("### 🔥 Cheap Live Underdogs ≤15¢")
+        st.caption(
+            "Only already-qualified Tennis reversal rows appear here. "
+            "DEEP REVERSAL ranks first; a cheap price by itself never qualifies."
+        )
+        if cheap_live:
+            cheap_table = pd.DataFrame([
+                {
+                    "Status": row.status,
+                    "Player": row.selection,
+                    "Current": f"{row.current_price:.0%}",
+                    "Rebound": f"+{row.rebound_points:.1f}pp",
+                    "Live score": row.live_score or "—",
+                    "Signal score": f"{row.score:.0f}",
+                    "Match": row.event_title,
+                }
+                for row in cheap_live[:8]
+            ])
+            st.dataframe(cheap_table, use_container_width=True, hide_index=True)
+            top_cheap = cheap_live[0]
+            if top_cheap.status == "DEEP REVERSAL":
+                st.success(
+                    f"Top cheap reversal: {top_cheap.selection} at "
+                    f"{top_cheap.current_price:.0%} · "
+                    f"{top_cheap.event_title}"
+                )
+        else:
+            st.caption(
+                "No ≤15¢ Tennis underdog currently clears the live reversal WATCH gate."
+            )
+
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Modeled sides", len(tennis_candidates))
         c2.metric("Live matches", live_game_count)
