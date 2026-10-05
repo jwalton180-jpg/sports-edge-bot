@@ -108,15 +108,27 @@ jobs:
           if not matches:
               raise SystemExit("Rigele/Walton settled Kalshi market not found")
 
-          m=matches[0]
-          yes=str(m.get("yes_sub_title") or m.get("yes_title") or "").strip()
-          no=str(m.get("no_sub_title") or m.get("no_title") or "").strip()
-          if "rigele" in normalize(yes):
-              target,opponent,side=yes,no,"YES"
-          elif "rigele" in normalize(no):
-              target,opponent,side=no,yes,"NO"
-          else:
-              raise SystemExit("Could not identify Rigele side")
+          m=next(
+              (row for row in matches if "rigele" in normalize(
+                  row.get("yes_sub_title") or row.get("title") or ""
+              )),
+              None,
+          )
+          if m is None:
+              raise SystemExit("Could not identify Rigele market")
+          target=str(m.get("yes_sub_title") or "Rigele TE").strip()
+          sibling=next(
+              (row for row in matches
+               if str(row.get("ticker") or "") != str(m.get("ticker") or "")
+               and normalize(row.get("yes_sub_title") or "") != normalize(target)),
+              None,
+          )
+          opponent=str(
+              (sibling or {}).get("yes_sub_title")
+              or (sibling or {}).get("title")
+              or "Adam Walton"
+          ).replace(" wins","").strip()
+          side="YES"
 
           event_date=_parse_date(m)
           gender,level=tennis_level_from_series(str(m.get("series_ticker") or ""))
