@@ -22,8 +22,13 @@ from sports_edge.data.odds import OddsClient
 from sports_edge.data.tennis_live import (
     fetch_open_tennis_match_markets,
     fetch_tennis_candle_history,
+    fetch_espn_live_tennis_states,
 )
-from sports_edge.models.event_identity import canonical_event_id_from_game, canonical_event_id_from_title
+from sports_edge.models.event_identity import (
+    canonical_event_id_from_game,
+    canonical_event_id_from_title,
+    canonical_participant,
+)
 from sports_edge.models.game_scope import GameEvent, build_game_events, game_scoped_markets, market_matches_game
 from sports_edge.models.intelligence import (
     PREMIUM_BOOKMAKER_KEYS,
@@ -378,6 +383,14 @@ def get_tennis_candles_live(tickers: tuple[str, ...]):
         ), None
     except Exception as exc:
         return {}, _safe_error(exc)
+
+
+@st.cache_data(ttl=12, show_spinner=False)
+def get_tennis_score_states_live():
+    try:
+        return list(fetch_espn_live_tennis_states()), None
+    except Exception as exc:
+        return [], _safe_error(exc)
 
 
 def _sport_from_odds_key(key: str) -> str | None:
@@ -2229,7 +2242,8 @@ elif view == "Live Feed":
     st.subheader("Tennis Live Reversal Radar")
     st.caption(
         "Scans all open ATP/WTA/Challenger/ITF match-winner contracts for a major executable-price dip followed by a real rebound. "
-        "Sports Edge's Tennis model is used as a pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H), not as a fake live-score fair."
+        "The DEEP REVERSAL lane targets 4–25¢ underdogs only when the price recovery is corroborated by a live-score turnaround. "
+        "Sports Edge's Tennis model remains the pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H), not a fake live-score fair."
     )
 
     def _render_tennis_reversal_radar():
@@ -2251,10 +2265,18 @@ elif view == "Live Feed":
             and row.kalshi_ticker
         ]
 
-        # First build the price/model radar with no claim that a match is live.
-        # Actual live promotion happens only after a current score payload confirms it.
-        confirmed_live_ids: set[str] = set()
-        live_game_count = 0
+        # ESPN's public ATP/WTA scoreboards provide directional set/game state.
+        # Challenger/ITF coverage remains fail-soft; those matches can still
+        # appear as price-path WATCH rows without a fabricated score claim.
+        score_states, score_state_err = get_tennis_score_states_live()
+        if score_state_err:
+            st.caption("Public Tennis score-state feed unavailable: " + score_state_err)
+        live_state_index = {
+            (row.event_id, row.selection_key): row
+            for row in score_states
+        }
+        confirmed_live_ids: set[str] = {row.event_id for row in score_states}
+        live_game_count = len(confirmed_live_ids)
 
         tickers = tuple(sorted({
             str(row.kalshi_ticker)
@@ -2268,13 +2290,13 @@ elif view == "Live Feed":
         preliminary = build_tennis_reversal_radar(
             tennis_candidates,
             candles,
-            confirmed_live_event_ids=set(),
+            confirmed_live_event_ids=confirmed_live_ids,
+            live_states=live_state_index,
         )
 
-        # Only spend score-feed calls on matches that already clear the
-        # price-dip/rebound/model-support WATCH gate. This keeps the 30-second
-        # loop low-cost while preventing a scheduled-start timestamp from being
-        # mistaken for proof that a match is still live.
+        # The Odds API score feed remains a secondary live-confirmation fallback
+        # for matches ESPN does not cover. Only spend those calls on price/model
+        # rows already clearing the WATCH gate.
         if api_key and preliminary:
             active, active_err = get_active_sports(api_key)
             if not active_err:
@@ -2335,16 +2357,19 @@ elif view == "Live Feed":
             tennis_candidates,
             candles,
             confirmed_live_event_ids=confirmed_live_ids,
+            live_states=live_state_index,
         )
         live_game_count = len(confirmed_live_ids)
+        deep = [row for row in radar if row.status == "DEEP REVERSAL"]
         strong = [row for row in radar if row.status == "REVERSAL SIGNAL"]
         watch = [row for row in radar if row.status == "WATCH"]
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Modeled match sides", len(tennis_candidates))
-        c2.metric("Score-confirmed live", live_game_count)
-        c3.metric("Reversal signals", len(strong))
-        c4.metric("Watches", len(watch))
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Modeled sides", len(tennis_candidates))
+        c2.metric("Live matches", live_game_count)
+        c3.metric("Deep reversals", len(deep))
+        c4.metric("Signals", len(strong))
+        c5.metric("Watches", len(watch))
 
         if not radar:
             st.info(
@@ -2368,6 +2393,8 @@ elif view == "Live Feed":
                 "Prior gap": f"{row.prior_gap_points:+.1f}pp",
                 "Model conf.": f"{row.model_confidence:.0%}",
                 "H2H": "yes" if row.h2h_context else "—",
+                "Live score": row.live_score or "—",
+                "Turnaround": "yes" if row.score_turnaround else "—",
                 "Score": f"{row.score:.0f}",
             }
             for row in radar[:25]
