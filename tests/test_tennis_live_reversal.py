@@ -154,8 +154,8 @@ def _deep_state(*, lead=0, turnaround=True):
         period=3,
         player_sets=1,
         opponent_sets=1,
-        player_games=lead if lead > 0 else 0,
-        opponent_games=0,
+        player_games=max(lead, 0),
+        opponent_games=max(-lead, 0),
         lost_first_set=True,
         won_latest_completed_set=turnaround,
         turnaround=turnaround,
@@ -227,6 +227,19 @@ def test_deep_deciding_set_lead_can_support_signal_without_opening_set_turnaroun
     )
     assert sig is not None
     assert sig.status == "DEEP REVERSAL"
+
+
+def test_deep_turnaround_is_blocked_when_current_deciding_set_score_reverses_against_player():
+    state = _deep_state(lead=-3, turnaround=True)
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        _deep_reversal_candles(),
+        live_state=state,
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status == "PASS"
+    assert any("deciding-set score materially contradicts" in warning for warning in sig.warnings)
 
 
 def test_radar_ranks_deep_reversal_above_generic_signal():
