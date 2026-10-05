@@ -50,9 +50,9 @@ def test_multiple_kalshi_tennis_events_reach_model_candidate_pool():
 
     assert len(rows) == 6
     assert {row.event_id for row in rows} == {
-        "TENNIS:2026-09-26:player a|player b",
-        "TENNIS:2026-09-26:player c|player d",
-        "TENNIS:2026-09-26:player e|player f",
+        "TENNIS:2026-09-26:a player|b player",
+        "TENNIS:2026-09-26:c player|d player",
+        "TENNIS:2026-09-26:e player|f player",
     }
     assert all(row.model_probability is not None for row in rows)
     assert all(row.book_count == 0 for row in rows)

@@ -68,6 +68,12 @@ def test_tennis_diacritics_and_order_share_one_match_identity():
     assert a == b
 
 
+def test_tennis_given_family_order_is_feed_invariant():
+    kalshi = canonical_event_id("Tennis", "Rigele TE", "Adam Walton", DATE)
+    espn = canonical_event_id("Tennis", "Te Rigele", "Adam Walton", DATE)
+    assert kalshi == espn
+
+
 def test_sportsbook_enrichment_requires_same_physical_event():
     event_a = canonical_event_id("Tennis", "Player One", "Player Two", DATE)
     event_b = canonical_event_id("Tennis", "Player One", "Player Three", DATE)

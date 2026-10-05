@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from math import isfinite
 
 from sports_edge.core.math import clamp
+from sports_edge.data.tennis_live import TennisLiveScoreState
+from sports_edge.models.event_identity import canonical_participant
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 
 
@@ -37,6 +39,10 @@ class TennisReversalSignal:
     recent_volume: float
     latest_age_s: float
     confirmed_live: bool
+    live_score: str | None
+    score_turnaround: bool
+    deciding_set: bool
+    current_set_lead: int
     h2h_context: bool
     trend_context: bool
     score: float
@@ -146,6 +152,7 @@ def assess_tennis_reversal(
     candles: tuple[dict, ...] | list[dict],
     *,
     confirmed_live: bool = False,
+    live_state: TennisLiveScoreState | None = None,
     now: datetime | None = None,
 ) -> TennisReversalSignal | None:
     if leg.sport != "Tennis" or leg.market_key != "model_h2h":
@@ -163,6 +170,8 @@ def assess_tennis_reversal(
     current = latest.close
     if not 0.03 <= current <= 0.45:
         return None
+    if live_state is not None:
+        confirmed_live = True
 
     peak, trough, trough_i, drawdown = _drawdown(path)
     if drawdown <= 0 or trough_i >= len(path) - 1:
@@ -195,6 +204,27 @@ def assess_tennis_reversal(
         and leg.model_sample_size >= 6
         and prior_gap_points >= 3.0
     )
+    model_sanity = (
+        model_conf >= 0.45
+        and leg.model_sample_size >= 6
+        and model_prior >= 0.05
+    )
+    score_turnaround = bool(live_state and live_state.turnaround)
+    deciding_set = bool(live_state and live_state.deciding_set)
+    current_set_lead = int(live_state.current_set_lead) if live_state else 0
+    score_support = score_turnaround or (
+        deciding_set and current_set_lead >= 2
+    )
+    deep_price = 0.04 <= current <= 0.25
+    deep_drawdown = (
+        trough <= 0.12
+        and (dip_points >= 10.0 or relative_drop >= 0.40)
+    )
+    deep_recovery = (
+        rebound_points >= 3.0
+        and rebound_fraction >= 0.20
+        and momentum_points >= 0.5
+    )
     fresh = latest_age <= 150.0
 
     reasons = [
@@ -216,6 +246,15 @@ def assess_tennis_reversal(
         reasons.append("Recent form/serve-return trajectory supports matchup context")
     if recent_volume > 0:
         reasons.append(f"{recent_volume:.0f} contracts traded since the detected trough window")
+    if live_state is not None:
+        reasons.append(f"Live score: {live_state.score_label}")
+        if score_turnaround:
+            reasons.append("Live-score turnaround: lost the opening set, then won the latest completed set")
+        if deciding_set:
+            reasons.append(
+                f"Deciding-set state {live_state.player_sets}-{live_state.opponent_sets}; "
+                f"current-set game lead {current_set_lead:+d}"
+            )
 
     warnings = list(leg.model_warnings)
     warnings.append("pregame model probability is a prior, not a live-score fair probability")
@@ -232,10 +271,28 @@ def assess_tennis_reversal(
     score += 5.0 if h2h else 0.0
     score += 5.0 if trend else 0.0
     score += 5.0 if confirmed_live else 0.0
+    score += 7.0 if score_turnaround else 0.0
+    score += 4.0 if deciding_set and current_set_lead >= 2 else 0.0
     score += 3.0 if recent_volume >= 100 else (1.0 if recent_volume > 0 else 0.0)
     score = clamp(score, 0.0, 100.0)
 
-    if major_dip and reversal and model_support and fresh and confirmed_live and score >= 68:
+    # Deep Reversal is the high-payout lane: a true collapse into the 4–25¢
+    # range followed by price recovery plus independent live-score evidence.
+    # Unlike the generic lane, it does not require the current price to remain
+    # below the pre-match model prior; the live turnaround can legitimately
+    # move fair value above a low pre-match underdog prior.
+    if (
+        deep_price
+        and deep_drawdown
+        and deep_recovery
+        and model_sanity
+        and score_support
+        and fresh
+        and confirmed_live
+        and score >= 68
+    ):
+        status = "DEEP REVERSAL"
+    elif major_dip and reversal and model_support and fresh and confirmed_live and score >= 68:
         status = "REVERSAL SIGNAL"
     elif major_dip and reversal and model_support and fresh and score >= 55:
         status = "WATCH"
@@ -261,6 +318,10 @@ def assess_tennis_reversal(
         recent_volume=recent_volume,
         latest_age_s=latest_age,
         confirmed_live=confirmed_live,
+        live_score=live_state.score_label if live_state is not None else None,
+        score_turnaround=score_turnaround,
+        deciding_set=deciding_set,
+        current_set_lead=current_set_lead,
         h2h_context=h2h,
         trend_context=trend,
         score=score,
@@ -275,16 +336,21 @@ def build_tennis_reversal_radar(
     candle_history: dict[str, tuple[dict, ...]],
     *,
     confirmed_live_event_ids: set[str] | None = None,
+    live_states: dict[tuple[str, str], TennisLiveScoreState] | None = None,
     now: datetime | None = None,
 ) -> list[TennisReversalSignal]:
     confirmed = confirmed_live_event_ids or set()
+    state_index = live_states or {}
     rows: list[TennisReversalSignal] = []
     for leg in candidates:
         candles = candle_history.get(str(leg.kalshi_ticker or ""), ())
+        selection_key = canonical_participant("Tennis", leg.selection)
+        live_state = state_index.get((leg.event_id, selection_key))
         signal = assess_tennis_reversal(
             leg,
             candles,
             confirmed_live=leg.event_id in confirmed,
+            live_state=live_state,
             now=now,
         )
         if signal is not None and signal.status != "PASS":
@@ -295,11 +361,13 @@ def build_tennis_reversal_radar(
     for row in rows:
         old = best.get(row.event_id)
         if old is None or (
+            row.status == "DEEP REVERSAL",
             row.status == "REVERSAL SIGNAL",
             row.score,
             row.prior_gap_points,
             row.rebound_points,
         ) > (
+            old.status == "DEEP REVERSAL",
             old.status == "REVERSAL SIGNAL",
             old.score,
             old.prior_gap_points,
@@ -310,6 +378,7 @@ def build_tennis_reversal_radar(
     return sorted(
         best.values(),
         key=lambda row: (
+            row.status == "DEEP REVERSAL",
             row.status == "REVERSAL SIGNAL",
             row.score,
             row.prior_gap_points,
