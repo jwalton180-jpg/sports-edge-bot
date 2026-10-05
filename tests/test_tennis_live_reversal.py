@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from sports_edge.data.tennis_live import TennisLiveScoreState
+from sports_edge.models.event_identity import canonical_event_id, canonical_participant
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_live_reversal import (
     assess_tennis_reversal,
@@ -139,3 +141,114 @@ def test_radar_keeps_one_side_per_physical_match():
     )
     assert len(rows) == 1
     assert rows[0].event_id == a.event_id
+
+
+def _deep_state(*, lead=0, turnaround=True):
+    event_id = canonical_event_id("Tennis", "Rigele TE", "Adam Walton", "2026-10-05")
+    return TennisLiveScoreState(
+        event_id=event_id,
+        selection_key=canonical_participant("Tennis", "Rigele TE"),
+        player="Te Rigele",
+        opponent="Adam Walton",
+        tour="ATP",
+        period=3,
+        player_sets=1,
+        opponent_sets=1,
+        player_games=lead if lead > 0 else 0,
+        opponent_games=0,
+        lost_first_set=True,
+        won_latest_completed_set=turnaround,
+        turnaround=turnaround,
+        deciding_set=True,
+        current_set_lead=lead,
+        score_label="Adam Walton vs Te Rigele · 7-5 · 3-6 · 0-0",
+        fetched_at=NOW,
+    )
+
+
+def _deep_leg():
+    event_id = canonical_event_id("Tennis", "Rigele TE", "Adam Walton", "2026-10-05")
+    return _leg(event_id=event_id, ticker="KX-RIG", fair=.10, confidence=.62)
+
+
+def _deep_reversal_candles():
+    vals = [
+        (0, .18, .17, .19),
+        (1, .15, .14, .18),
+        (2, .10, .09, .15),
+        (3, .07, .06, .10),
+        (4, .05, .04, .07),
+        (5, .06, .04, .07),
+        (6, .08, .06, .09),
+        (7, .10, .08, .11),
+        (8, .12, .10, .13),
+        (9, .13, .11, .14),
+    ]
+    return tuple(_candle(i, close, low, high, volume=150) for i, close, low, high in vals)
+
+
+def test_deep_reversal_can_override_negative_pregame_gap_with_score_turnaround():
+    # Current 13% is ABOVE the 10% pregame prior, so the generic model-gap
+    # gate would reject it. A real score turnaround plus deep price recovery
+    # is the intended high-payout exception.
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        _deep_reversal_candles(),
+        live_state=_deep_state(),
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.prior_gap_points < 0
+    assert sig.status == "DEEP REVERSAL"
+    assert sig.score_turnaround
+    assert sig.deciding_set
+    assert sig.live_score is not None
+
+
+def test_deep_price_rebound_without_score_turnaround_is_not_promoted():
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        _deep_reversal_candles(),
+        confirmed_live=True,
+        live_state=None,
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status == "PASS"
+
+
+def test_deep_deciding_set_lead_can_support_signal_without_opening_set_turnaround():
+    state = _deep_state(lead=2, turnaround=False)
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        _deep_reversal_candles(),
+        live_state=state,
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status == "DEEP REVERSAL"
+
+
+def test_radar_ranks_deep_reversal_above_generic_signal():
+    deep_leg = _deep_leg()
+    generic = _leg(
+        event_id="TENNIS:2026-09-29:alpha|beta",
+        ticker="KX-GENERIC",
+        fair=.38,
+        confidence=.72,
+    )
+    states = {
+        (deep_leg.event_id, canonical_participant("Tennis", deep_leg.selection)): _deep_state()
+    }
+    rows = build_tennis_reversal_radar(
+        [generic, deep_leg],
+        {
+            "KX-GENERIC": _reversal_candles(),
+            "KX-RIG": _deep_reversal_candles(),
+        },
+        confirmed_live_event_ids={generic.event_id, deep_leg.event_id},
+        live_states=states,
+        now=NOW,
+    )
+    assert rows
+    assert rows[0].status == "DEEP REVERSAL"
