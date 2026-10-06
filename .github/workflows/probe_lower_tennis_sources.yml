@@ -34,6 +34,17 @@ jobs:
           probe 'https://livescore.tennis365.com/Tennis/Ecuador/ITF-M15-Quito/77191'
           probe 'https://livescore.tennis365.com/Tennis/Chile/ATP-Challenger-Antofagasta/00000'
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://livescore.tennis365.com/' -o /tmp/t365
+          echo 'T365_LIVE_RAW'
+          python - <<'PY'
+          import re
+          s=open('/tmp/t365',encoding='utf-8',errors='ignore').read()
+          for m in re.finditer(r'(?:Set\s*[1-5]|Tie\s*Break)',s,re.I):
+              chunk=s[max(0,m.start()-1200):m.start()+4200]
+              if 'matches_grid_anchor' in chunk:
+                  print(chunk[:5400].replace('\n',' '))
+                  print('---LIVE_RAW_END---')
+                  break
+          PY
           echo 'T365_MATCH_BLOCKS'
           python - <<'PY'
           import html,re
