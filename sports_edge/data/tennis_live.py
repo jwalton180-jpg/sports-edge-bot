@@ -15,7 +15,7 @@ ESPN_TENNIS_SCOREBOARDS = (
     ("ATP", "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard"),
     ("WTA", "https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard"),
 )
-SOFASCORE_TENNIS_LIVE_URL = "https://www.sofascore.com/api/v1/sport/tennis/events/live"
+SOFASCORE_TENNIS_LIVE_URL = "https://api.sofascore.com/api/v1/sport/tennis/events/live"
 
 
 @dataclass(frozen=True)
@@ -483,8 +483,15 @@ def fetch_sofascore_live_tennis_states(
         response = requests.get(
             SOFASCORE_TENNIS_LIVE_URL,
             headers={
-                "User-Agent": "SportsEdgeReadOnly/1.0",
-                "Accept": "application/json",
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/140.0 Safari/537.36"
+                ),
+                "Accept": "application/json,text/plain,*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.sofascore.com/",
+                "Origin": "https://www.sofascore.com",
             },
             timeout=timeout,
         )
