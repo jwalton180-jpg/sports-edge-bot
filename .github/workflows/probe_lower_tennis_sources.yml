@@ -31,3 +31,9 @@ jobs:
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp-challenger/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/challenger/scoreboard'
           probe 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-006/'
+          probe 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-007/'
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-007/' -o /tmp/itf007
+          echo 'ITF_URLS'
+          grep -Eo 'https?://[^"[:space:]<>]+' /tmp/itf007 | grep -Ei 'api|score|live|draw|result|crio|infront' | head -80 || true
+          echo 'ITF_KEYWORDS'
+          grep -Eio '.{0,100}(live.?score|crionet|infront|tournament.?key|draws.?and.?results|api).{0,180}' /tmp/itf007 | head -100 || true
