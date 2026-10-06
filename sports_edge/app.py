@@ -46,10 +46,14 @@ fetch_tennis_candle_history = getattr(
     "fetch_tennis_candle_history",
     _empty_tennis_candles,
 )
-fetch_espn_live_tennis_states = getattr(
+fetch_live_tennis_states = getattr(
     _tennis_live,
-    "fetch_espn_live_tennis_states",
-    _empty_tennis_scores,
+    "fetch_live_tennis_states",
+    getattr(
+        _tennis_live,
+        "fetch_espn_live_tennis_states",
+        _empty_tennis_scores,
+    ),
 )
 from sports_edge.models.event_identity import (
     canonical_event_id_from_game,
@@ -115,6 +119,17 @@ build_tennis_reversal_radar = getattr(
     _tennis_reversal,
     "build_tennis_reversal_radar",
     _empty_tennis_reversal_radar,
+)
+
+_tennis_lower_tour = import_module_fresh("sports_edge.models.tennis_lower_tour")
+
+def _empty_lower_tour_candidates(*args, **kwargs):
+    return []
+
+build_lower_tour_live_fallback_candidates = getattr(
+    _tennis_lower_tour,
+    "build_lower_tour_live_fallback_candidates",
+    _empty_lower_tour_candidates,
 )
 
 from sports_edge.models.parlay_candidates import (
@@ -426,7 +441,7 @@ def get_tennis_candles_live(tickers: tuple[str, ...]):
 @st.cache_data(ttl=12, show_spinner=False)
 def get_tennis_score_states_live():
     try:
-        return list(fetch_espn_live_tennis_states()), None
+        return list(fetch_live_tennis_states()), None
     except Exception as exc:
         return [], _safe_error(exc)
 
@@ -2280,8 +2295,8 @@ elif view == "Live Feed":
     st.subheader("Tennis Live Reversal Radar")
     st.caption(
         "Scans all open ATP/WTA/Challenger/ITF match-winner contracts for a major executable-price dip followed by a real rebound. "
-        "The DEEP REVERSAL lane targets 4–25¢ underdogs only when the price recovery is corroborated by a live-score turnaround. "
-        "Sports Edge's Tennis model remains the pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H), not a fake live-score fair."
+        "The DEEP REVERSAL lane targets 4–25¢ underdogs only when executable-price recovery is corroborated by live sets/games from ESPN or the cloud-reachable Tennis365 lower-tour layer. "
+        "Sports Edge's Tennis model remains the independent pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H)."
     )
 
     def _render_tennis_reversal_radar():
@@ -2303,9 +2318,9 @@ elif view == "Live Feed":
             and row.kalshi_ticker
         ]
 
-        # ESPN's public ATP/WTA scoreboards provide directional set/game state.
-        # Challenger/ITF coverage remains fail-soft; those matches can still
-        # appear as price-path WATCH rows without a fabricated score claim.
+        # ESPN remains the preferred ATP/WTA structural feed while Tennis365
+        # supplies cloud-reachable Challenger/ITF live state. Cross-feed
+        # disagreements are blocked from strong reversal promotion.
         score_states, score_state_err = get_tennis_score_states_live()
         if score_state_err:
             st.caption("Public Tennis score-state feed unavailable: " + score_state_err)
@@ -2315,6 +2330,17 @@ elif view == "Live Feed":
         }
         confirmed_live_ids: set[str] = {row.event_id for row in score_states}
         live_game_count = len(confirmed_live_ids)
+
+        # Primary Tennis history stays first. Only already-live lower-tour
+        # physical matches missing from that model may receive the independent
+        # Tennis365 ranking/prior-form fallback.
+        lower_tour_candidates = build_lower_tour_live_fallback_candidates(
+            live_tennis_markets,
+            score_states,
+            tennis_candidates,
+        )
+        if lower_tour_candidates:
+            tennis_candidates.extend(lower_tour_candidates)
 
         tickers = tuple(sorted({
             str(row.kalshi_ticker)

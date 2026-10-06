@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import time
 
 import requests
 
 from sports_edge.data.kalshi import KalshiPublicClient
+from sports_edge.data.tennis365 import Tennis365LiveMatch, fetch_tennis365_live_matches
 from sports_edge.models.event_identity import canonical_event_id, canonical_participant
 
 
@@ -41,6 +42,10 @@ class TennisLiveScoreState:
     serving: bool | None = None
     net_break_advantage: int | None = None
     at_tiebreak: bool = False
+    point_score: str | None = None
+    score_sources: tuple[str, ...] = ()
+    score_conflict: bool = False
+    source_url: str | None = None
 
 
 def _iso_date(value) -> str | None:
@@ -257,12 +262,104 @@ def parse_espn_live_tennis_states(
                             serving=serving,
                             net_break_advantage=net_break_advantage,
                             at_tiebreak=at_tiebreak,
+                            score_sources=("ESPN",),
                         )
                     )
 
     dedup = {(row.event_id, row.selection_key): row for row in out}
     return tuple(dedup.values())
 
+
+def _tennis365_states_from_matches(
+    matches: tuple[Tennis365LiveMatch, ...] | list[Tennis365LiveMatch],
+    *,
+    fetched_at: datetime | None = None,
+) -> tuple[TennisLiveScoreState, ...]:
+    """Translate cloud-reachable Tennis365 lower-tour rows into live state."""
+    fetched_at = (fetched_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    out: list[TennisLiveScoreState] = []
+    for match in matches:
+        event_date = (match.start_at or fetched_at).astimezone(timezone.utc).date().isoformat()
+        names = (match.home, match.away)
+        event_id = canonical_event_id("Tennis", names[0], names[1], event_date)
+        set_winners: list[int | None] = []
+        for home_games, away_games in match.completed_sets:
+            if home_games == away_games:
+                set_winners.append(None)
+            else:
+                set_winners.append(0 if home_games > away_games else 1)
+
+        score_parts = [f"{a}-{b}" for a, b in match.completed_sets]
+        score_parts.append(f"{match.home_games}-{match.away_games}")
+        pair_score = " · ".join(score_parts)
+        serving_flags = (match.home_serving, match.away_serving)
+        current_games = (match.home_games, match.away_games)
+        points = (match.home_point, match.away_point)
+
+        for player_i in (0, 1):
+            opp_i = 1 - player_i
+            player_sets = sum(1 for winner in set_winners if winner == player_i)
+            opponent_sets = sum(1 for winner in set_winners if winner == opp_i)
+            # Trust both the completed-set reconstruction and Tennis365's sets
+            # totals. A mismatch means the row is internally inconsistent.
+            expected_sets = match.home_sets if player_i == 0 else match.away_sets
+            expected_opp_sets = match.away_sets if player_i == 0 else match.home_sets
+            score_conflict = (
+                player_sets != expected_sets or opponent_sets != expected_opp_sets
+            )
+            lost_first = bool(set_winners and set_winners[0] == opp_i)
+            latest_won = bool(set_winners and set_winners[-1] == player_i)
+            player_games = current_games[player_i]
+            opponent_games = current_games[opp_i]
+            serving = serving_flags[player_i]
+            net_break = _net_break_advantage(
+                player_games, opponent_games, player_serving=serving
+            )
+            point_score = None
+            if points[player_i] is not None or points[opp_i] is not None:
+                point_score = f"{points[player_i] or '0'}-{points[opp_i] or '0'}"
+            out.append(TennisLiveScoreState(
+                event_id=event_id,
+                selection_key=canonical_participant("Tennis", names[player_i]),
+                player=names[player_i],
+                opponent=names[opp_i],
+                tour=match.tour,
+                period=match.period,
+                player_sets=player_sets,
+                opponent_sets=opponent_sets,
+                player_games=player_games,
+                opponent_games=opponent_games,
+                lost_first_set=lost_first,
+                won_latest_completed_set=latest_won,
+                turnaround=lost_first and latest_won,
+                deciding_set=(
+                    match.period == 3 and player_sets == opponent_sets == 1
+                ),
+                current_set_lead=player_games - opponent_games,
+                score_label=f"{names[0]} vs {names[1]} · {pair_score}",
+                fetched_at=fetched_at,
+                best_of=3,
+                sets_to_win=2,
+                serving=serving,
+                net_break_advantage=net_break,
+                at_tiebreak=player_games == 6 and opponent_games == 6,
+                point_score=point_score,
+                score_sources=("Tennis365",),
+                score_conflict=score_conflict,
+                source_url=match.source_url,
+            ))
+    dedup = {(row.event_id, row.selection_key): row for row in out}
+    return tuple(dedup.values())
+
+
+def fetch_tennis365_live_tennis_states(
+    *,
+    timeout: float = 12.0,
+) -> tuple[TennisLiveScoreState, ...]:
+    return _tennis365_states_from_matches(
+        fetch_tennis365_live_matches(timeout=timeout),
+        fetched_at=datetime.now(timezone.utc),
+    )
 
 def fetch_espn_live_tennis_states(
     *,
@@ -297,6 +394,79 @@ def fetch_espn_live_tennis_states(
     dedup = {(row.event_id, row.selection_key): row for row in out}
     return tuple(dedup.values())
 
+
+def _same_structural_score(a: TennisLiveScoreState, b: TennisLiveScoreState) -> bool:
+    return (
+        a.period == b.period
+        and a.player_sets == b.player_sets
+        and a.opponent_sets == b.opponent_sets
+        and a.player_games == b.player_games
+        and a.opponent_games == b.opponent_games
+    )
+
+
+def _merge_live_score_state(
+    primary: TennisLiveScoreState,
+    secondary: TennisLiveScoreState,
+) -> TennisLiveScoreState:
+    """Merge agreeing cross-feed state and fail closed on disagreements."""
+    sources = tuple(dict.fromkeys((*primary.score_sources, *secondary.score_sources)))
+    if not _same_structural_score(primary, secondary):
+        return replace(
+            primary,
+            score_sources=sources,
+            score_conflict=True,
+        )
+
+    serving = primary.serving if primary.serving is not None else secondary.serving
+    net_break = primary.net_break_advantage
+    if net_break is None and serving is not None:
+        net_break = _net_break_advantage(
+            primary.player_games,
+            primary.opponent_games,
+            player_serving=serving,
+        )
+    point_score = primary.point_score or secondary.point_score
+    return replace(
+        primary,
+        serving=serving,
+        net_break_advantage=net_break,
+        point_score=point_score,
+        score_sources=sources,
+        score_conflict=False,
+    )
+
+
+def fetch_live_tennis_states(
+    *,
+    timeout: float = 12.0,
+) -> tuple[TennisLiveScoreState, ...]:
+    """Fetch ESPN ATP/WTA plus Tennis365 Challenger/ITF live state.
+
+    ESPN remains preferred where it has ATP/WTA coverage. Tennis365 is the
+    cloud-reachable lower-tour source. If two sources ever identify the same
+    physical match, structural disagreement is retained as a fail-closed flag.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        espn_future = pool.submit(fetch_espn_live_tennis_states, timeout=timeout)
+        lower_future = pool.submit(fetch_tennis365_live_tennis_states, timeout=timeout)
+        try:
+            espn = tuple(espn_future.result())
+        except Exception:
+            espn = ()
+        try:
+            lower = tuple(lower_future.result())
+        except Exception:
+            lower = ()
+
+    merged: dict[tuple[str, str], TennisLiveScoreState] = {}
+    for row in lower:
+        merged[(row.event_id, row.selection_key)] = row
+    for row in espn:
+        key = (row.event_id, row.selection_key)
+        old = merged.get(key)
+        merged[key] = _merge_live_score_state(row, old) if old is not None else row
+    return tuple(merged.values())
 
 TENNIS_MATCH_SERIES = (
     "KXATPMATCH",

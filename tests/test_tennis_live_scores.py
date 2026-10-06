@@ -130,7 +130,6 @@ def test_parser_recognizes_true_fifth_set_decider_in_mens_major():
     assert rig.deciding_set
     assert rig.current_set_lead == 2
 
-
 def test_parser_excludes_completed_match():
     rows = parse_espn_live_tennis_states(
         _payload(_competition(state="post", completed=True)),

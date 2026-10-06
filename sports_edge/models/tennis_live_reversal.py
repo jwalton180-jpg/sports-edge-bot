@@ -52,6 +52,9 @@ class TennisReversalSignal:
     net_break_advantage: int | None
     best_of: int
     at_tiebreak: bool
+    point_score: str | None
+    score_sources: tuple[str, ...]
+    score_conflict: bool
     recovery_confirmations: int
     current_spread_points: float | None
     quote_quality: bool
@@ -251,6 +254,7 @@ def assess_tennis_reversal(
         and leg.model_sample_size >= 6
         and prior_gap_points >= 3.0
     )
+    lower_tour_fallback = str(leg.model_name or "").startswith("Tennis lower-tour")
     model_sanity = (
         model_conf >= 0.45
         and leg.model_sample_size >= 6
@@ -267,6 +271,9 @@ def assess_tennis_reversal(
     )
     best_of = int(live_state.best_of) if live_state is not None else 3
     at_tiebreak = bool(live_state and live_state.at_tiebreak)
+    point_score = live_state.point_score if live_state is not None else None
+    score_sources = tuple(live_state.score_sources) if live_state is not None else ()
+    score_conflict = bool(live_state and live_state.score_conflict)
 
     live_estimate = estimate_live_match_probability(model_prior, live_state)
     live_probability = live_estimate.probability if live_estimate is not None else None
@@ -277,11 +284,20 @@ def assess_tennis_reversal(
     )
     # ESPN does not provide reliable point score inside the current game, so
     # demand a margin large enough to absorb that hidden-state uncertainty.
-    deep_live_edge_floor = max(5.0, current * 25.0)
-    generic_live_edge_floor = max(4.0, current * 20.0)
+    deep_live_edge_floor = (
+        max(7.0, current * 30.0)
+        if lower_tour_fallback
+        else max(5.0, current * 25.0)
+    )
+    generic_live_edge_floor = (
+        max(6.0, current * 25.0)
+        if lower_tour_fallback
+        else max(4.0, current * 20.0)
+    )
+    live_probability_floor = 0.22 if lower_tour_fallback else 0.18
     live_value_support = bool(
         live_probability is not None
-        and live_probability >= 0.18
+        and live_probability >= live_probability_floor
         and live_edge_points is not None
         and live_edge_points >= deep_live_edge_floor
     )
@@ -349,6 +365,10 @@ def assess_tennis_reversal(
     if live_state is not None:
         reasons.append(f"Live score: {live_state.score_label}")
         reasons.append(f"Match format: best-of-{best_of}")
+        if score_sources:
+            reasons.append("Live score source: " + " + ".join(score_sources))
+        if point_score is not None:
+            reasons.append(f"Current game points: {point_score}")
         if live_probability is not None and live_edge_points is not None:
             reasons.append(
                 f"Score-conditioned live model {live_probability:.1%} vs executable {current:.1%} "
@@ -370,6 +390,10 @@ def assess_tennis_reversal(
     warnings.append(
         "live score probability is a structural state-conditioned estimate, not a settlement guarantee"
     )
+    if lower_tour_fallback:
+        warnings.append(
+            "lower-tour fallback has a stricter live-edge threshold than the primary Tennis model"
+        )
     if live_state is None:
         warnings.append("detailed live score/server state unavailable; strong reversal promotion blocked")
     if not confirmed_live:
@@ -384,7 +408,11 @@ def assess_tennis_reversal(
         warnings.append("score-conditioned live model does not support value at the current executable price")
     if at_tiebreak:
         warnings.append(
-            "tiebreak point score is unavailable from the live feed; strong reversal promotion blocked"
+            "tiebreak point score is not modeled deeply enough for strong reversal promotion"
+        )
+    if score_conflict:
+        warnings.append(
+            "live score feeds disagree on the current structural score; strong reversal promotion blocked"
         )
     if score_contradiction:
         warnings.append(
@@ -419,6 +447,8 @@ def assess_tennis_reversal(
         and model_sanity
         and score_support
         and not score_contradiction
+        and not score_conflict
+        and (not lower_tour_fallback or (net_break_advantage is not None and net_break_advantage >= 1))
         and live_value_support
         and quote_quality
         and not at_tiebreak
@@ -434,6 +464,7 @@ def assess_tennis_reversal(
         and model_sanity
         and generic_live_support
         and not score_contradiction
+        and not score_conflict
         and strong_price_confirmation
         and not at_tiebreak
         and fresh
@@ -483,6 +514,9 @@ def assess_tennis_reversal(
         net_break_advantage=net_break_advantage,
         best_of=best_of,
         at_tiebreak=at_tiebreak,
+        point_score=point_score,
+        score_sources=score_sources,
+        score_conflict=score_conflict,
         recovery_confirmations=recovery_confirmations,
         current_spread_points=current_spread_points,
         quote_quality=quote_quality,
@@ -505,11 +539,29 @@ def build_tennis_reversal_radar(
 ) -> list[TennisReversalSignal]:
     confirmed = confirmed_live_event_ids or set()
     state_index = live_states or {}
+
+    # Live feeds can place a match on the adjacent UTC date while Kalshi uses
+    # its competition-local date. Exact identity remains preferred, but a
+    # unique participant-pair match is a safe fallback for an already-live
+    # physical event.
+    pair_states: dict[tuple[str, str], list[TennisLiveScoreState]] = {}
+    for state in state_index.values():
+        parts = str(state.event_id).split(":", 2)
+        if len(parts) != 3:
+            continue
+        pair_states.setdefault((parts[2], state.selection_key), []).append(state)
+
     rows: list[TennisReversalSignal] = []
     for leg in candidates:
         candles = candle_history.get(str(leg.kalshi_ticker or ""), ())
         selection_key = canonical_participant("Tennis", leg.selection)
         live_state = state_index.get((leg.event_id, selection_key))
+        if live_state is None:
+            parts = str(leg.event_id).split(":", 2)
+            if len(parts) == 3:
+                matches = pair_states.get((parts[2], selection_key), [])
+                if len(matches) == 1:
+                    live_state = matches[0]
         signal = assess_tennis_reversal(
             leg,
             candles,
