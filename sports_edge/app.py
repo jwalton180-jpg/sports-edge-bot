@@ -46,10 +46,14 @@ fetch_tennis_candle_history = getattr(
     "fetch_tennis_candle_history",
     _empty_tennis_candles,
 )
-fetch_espn_live_tennis_states = getattr(
+fetch_live_tennis_states = getattr(
     _tennis_live,
-    "fetch_espn_live_tennis_states",
-    _empty_tennis_scores,
+    "fetch_live_tennis_states",
+    getattr(
+        _tennis_live,
+        "fetch_espn_live_tennis_states",
+        _empty_tennis_scores,
+    ),
 )
 from sports_edge.models.event_identity import (
     canonical_event_id_from_game,
@@ -426,7 +430,7 @@ def get_tennis_candles_live(tickers: tuple[str, ...]):
 @st.cache_data(ttl=12, show_spinner=False)
 def get_tennis_score_states_live():
     try:
-        return list(fetch_espn_live_tennis_states()), None
+        return list(fetch_live_tennis_states()), None
     except Exception as exc:
         return [], _safe_error(exc)
 
@@ -2280,8 +2284,8 @@ elif view == "Live Feed":
     st.subheader("Tennis Live Reversal Radar")
     st.caption(
         "Scans all open ATP/WTA/Challenger/ITF match-winner contracts for a major executable-price dip followed by a real rebound. "
-        "The DEEP REVERSAL lane targets 4–25¢ underdogs only when the price recovery is corroborated by a live-score turnaround. "
-        "Sports Edge's Tennis model remains the pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H), not a fake live-score fair."
+        "The DEEP REVERSAL lane targets 4–25¢ underdogs only when executable-price recovery is corroborated by live sets/games from the merged ESPN + lower-tour score layer. "
+        "Sports Edge's Tennis model remains the independent pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H)."
     )
 
     def _render_tennis_reversal_radar():
@@ -2303,9 +2307,9 @@ elif view == "Live Feed":
             and row.kalshi_ticker
         ]
 
-        # ESPN's public ATP/WTA scoreboards provide directional set/game state.
-        # Challenger/ITF coverage remains fail-soft; those matches can still
-        # appear as price-path WATCH rows without a fabricated score claim.
+        # ESPN remains the preferred ATP/WTA structural feed while SofaScore
+        # fills Challenger/ITF live state. Cross-feed disagreements are flagged
+        # and blocked from strong reversal promotion rather than guessed through.
         score_states, score_state_err = get_tennis_score_states_live()
         if score_state_err:
             st.caption("Public Tennis score-state feed unavailable: " + score_state_err)
