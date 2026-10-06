@@ -37,3 +37,11 @@ jobs:
           grep -Eo 'https?://[^"[:space:]<>]+' /tmp/itf007 | grep -Ei 'api|score|live|draw|result|crio|infront' | head -80 || true
           echo 'ITF_KEYWORDS'
           grep -Eio '.{0,100}(live.?score|crionet|infront|tournament.?key|draws.?and.?results|api).{0,180}' /tmp/itf007 | head -100 || true
+          probe 'https://live.itftennis.com/en/live-scores/?tourkey=M-ITF-ECU-2026-007'
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://live.itftennis.com/en/live-scores/?tourkey=M-ITF-ECU-2026-007' -o /tmp/itflive
+          echo 'ITF_LIVE_URLS'
+          grep -Eo 'https?://[^"[:space:]<>]+' /tmp/itflive | grep -Ei 'api|score|live|event|match|hub|signal|json' | head -120 || true
+          echo 'ITF_LIVE_SCRIPTS'
+          grep -Eo '<script[^>]+src=["'"'][^"'"']+' /tmp/itflive | head -100 || true
+          echo 'ITF_LIVE_KEYWORDS'
+          grep -Eio '.{0,120}(api|signalr|socket|live.?score|match|score|tourkey).{0,220}' /tmp/itflive | head -120 || true
