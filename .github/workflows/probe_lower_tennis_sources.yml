@@ -34,6 +34,34 @@ jobs:
           probe 'https://livescore.tennis365.com/Tennis/Ecuador/ITF-M15-Quito/77191'
           probe 'https://livescore.tennis365.com/Tennis/Chile/ATP-Challenger-Antofagasta/00000'
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://livescore.tennis365.com/' -o /tmp/t365
+          echo 'T365_MATCH_BLOCKS'
+          python - <<'PY'
+          import html,re
+          s=open('/tmp/t365',encoding='utf-8',errors='ignore').read()
+          blocks=re.findall(r'<a\s+href="([^"]+)"\s+class="matches_grid_anchor"[^>]*>(.*?)</a>',s,flags=re.I|re.S)
+          print('MATCH_BLOCK_COUNT',len(blocks))
+          shown=0
+          for href,block in blocks:
+              if not re.search(r'ITF|Challenger|Quito|Antofagasta',href,re.I):
+                  continue
+              text=html.unescape(re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' | ',block))).strip(' |')
+              print('MATCH',href,'TEXT',text[:1600])
+              shown+=1
+              if shown>=120: break
+          PY
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://livescore.tennis365.com/Chile-Challenger-Antofagasta-Justo,-Guido-Ivan-vs-Comesana,Francisco-3383826' -o /tmp/t365_justo
+          echo 'T365_JUSTO_DETAIL'
+          python - <<'PY'
+          import html,re
+          s=open('/tmp/t365_justo',encoding='utf-8',errors='ignore').read()
+          print('BYTES',len(s))
+          for pat in ['ATP World Rankings','Latest Games','Justo','Comesana','ranking','points']:
+              print('PATTERN',pat)
+              for m in list(re.finditer(pat,s,re.I))[:5]:
+                  chunk=s[max(0,m.start()-900):m.start()+2600]
+                  txt=html.unescape(re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' | ',chunk))).strip(' |')
+                  print(txt[:3000])
+          PY
           echo 'T365_TARGETS'
           grep -in -C 5 -E 'Quito|Antofagasta|ITF|Challenger' /tmp/t365 | head -300 || true
           echo 'T365_LINKS'
