@@ -44,7 +44,7 @@ def _leg(event_id="TENNIS:2026-09-29:alpha|beta", ticker="KX-T1", fair=0.38, con
     )
 
 
-def _candle(minute, close, low=None, high=None, volume=100):
+def _candle(minute, close, low=None, high=None, volume=100, bid_gap=.02):
     ts = int(NOW.timestamp()) - (9 - minute) * 60
     return {
         "end_period_ts": ts,
@@ -60,9 +60,9 @@ def _candle(minute, close, low=None, high=None, volume=100):
             "low_dollars": f"{(low if low is not None else close):.4f}",
         },
         "yes_bid": {
-            "close_dollars": f"{max(0.01, close - 0.02):.4f}",
-            "high_dollars": f"{max(0.01, (high if high is not None else close) - 0.02):.4f}",
-            "low_dollars": f"{max(0.01, (low if low is not None else close) - 0.02):.4f}",
+            "close_dollars": f"{max(0.01, close - bid_gap):.4f}",
+            "high_dollars": f"{max(0.01, (high if high is not None else close) - bid_gap):.4f}",
+            "low_dollars": f"{max(0.01, (low if low is not None else close) - bid_gap):.4f}",
         },
     }
 
@@ -82,6 +82,31 @@ def _reversal_candles():
     ]
     return tuple(_candle(i, close, low, high, volume=120) for i, close, low, high in vals)
 
+def _generic_state():
+    return TennisLiveScoreState(
+        event_id="TENNIS:2026-09-29:alpha|beta",
+        selection_key=canonical_participant("Tennis", "Alpha"),
+        player="Alpha",
+        opponent="Beta",
+        tour="ATP",
+        period=1,
+        player_sets=0,
+        opponent_sets=0,
+        player_games=2,
+        opponent_games=2,
+        lost_first_set=False,
+        won_latest_completed_set=False,
+        turnaround=False,
+        deciding_set=False,
+        current_set_lead=0,
+        score_label="Alpha vs Beta · 2-2",
+        fetched_at=NOW,
+        best_of=3,
+        sets_to_win=2,
+        serving=True,
+        net_break_advantage=0,
+    )
+
 
 def test_executable_yes_path_uses_ask_quotes():
     path = executable_path((_candle(9, .25, .23, .27),), "YES")
@@ -98,11 +123,20 @@ def test_executable_no_path_uses_complement_of_yes_bid():
 
 
 def test_confirmed_live_major_dip_rebound_can_signal():
-    sig = assess_tennis_reversal(_leg(), _reversal_candles(), confirmed_live=True, now=NOW)
+    sig = assess_tennis_reversal(
+        _leg(),
+        _reversal_candles(),
+        live_state=_generic_state(),
+        now=NOW,
+    )
     assert sig is not None
     assert sig.status == "REVERSAL SIGNAL"
     assert sig.dip_points >= 20
     assert sig.rebound_points >= 8
+    assert sig.live_probability is not None
+    assert sig.live_edge_points is not None and sig.live_edge_points > 0
+    assert sig.recovery_confirmations >= 2
+    assert sig.quote_quality
     assert sig.h2h_context
     assert sig.trend_context
 
@@ -117,7 +151,12 @@ def test_same_price_collapse_without_rebound_does_not_signal():
 
 
 def test_rebound_without_model_prior_support_does_not_signal():
-    sig = assess_tennis_reversal(_leg(fair=.20), _reversal_candles(), confirmed_live=True, now=NOW)
+    sig = assess_tennis_reversal(
+        _leg(fair=.20),
+        _reversal_candles(),
+        live_state=_generic_state(),
+        now=NOW,
+    )
     assert sig is not None
     assert sig.status == "PASS"
 
@@ -143,8 +182,10 @@ def test_radar_keeps_one_side_per_physical_match():
     assert rows[0].event_id == a.event_id
 
 
-def _deep_state(*, lead=0, turnaround=True):
+def _deep_state(*, lead=0, turnaround=True, net_break=None):
     event_id = canonical_event_id("Tennis", "Rigele TE", "Adam Walton", "2026-10-05")
+    if net_break is None:
+        net_break = 1 if lead >= 2 else (-1 if lead <= -2 else 0)
     return TennisLiveScoreState(
         event_id=event_id,
         selection_key=canonical_participant("Tennis", "Rigele TE"),
@@ -161,8 +202,12 @@ def _deep_state(*, lead=0, turnaround=True):
         turnaround=turnaround,
         deciding_set=True,
         current_set_lead=lead,
-        score_label="Adam Walton vs Te Rigele · 7-5 · 3-6 · 0-0",
+        score_label="Adam Walton vs Te Rigele · 7-5 · 3-6 · current set",
         fetched_at=NOW,
+        best_of=3,
+        sets_to_win=2,
+        serving=True,
+        net_break_advantage=net_break,
     )
 
 
@@ -200,6 +245,8 @@ def test_deep_reversal_can_override_negative_pregame_gap_with_score_turnaround()
     assert sig is not None
     assert sig.prior_gap_points < 0
     assert sig.status == "DEEP REVERSAL"
+    assert sig.live_probability is not None and sig.live_probability >= .18
+    assert sig.live_edge_points is not None and sig.live_edge_points >= 4
     assert sig.score_turnaround
     assert sig.deciding_set
     assert sig.live_score is not None
@@ -239,7 +286,48 @@ def test_deep_turnaround_is_blocked_when_current_deciding_set_score_reverses_aga
     )
     assert sig is not None
     assert sig.status == "PASS"
-    assert any("deciding-set score materially contradicts" in warning for warning in sig.warnings)
+    assert any("net-break/game state materially contradicts" in warning for warning in sig.warnings)
+
+
+def test_deep_reversal_is_blocked_by_wide_executable_spread():
+    candles = list(_deep_reversal_candles())
+    candles[-1] = _candle(9, .13, .11, .14, volume=150, bid_gap=.10)
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        tuple(candles),
+        live_state=_deep_state(),
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status != "DEEP REVERSAL"
+    assert not sig.quote_quality
+    assert any("spread" in warning.lower() for warning in sig.warnings)
+
+
+def test_one_candle_bounce_is_not_a_deep_reversal():
+    vals = [
+        (0, .18, .17, .19),
+        (1, .15, .14, .18),
+        (2, .10, .09, .15),
+        (3, .07, .06, .10),
+        (4, .05, .04, .07),
+        (5, .04, .04, .05),
+        (6, .04, .04, .05),
+        (7, .04, .04, .05),
+        (8, .04, .04, .05),
+        (9, .13, .11, .14),
+    ]
+    candles = tuple(_candle(i, close, low, high, volume=150) for i, close, low, high in vals)
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        candles,
+        live_state=_deep_state(),
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status != "DEEP REVERSAL"
+    assert sig.recovery_confirmations < 2
+    assert any("multi-candle" in warning.lower() for warning in sig.warnings)
 
 
 def test_radar_ranks_deep_reversal_above_generic_signal():
@@ -251,7 +339,8 @@ def test_radar_ranks_deep_reversal_above_generic_signal():
         confidence=.72,
     )
     states = {
-        (deep_leg.event_id, canonical_participant("Tennis", deep_leg.selection)): _deep_state()
+        (deep_leg.event_id, canonical_participant("Tennis", deep_leg.selection)): _deep_state(),
+        (generic.event_id, canonical_participant("Tennis", generic.selection)): _generic_state(),
     }
     rows = build_tennis_reversal_radar(
         [generic, deep_leg],
