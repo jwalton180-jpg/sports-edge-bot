@@ -33,6 +33,24 @@ jobs:
           probe 'https://www.tennisexplorer.com/live/'
           probe 'https://www.tennisendirect.net/'
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisexplorer.com/live/' -o /tmp/texplorer
+          echo 'TENNISEXPLORER_ROWS'
+          python - <<'PY'
+          import html, re
+          s=open('/tmp/texplorer',encoding='utf-8',errors='ignore').read()
+          rows=re.findall(r'<tr\b[^>]*>.*?</tr>',s,flags=re.I|re.S)
+          print('ROW_COUNT',len(rows))
+          shown=0
+          for i,row in enumerate(rows):
+              text=re.sub(r'<script\b.*?</script>',' ',row,flags=re.I|re.S)
+              text=re.sub(r'<style\b.*?</style>',' ',text,flags=re.I|re.S)
+              text=re.sub(r'<[^>]+>',' | ',text)
+              text=html.unescape(re.sub(r'\s+',' ',text)).strip(' |')
+              attrs=(re.search(r'^<tr\b([^>]*)>',row,flags=re.I|re.S) or [None,''])[1]
+              if text and (i < 80 or re.search(r'live|ITF|challenger|set|\d\s*[-:]\s*\d', text, re.I)):
+                  print('ROW',i,'ATTR',re.sub(r'\s+',' ',attrs)[:240],'TEXT',text[:1200])
+                  shown+=1
+                  if shown>=180: break
+          PY
           echo 'TENNISEXPLORER_TARGETS'
           grep -in -C 5 -E 'M15 Quito|Quito|Antofagasta|Justo|Comesana|Bini|Alvarado|ITF' /tmp/texplorer | head -260 || true
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisendirect.net/' -o /tmp/tendirect
