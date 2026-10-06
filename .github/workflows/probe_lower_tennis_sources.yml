@@ -1,0 +1,33 @@
+name: Probe Lower Tennis Sources
+
+on:
+  push:
+    branches:
+      - tennis-itf-challenger-live-score-20261006
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe public endpoints
+        shell: bash
+        run: |
+          set +e
+          probe() {
+            url="$1"
+            code=$(curl -L -sS -o /tmp/body --max-time 12 -w '%{http_code}' -A 'Mozilla/5.0' "$url")
+            bytes=$(wc -c < /tmp/body 2>/dev/null || echo 0)
+            echo "PROBE|$code|$bytes|$url"
+            head -c 220 /tmp/body | tr '\n' ' '
+            echo
+          }
+          probe 'https://api.sofascore.com/api/v1/sport/tennis/events/live'
+          probe 'https://api.sofascore.com/api/v1/event/17264658'
+          probe 'https://www.sofascore.com/api/v1/event/17264658'
+          probe 'https://kalshi.com/calendar'
+          probe 'https://kalshi.com/markets/kxitfmatch/itf-mens-match/kxitfmatch-26oct06dedmac'
+          probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/itf/scoreboard'
+          probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp-challenger/scoreboard'
+          probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/challenger/scoreboard'
+          probe 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-006/'
