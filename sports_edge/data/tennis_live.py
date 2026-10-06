@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import time
 
@@ -261,6 +261,7 @@ def parse_espn_live_tennis_states(
                             serving=serving,
                             net_break_advantage=net_break_advantage,
                             at_tiebreak=at_tiebreak,
+                            score_sources=("ESPN",),
                         )
                     )
 
@@ -525,6 +526,81 @@ def fetch_espn_live_tennis_states(
     dedup = {(row.event_id, row.selection_key): row for row in out}
     return tuple(dedup.values())
 
+
+def _same_structural_score(a: TennisLiveScoreState, b: TennisLiveScoreState) -> bool:
+    return (
+        a.period == b.period
+        and a.player_sets == b.player_sets
+        and a.opponent_sets == b.opponent_sets
+        and a.player_games == b.player_games
+        and a.opponent_games == b.opponent_games
+    )
+
+
+def _merge_live_score_state(
+    primary: TennisLiveScoreState,
+    secondary: TennisLiveScoreState,
+) -> TennisLiveScoreState:
+    """Merge agreeing cross-feed state and fail closed on disagreements."""
+    sources = tuple(dict.fromkeys((*primary.score_sources, *secondary.score_sources)))
+    if not _same_structural_score(primary, secondary):
+        return replace(
+            primary,
+            score_sources=sources,
+            score_conflict=True,
+        )
+
+    serving = primary.serving if primary.serving is not None else secondary.serving
+    net_break = primary.net_break_advantage
+    if net_break is None and serving is not None:
+        net_break = _net_break_advantage(
+            primary.player_games,
+            primary.opponent_games,
+            player_serving=serving,
+        )
+    point_score = primary.point_score or secondary.point_score
+    return replace(
+        primary,
+        serving=serving,
+        net_break_advantage=net_break,
+        point_score=point_score,
+        score_sources=sources,
+        score_conflict=False,
+    )
+
+
+def fetch_live_tennis_states(
+    *,
+    timeout: float = 12.0,
+) -> tuple[TennisLiveScoreState, ...]:
+    """Fetch and merge ESPN + SofaScore Tennis state.
+
+    ESPN remains the preferred ATP/WTA structural feed. SofaScore expands
+    coverage to Challenger/ITF and supplies lower-tour state. When both feeds
+    identify the same physical match they must agree on sets/games; otherwise
+    the state is flagged as conflicting so strong reversal promotion fails
+    closed rather than trusting whichever response arrived last.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        espn_future = pool.submit(fetch_espn_live_tennis_states, timeout=timeout)
+        sofa_future = pool.submit(fetch_sofascore_live_tennis_states, timeout=timeout)
+        try:
+            espn = tuple(espn_future.result())
+        except Exception:
+            espn = ()
+        try:
+            sofa = tuple(sofa_future.result())
+        except Exception:
+            sofa = ()
+
+    merged: dict[tuple[str, str], TennisLiveScoreState] = {}
+    for row in sofa:
+        merged[(row.event_id, row.selection_key)] = row
+    for row in espn:
+        key = (row.event_id, row.selection_key)
+        old = merged.get(key)
+        merged[key] = _merge_live_score_state(row, old) if old is not None else row
+    return tuple(merged.values())
 
 TENNIS_MATCH_SERIES = (
     "KXATPMATCH",
