@@ -2427,7 +2427,8 @@ elif view == "Live Feed":
         st.markdown("### 🔥 Cheap Live Underdogs ≤15¢")
         st.caption(
             "Only already-qualified Tennis reversal rows appear here. "
-            "DEEP REVERSAL ranks first; a cheap price by itself never qualifies."
+            "Strong promotion now requires score-conditioned live value, server/break context, "
+            "persistent recovery, and executable quote quality; cheap price alone never qualifies."
         )
         if cheap_live:
             cheap_table = pd.DataFrame([
@@ -2435,7 +2436,27 @@ elif view == "Live Feed":
                     "Status": row.status,
                     "Player": row.selection,
                     "Current": f"{row.current_price:.0%}",
+                    "Live model": (
+                        f"{getattr(row, 'live_probability', 0.0):.0%}"
+                        if getattr(row, "live_probability", None) is not None
+                        else "—"
+                    ),
+                    "Live edge": (
+                        f"{getattr(row, 'live_edge_points', 0.0):+.1f}pp"
+                        if getattr(row, "live_edge_points", None) is not None
+                        else "—"
+                    ),
+                    "Net breaks": (
+                        f"{getattr(row, 'net_break_advantage', 0):+d}"
+                        if getattr(row, "net_break_advantage", None) is not None
+                        else "—"
+                    ),
                     "Rebound": f"+{row.rebound_points:.1f}pp",
+                    "Spread": (
+                        f"{getattr(row, 'current_spread_points', 0.0):.1f}pp"
+                        if getattr(row, "current_spread_points", None) is not None
+                        else "—"
+                    ),
                     "Live score": row.live_score or "—",
                     "Signal score": f"{row.score:.0f}",
                     "Match": row.event_title,
@@ -2464,8 +2485,8 @@ elif view == "Live Feed":
 
         if not radar:
             st.info(
-                "No Tennis underdog currently clears the dip + rebound + model-support gate. "
-                "The radar will not force a signal when the reversal is not there."
+                "No Tennis underdog currently clears the dip + persistent rebound + live-value gate. "
+                "The radar will not force a signal when the score state or executable quote does not support it."
             )
             return
 
@@ -2481,7 +2502,33 @@ elif view == "Live Feed":
                 "Rebound": f"+{row.rebound_points:.1f}pp",
                 "3m momentum": f"{row.recent_momentum_points:+.1f}pp",
                 "Pregame prior": f"{row.model_prior_probability:.0%}",
-                "Prior gap": f"{row.prior_gap_points:+.1f}pp",
+                "Live model": (
+                    f"{getattr(row, 'live_probability', 0.0):.0%}"
+                    if getattr(row, "live_probability", None) is not None
+                    else "—"
+                ),
+                "Live edge": (
+                    f"{getattr(row, 'live_edge_points', 0.0):+.1f}pp"
+                    if getattr(row, "live_edge_points", None) is not None
+                    else "—"
+                ),
+                "Server": (
+                    "player"
+                    if getattr(row, "serving", None) is True
+                    else ("opponent" if getattr(row, "serving", None) is False else "—")
+                ),
+                "Net breaks": (
+                    f"{getattr(row, 'net_break_advantage', 0):+d}"
+                    if getattr(row, "net_break_advantage", None) is not None
+                    else "—"
+                ),
+                "Format": f"Bo{getattr(row, 'best_of', 3)}",
+                "Spread": (
+                    f"{getattr(row, 'current_spread_points', 0.0):.1f}pp"
+                    if getattr(row, "current_spread_points", None) is not None
+                    else "—"
+                ),
+                "Recovery confirms": getattr(row, "recovery_confirmations", 0),
                 "Model conf.": f"{row.model_confidence:.0%}",
                 "H2H": "yes" if row.h2h_context else "—",
                 "Live score": row.live_score or "—",
