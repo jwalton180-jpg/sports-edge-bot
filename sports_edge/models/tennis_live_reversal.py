@@ -254,6 +254,7 @@ def assess_tennis_reversal(
         and leg.model_sample_size >= 6
         and prior_gap_points >= 3.0
     )
+    lower_tour_fallback = str(leg.model_name or "").startswith("Tennis lower-tour")
     model_sanity = (
         model_conf >= 0.45
         and leg.model_sample_size >= 6
@@ -283,11 +284,20 @@ def assess_tennis_reversal(
     )
     # ESPN does not provide reliable point score inside the current game, so
     # demand a margin large enough to absorb that hidden-state uncertainty.
-    deep_live_edge_floor = max(5.0, current * 25.0)
-    generic_live_edge_floor = max(4.0, current * 20.0)
+    deep_live_edge_floor = (
+        max(7.0, current * 30.0)
+        if lower_tour_fallback
+        else max(5.0, current * 25.0)
+    )
+    generic_live_edge_floor = (
+        max(6.0, current * 25.0)
+        if lower_tour_fallback
+        else max(4.0, current * 20.0)
+    )
+    live_probability_floor = 0.22 if lower_tour_fallback else 0.18
     live_value_support = bool(
         live_probability is not None
-        and live_probability >= 0.18
+        and live_probability >= live_probability_floor
         and live_edge_points is not None
         and live_edge_points >= deep_live_edge_floor
     )
@@ -380,6 +390,10 @@ def assess_tennis_reversal(
     warnings.append(
         "live score probability is a structural state-conditioned estimate, not a settlement guarantee"
     )
+    if lower_tour_fallback:
+        warnings.append(
+            "lower-tour fallback has a stricter live-edge threshold than the primary Tennis model"
+        )
     if live_state is None:
         warnings.append("detailed live score/server state unavailable; strong reversal promotion blocked")
     if not confirmed_live:
@@ -434,6 +448,7 @@ def assess_tennis_reversal(
         and score_support
         and not score_contradiction
         and not score_conflict
+        and (not lower_tour_fallback or (net_break_advantage is not None and net_break_advantage >= 1))
         and live_value_support
         and quote_quality
         and not at_tiebreak
