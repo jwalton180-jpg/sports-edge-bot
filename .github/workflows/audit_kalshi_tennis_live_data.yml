@@ -1,0 +1,30 @@
+name: Audit Kalshi Tennis Live Data
+
+on:
+  push:
+    branches:
+      - audit-kalshi-tennis-live-data-20261006
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Query live event data
+        run: |
+          python - <<'PY'
+          import json
+          from sports_edge.data.kalshi import KalshiPublicClient
+
+          event='KXITFMATCH-26OCT06DEDMAC'
+          client=KalshiPublicClient()
+          result=client.event_live_data(event)
+          data=result.data if hasattr(result,'data') else result
+          print(json.dumps(data, indent=2, sort_keys=True)[:30000])
+          PY
