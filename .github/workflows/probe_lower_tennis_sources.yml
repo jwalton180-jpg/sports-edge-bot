@@ -30,6 +30,14 @@ jobs:
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/itf/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp-challenger/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/challenger/scoreboard'
+          probe 'https://livescore.tennis365.com/'
+          probe 'https://livescore.tennis365.com/Tennis/Ecuador/ITF-M15-Quito/77191'
+          probe 'https://livescore.tennis365.com/Tennis/Chile/ATP-Challenger-Antofagasta/00000'
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://livescore.tennis365.com/' -o /tmp/t365
+          echo 'T365_TARGETS'
+          grep -in -C 5 -E 'Quito|Antofagasta|ITF|Challenger' /tmp/t365 | head -300 || true
+          echo 'T365_LINKS'
+          grep -Eo 'href="[^"]+"' /tmp/t365 | grep -Ei 'Quito|Antofagasta|Ecuador|Chile' | head -160 || true
           probe 'https://www.tennisexplorer.com/live/'
           probe 'https://www.tennisendirect.net/'
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisexplorer.com/live/' -o /tmp/texplorer
