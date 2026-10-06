@@ -1,0 +1,80 @@
+name: Live Lower Tennis Coverage Audit
+
+on:
+  push:
+    branches:
+      - tennis-itf-challenger-live-score-20261006
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Audit ITF Challenger live coverage
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          from sports_edge.data.tennis_live import (
+              fetch_live_tennis_states,
+              fetch_open_tennis_match_markets,
+              fetch_tennis_candle_history,
+          )
+          from sports_edge.models.event_identity import canonical_participant
+          from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
+          from sports_edge.models.kalshi_sports import group_kalshi_sports
+          from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
+
+          markets=list(fetch_open_tennis_match_markets())
+          grouped=group_kalshi_sports(markets)
+          candidates=[
+              row for row in model_candidates_from_kalshi(grouped, sport_filter='Tennis')
+              if row.sport == 'Tennis' and row.market_key == 'model_h2h' and row.kalshi_ticker
+          ]
+          states=list(fetch_live_tennis_states())
+          state_index={(row.event_id,row.selection_key):row for row in states}
+          tickers=tuple(sorted({str(row.kalshi_ticker) for row in candidates if row.kalshi_ticker}))
+          candles=fetch_tennis_candle_history(tickers,lookback_minutes=60,period_interval=1)
+          radar=build_tennis_reversal_radar(
+              candidates,candles,
+              confirmed_live_event_ids={row.event_id for row in states},
+              live_states=state_index,
+          )
+
+          print('markets',len(markets),'candidates',len(candidates),'states',len(states),'candle_tickers',len(candles),'radar',len(radar))
+          print('state_tours',dict(Counter(row.tour for row in states)))
+          print('state_sources',dict(Counter('+'.join(row.score_sources) or 'none' for row in states)))
+
+          targets=[row for row in states if 'macias' in row.player.lower() or 'macias' in row.opponent.lower() or 'de dios' in row.player.lower() or 'de dios' in row.opponent.lower()]
+          print('TARGET_STATES',len(targets))
+          for row in targets:
+              print('STATE',row.player,'vs',row.opponent,'|',row.score_label,'| tour',row.tour,'| sets',row.player_sets,row.opponent_sets,'| games',row.player_games,row.opponent_games,'| serving',row.serving,'| breaks',row.net_break_advantage,'| src',row.score_sources,'| conflict',row.score_conflict)
+
+          target_markets=[m for m in markets if 'macias' in str(m).lower() or 'de dios' in str(m).lower()]
+          print('TARGET_MARKETS',len(target_markets))
+          for m in target_markets[:10]:
+              print('MARKET',m.get('ticker'),'|',m.get('title'),'|',m.get('subtitle'),'| yes',m.get('yes_ask_dollars',m.get('yes_ask')),'| no',m.get('no_ask_dollars',m.get('no_ask')))
+
+          target_candidates=[row for row in candidates if 'macias' in row.selection.lower() or 'de dios' in row.selection.lower() or 'macias' in row.event_title.lower() or 'de dios' in row.event_title.lower()]
+          print('TARGET_CANDIDATES',len(target_candidates))
+          for row in target_candidates:
+              print('CAND',row.selection,'|',row.event_title,'| fair',row.model_probability,'| conf',row.model_confidence,'| n',row.model_sample_size,'| ticker',row.kalshi_ticker,'| side',row.kalshi_side)
+              print('  reasons',row.model_reasons)
+              print('  warnings',row.model_warnings)
+
+          target_radar=[row for row in radar if 'macias' in row.selection.lower() or 'de dios' in row.selection.lower() or 'macias' in row.event_title.lower() or 'de dios' in row.event_title.lower()]
+          print('TARGET_RADAR',len(target_radar))
+          for row in target_radar:
+              print('RADAR',row.status,row.selection,'price',row.current_price,'live',row.live_probability,'edge',row.live_edge_points,'sources',row.score_sources,'score',row.live_score)
+
+          assert targets, 'Macias/De Dios lower-tour live state was not captured'
+          assert any('SofaScore' in row.score_sources for row in targets)
+          print('LOWER_TOUR_LIVE_STATE_OK')
+          PY
