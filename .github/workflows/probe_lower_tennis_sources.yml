@@ -55,6 +55,20 @@ jobs:
           grep -Eo 'https?://[^"[:space:]<>]+' /tmp/itfsdk | sort -u | head -160 || true
           echo 'ITF_SDK_API_TOKENS'
           grep -Eo '.{0,100}(graphql|api/|liveScore|live-score|matches|events|tournament|stadion).{0,180}' /tmp/itfsdk | head -180 || true
+          echo 'ITF_SDK_AUTH_CONTEXT'
+          python - <<'PY'
+          s=open('/tmp/itfsdk',encoding='utf-8',errors='ignore').read()
+          for needle in ['platform_UvtcjZ0tuwSV','PLATFORM_UID','platformUid','Authorization','authorization','axios.create','headers:','x-api','X-API','x-platform','platform-uid','platformUid']:
+              print('NEEDLE',needle)
+              start=0
+              shown=0
+              while shown<8:
+                  i=s.find(needle,start)
+                  if i<0: break
+                  print(s[max(0,i-700):i+1400])
+                  start=i+len(needle)
+                  shown+=1
+          PY
           echo 'ITF_API_LIVE_LIST'
           api='https://api.itf-production.sports-data.stadion.io/custom/wttCompleteMatchList/2026-10-06'
           code=$(curl -L -sS --max-time 15 -o /tmp/itfapi -w '%{http_code}' "$api")
