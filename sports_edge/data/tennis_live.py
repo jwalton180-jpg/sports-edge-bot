@@ -479,25 +479,28 @@ def fetch_sofascore_live_tennis_states(
     timeout: float = 12.0,
 ) -> tuple[TennisLiveScoreState, ...]:
     fetched_at = datetime.now(timezone.utc)
+    headers = {
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.sofascore.com/",
+        "Origin": "https://www.sofascore.com",
+    }
     try:
-        response = requests.get(
+        # SofaScore's public JSON sits behind a browser-oriented WAF. A normal
+        # datacenter requests fingerprint can be rejected even when the exact
+        # same endpoint is available in the browser. curl_cffi impersonates the
+        # browser TLS/HTTP fingerprint while remaining read-only.
+        from curl_cffi import requests as browser_requests
+
+        response = browser_requests.get(
             SOFASCORE_TENNIS_LIVE_URL,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/140.0 Safari/537.36"
-                ),
-                "Accept": "application/json,text/plain,*/*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.sofascore.com/",
-                "Origin": "https://www.sofascore.com",
-            },
+            headers=headers,
+            impersonate="chrome",
             timeout=timeout,
         )
         response.raise_for_status()
         return parse_sofascore_live_tennis_states(response.json(), fetched_at=fetched_at)
-    except (requests.RequestException, ValueError, TypeError):
+    except Exception:
         return ()
 
 def fetch_espn_live_tennis_states(
