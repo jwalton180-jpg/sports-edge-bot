@@ -30,6 +30,12 @@ jobs:
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/itf/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp-challenger/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/challenger/scoreboard'
+          probe 'https://www.tennislive.net/'
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennislive.net/' -o /tmp/tennislive
+          echo 'TENNISLIVE_TARGETS'
+          grep -in -C 4 -E 'Justo|Comesana|M15 Quito|Antofagasta|Victor Bini|Patricio Alvarado' /tmp/tennislive | head -220 || true
+          echo 'TENNISLIVE_TABLE_CONTEXT'
+          grep -in -C 8 -E 'live|score|match|tournament' /tmp/tennislive | head -220 || true
           probe 'https://www.livescores.com/tennis/atp-challenger/antofagasta-chile/'
           probe 'https://www.atptour.com/en/scores/current-challenger'
           probe 'https://www.atptour.com/en/scores/current-challenger/antofagasta/2825/live-scores'
