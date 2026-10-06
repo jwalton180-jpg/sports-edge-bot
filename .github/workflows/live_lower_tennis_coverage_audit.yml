@@ -22,6 +22,8 @@ jobs:
         run: |
           python - <<'PY'
           from collections import Counter
+          import requests
+          import re
           from sports_edge.data.tennis_live import (
               fetch_live_tennis_states,
               fetch_open_tennis_match_markets,
@@ -31,6 +33,18 @@ jobs:
           from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
           from sports_edge.models.kalshi_sports import group_kalshi_sports
           from sports_edge.models.tennis_live_reversal import build_tennis_reversal_radar
+
+          calendar = requests.get(
+              "https://kalshi.com/calendar",
+              headers={"User-Agent":"Mozilla/5.0","Accept":"text/html,*/*"},
+              timeout=15,
+          )
+          print("KALSHI_CALENDAR_STATUS", calendar.status_code, "LEN", len(calendar.text))
+          lower = calendar.text.lower()
+          pos = lower.find("macias")
+          print("KALSHI_CALENDAR_MACIAS_POS", pos)
+          if pos >= 0:
+              print("KALSHI_CALENDAR_SNIPPET", re.sub(r"\\s+", " ", calendar.text[max(0,pos-1500):pos+3000]))
 
           markets=list(fetch_open_tennis_match_markets())
           grouped=group_kalshi_sports(markets)
