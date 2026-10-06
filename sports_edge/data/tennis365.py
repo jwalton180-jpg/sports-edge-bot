@@ -95,10 +95,11 @@ def _set_scores(block: str, class_name: str, needed: int) -> tuple[int, ...]:
         flags=re.I | re.S,
     )
     text = wrapper.group(1) if wrapper else block
+    side = "home" if "home" in class_name.lower() else "away"
     values = [
         _int_text(_clean_html_text(raw))
         for raw in re.findall(
-            r'<span\b[^>]*class=["\'][^"\']*\btennis_(?:home|away)_set_design\b[^"\']*["\'][^>]*>(.*?)</span>',
+            rf'<span\b[^>]*class=["\'][^"\']*\btennis_{side}_set_design\b[^"\']*["\'][^>]*>(.*?)</span>',
             text,
             flags=re.I | re.S,
         )
