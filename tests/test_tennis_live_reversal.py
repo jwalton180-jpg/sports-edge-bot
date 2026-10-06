@@ -352,6 +352,45 @@ def test_one_candle_bounce_is_not_a_deep_reversal():
     assert any("multi-candle" in warning.lower() for warning in sig.warnings)
 
 
+def test_cross_feed_score_conflict_blocks_deep_promotion():
+    state = replace(
+        _deep_state(),
+        score_sources=("ESPN", "SofaScore"),
+        score_conflict=True,
+    )
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        _deep_reversal_candles(),
+        live_state=state,
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status != "DEEP REVERSAL"
+    assert sig.score_conflict
+    assert sig.score_sources == ("ESPN", "SofaScore")
+    assert any("feeds disagree" in warning.lower() for warning in sig.warnings)
+
+
+def test_unique_participant_pair_fallback_handles_adjacent_feed_date():
+    leg = _deep_leg()
+    state = replace(
+        _deep_state(),
+        event_id=canonical_event_id(
+            "Tennis", "Rigele TE", "Adam Walton", "2026-10-06"
+        ),
+        score_sources=("SofaScore",),
+    )
+    rows = build_tennis_reversal_radar(
+        [leg],
+        {leg.kalshi_ticker: _deep_reversal_candles()},
+        live_states={(state.event_id, state.selection_key): state},
+        now=NOW,
+    )
+    assert len(rows) == 1
+    assert rows[0].status == "DEEP REVERSAL"
+    assert rows[0].score_sources == ("SofaScore",)
+
+
 def test_radar_ranks_deep_reversal_above_generic_signal():
     deep_leg = _deep_leg()
     generic = _leg(
