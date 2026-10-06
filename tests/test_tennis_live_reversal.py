@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from sports_edge.data.tennis_live import TennisLiveScoreState
@@ -287,6 +288,27 @@ def test_deep_turnaround_is_blocked_when_current_deciding_set_score_reverses_aga
     assert sig is not None
     assert sig.status == "PASS"
     assert any("net-break/game state materially contradicts" in warning for warning in sig.warnings)
+
+
+def test_tiebreak_without_point_score_cannot_be_promoted_to_deep_reversal():
+    state = replace(
+        _deep_state(),
+        player_games=6,
+        opponent_games=6,
+        current_set_lead=0,
+        net_break_advantage=0,
+        at_tiebreak=True,
+    )
+    sig = assess_tennis_reversal(
+        _deep_leg(),
+        _deep_reversal_candles(),
+        live_state=state,
+        now=NOW,
+    )
+    assert sig is not None
+    assert sig.status != "DEEP REVERSAL"
+    assert sig.at_tiebreak
+    assert any("tiebreak point score" in warning.lower() for warning in sig.warnings)
 
 
 def test_deep_reversal_is_blocked_by_wide_executable_spread():
