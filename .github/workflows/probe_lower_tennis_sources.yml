@@ -55,3 +55,27 @@ jobs:
           grep -Eo 'https?://[^"[:space:]<>]+' /tmp/itfsdk | sort -u | head -160 || true
           echo 'ITF_SDK_API_TOKENS'
           grep -Eo '.{0,100}(graphql|api/|liveScore|live-score|matches|events|tournament|stadion).{0,180}' /tmp/itfsdk | head -180 || true
+          echo 'ITF_API_LIVE_LIST'
+          api='https://api.itf-production.sports-data.stadion.io/custom/wttCompleteMatchList/2026-10-06'
+          code=$(curl -L -sS --max-time 15 -o /tmp/itfapi -w '%{http_code}' "$api")
+          echo "ITF_API_STATUS $code BYTES $(wc -c < /tmp/itfapi)"
+          grep -io -C 2 -E 'Macias|De Dios|Darwin Andres|Felipe' /tmp/itfapi | head -120 || true
+          python - <<'PY'
+          import json
+          p='/tmp/itfapi'
+          try:
+              data=json.load(open(p))
+          except Exception as exc:
+              print('ITF_API_JSON_ERROR',type(exc).__name__,str(exc)[:120])
+              raise SystemExit(0)
+          def walk(x):
+              if isinstance(x,dict):
+                  blob=' '.join(str(v) for v in x.values() if isinstance(v,(str,int,float)))
+                  if 'macias' in blob.lower() or 'de dios' in blob.lower():
+                      print('ITF_API_TARGET_OBJECT',json.dumps(x,ensure_ascii=False)[:8000])
+                  for v in x.values(): walk(v)
+              elif isinstance(x,list):
+                  for v in x: walk(v)
+          print('ITF_API_ROOT_TYPE',type(data).__name__)
+          walk(data)
+          PY
