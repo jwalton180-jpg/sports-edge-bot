@@ -8,6 +8,7 @@ from sports_edge.core.math import clamp
 from sports_edge.data.tennis_live import TennisLiveScoreState
 from sports_edge.models.event_identity import canonical_participant
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
+from sports_edge.models.tennis_live_probability import estimate_live_match_probability
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,8 @@ class TennisPricePoint:
     high: float
     low: float
     volume: float
+    spread: float | None = None
+    quoted: bool = False
 
 
 @dataclass(frozen=True)
@@ -40,9 +43,17 @@ class TennisReversalSignal:
     latest_age_s: float
     confirmed_live: bool
     live_score: str | None
+    live_probability: float | None
+    live_edge_points: float | None
     score_turnaround: bool
     deciding_set: bool
     current_set_lead: int
+    serving: bool | None
+    net_break_advantage: int | None
+    best_of: int
+    recovery_confirmations: int
+    current_spread_points: float | None
+    quote_quality: bool
     h2h_context: bool
     trend_context: bool
     score: float
@@ -72,11 +83,12 @@ def _f(value, default: float = 0.0) -> float:
 
 
 def executable_path(candles: tuple[dict, ...] | list[dict], side: str) -> tuple[TennisPricePoint, ...]:
-    """Convert Kalshi 1-minute candles into executable side prices.
+    """Convert Kalshi candles into executable side prices plus quote quality.
 
-    YES uses the YES ask. NO ask is implied as 1 - YES bid.
-    Trade-price OHLC is used only as a conservative fallback if quote OHLC is
-    absent.
+    YES uses the YES ask. NO ask is implied as 1 - YES bid. A point is marked
+    quoted only when both executable ask and opposite-side-derived bid exist;
+    trade-price fallback remains usable for WATCH diagnostics but cannot by
+    itself satisfy the stronger reversal promotion gates.
     """
     side = str(side or "YES").upper()
     out: list[TennisPricePoint] = []
@@ -90,12 +102,18 @@ def executable_path(candles: tuple[dict, ...] | list[dict], side: str) -> tuple[
         ask = candle.get("yes_ask") or {}
         bid = candle.get("yes_bid") or {}
 
+        ask_close = _p(ask.get("close_dollars"))
+        bid_close = _p(bid.get("close_dollars"))
+        quoted = ask_close is not None and bid_close is not None
+        spread = None
+
         if side == "YES":
-            close = _p(ask.get("close_dollars")) or _p(price.get("close_dollars"))
+            close = ask_close or _p(price.get("close_dollars"))
             high = _p(ask.get("high_dollars")) or _p(price.get("high_dollars")) or close
             low = _p(ask.get("low_dollars")) or _p(price.get("low_dollars")) or close
+            if quoted:
+                spread = max(0.0, ask_close - bid_close)
         else:
-            bid_close = _p(bid.get("close_dollars"))
             bid_high = _p(bid.get("high_dollars"))
             bid_low = _p(bid.get("low_dollars"))
             close = (1.0 - bid_close) if bid_close is not None else None
@@ -105,6 +123,10 @@ def executable_path(candles: tuple[dict, ...] | list[dict], side: str) -> tuple[
                 trade_close = _p(price.get("close_dollars"))
                 close = (1.0 - trade_close) if trade_close is not None else None
                 high = low = close
+            if quoted:
+                no_ask = 1.0 - bid_close
+                no_bid = 1.0 - ask_close
+                spread = max(0.0, no_ask - no_bid)
 
         if close is None:
             continue
@@ -119,12 +141,13 @@ def executable_path(candles: tuple[dict, ...] | list[dict], side: str) -> tuple[
                 high=high,
                 low=low,
                 volume=max(0.0, _f(candle.get("volume_fp"), 0.0)),
+                spread=spread,
+                quoted=quoted,
             )
         )
 
     out.sort(key=lambda row: row.end_ts)
     return tuple(out)
-
 
 def _drawdown(path: tuple[TennisPricePoint, ...]) -> tuple[float, float, int, float]:
     if not path:
