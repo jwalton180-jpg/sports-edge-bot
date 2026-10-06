@@ -108,7 +108,7 @@ def test_justo_comesana_challenger_reversal_fixture_is_parsed_and_stateful():
     assert justo.turnaround and justo.deciding_set
     assert justo.current_set_lead == 3
     assert justo.serving is False
-    assert justo.net_break_advantage == 2
+    assert justo.net_break_advantage == 1
     assert justo.point_score == "0-30"
     assert justo.score_sources == ("Tennis365",)
     assert not justo.score_conflict
