@@ -21,6 +21,7 @@ def _competition(*, state="in", completed=False, period=3):
         "competitors": [
             {
                 "athlete": {"displayName": "Adam Walton"},
+                "possession": False,
                 "linescores": [
                     {"value": 7, "winner": True},
                     {"value": 3, "winner": False},
@@ -29,6 +30,7 @@ def _competition(*, state="in", completed=False, period=3):
             },
             {
                 "athlete": {"displayName": "Te Rigele"},
+                "possession": True,
                 "linescores": [
                     {"value": 5, "winner": False},
                     {"value": 6, "winner": True},
@@ -39,11 +41,12 @@ def _competition(*, state="in", completed=False, period=3):
     }
 
 
-def _payload(comp):
+def _payload(comp, *, major=False):
     return {
         "events": [
             {
                 "name": "Rolex Shanghai Masters",
+                "major": major,
                 "status": {
                     "type": {"state": "post", "completed": True},
                 },
@@ -77,9 +80,55 @@ def test_parser_uses_nested_match_status_not_tournament_status():
     assert rig.opponent_sets == 1
     assert rig.turnaround
     assert rig.deciding_set
+    assert rig.best_of == 3
+    assert rig.sets_to_win == 2
+    assert rig.serving is True
+    assert rig.net_break_advantage == 1
     assert rig.current_set_lead == 2
     assert "7-5" in rig.score_label
     assert "3-6" in rig.score_label
+
+def test_parser_does_not_call_set_three_deciding_in_mens_major_best_of_five():
+    rows = parse_espn_live_tennis_states(
+        _payload(_competition(period=3), major=True),
+        tour="ATP",
+        fetched_at=NOW,
+    )
+    rig = next(row for row in rows if row.player == "Te Rigele")
+    assert rig.best_of == 5
+    assert rig.sets_to_win == 3
+    assert rig.player_sets == 1
+    assert rig.opponent_sets == 1
+    assert not rig.deciding_set
+
+
+def test_parser_recognizes_true_fifth_set_decider_in_mens_major():
+    comp = _competition(period=5)
+    comp["competitors"][0]["linescores"] = [
+        {"value": 7, "winner": True},
+        {"value": 3, "winner": False},
+        {"value": 6, "winner": True},
+        {"value": 4, "winner": False},
+        {"value": 1},
+    ]
+    comp["competitors"][1]["linescores"] = [
+        {"value": 5, "winner": False},
+        {"value": 6, "winner": True},
+        {"value": 2, "winner": False},
+        {"value": 6, "winner": True},
+        {"value": 3},
+    ]
+    rows = parse_espn_live_tennis_states(
+        _payload(comp, major=True),
+        tour="ATP",
+        fetched_at=NOW,
+    )
+    rig = next(row for row in rows if row.player == "Te Rigele")
+    assert rig.best_of == 5
+    assert rig.player_sets == 2
+    assert rig.opponent_sets == 2
+    assert rig.deciding_set
+    assert rig.current_set_lead == 2
 
 
 def test_parser_excludes_completed_match():
