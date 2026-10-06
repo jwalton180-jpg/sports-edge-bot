@@ -8,6 +8,7 @@ import time
 import requests
 
 from sports_edge.data.kalshi import KalshiPublicClient
+from sports_edge.data.tennis365 import Tennis365LiveMatch, fetch_tennis365_live_matches
 from sports_edge.models.event_identity import canonical_event_id, canonical_participant
 
 
@@ -15,7 +16,6 @@ ESPN_TENNIS_SCOREBOARDS = (
     ("ATP", "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard"),
     ("WTA", "https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard"),
 )
-SOFASCORE_TENNIS_LIVE_URL = "https://api.sofascore.com/api/v1/sport/tennis/events/live"
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,7 @@ class TennisLiveScoreState:
     point_score: str | None = None
     score_sources: tuple[str, ...] = ()
     score_conflict: bool = False
+    source_url: str | None = None
 
 
 def _iso_date(value) -> str | None:
@@ -269,239 +270,96 @@ def parse_espn_live_tennis_states(
     return tuple(dedup.values())
 
 
-def _sofascore_int(value) -> int | None:
-    try:
-        if value is None or value == "":
-            return None
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
-
-
-def _sofascore_period(event: dict) -> int:
-    raw = str(event.get("lastPeriod") or "").strip().lower()
-    if raw.startswith("period"):
-        try:
-            return max(1, int(raw.removeprefix("period")))
-        except ValueError:
-            pass
-    description = str((event.get("status") or {}).get("description") or "").lower()
-    for period in range(5, 0, -1):
-        if f"{period}" in description and "set" in description:
-            return period
-    scores = (event.get("homeScore") or {}, event.get("awayScore") or {})
-    observed = [
-        period
-        for period in range(1, 6)
-        if any(_sofascore_int(score.get(f"period{period}")) is not None for score in scores)
-    ]
-    return max(observed) if observed else 1
-
-
-def _sofascore_tour(event: dict) -> str:
-    tournament = event.get("tournament") or {}
-    category = tournament.get("category") or {}
-    flag = str(category.get("flag") or category.get("slug") or "").lower()
-    name = str(tournament.get("name") or "").lower()
-    if "itf-women" in flag or ("itf" in name and "women" in name):
-        return "ITF-W"
-    if "itf" in flag or "itf" in name:
-        return "ITF"
-    if "challenger" in flag or "challenger" in name:
-        return "CHALLENGER"
-    gender = str((event.get("homeTeam") or {}).get("gender") or "").upper()
-    return "WTA" if gender == "F" else "ATP"
-
-
-def _sofascore_current_server(event: dict, period: int) -> tuple[bool | None, bool | None]:
-    """Return (home_serving, away_serving) from first-server + game parity.
-
-    SofaScore exposes firstToServe as 1=home, 2=away when its feed knows
-    service order. Serve alternates by completed game across sets, so total
-    completed-game parity identifies the server of the current game. If the
-    field is absent, fail soft rather than inventing service ownership.
-    """
-    first = _sofascore_int(event.get("firstToServe"))
-    if first not in {1, 2}:
-        return None, None
-    home_score = event.get("homeScore") or {}
-    away_score = event.get("awayScore") or {}
-    completed_games = 0
-    for set_no in range(1, max(1, period) + 1):
-        home_games = _sofascore_int(home_score.get(f"period{set_no}"))
-        away_games = _sofascore_int(away_score.get(f"period{set_no}"))
-        if home_games is not None:
-            completed_games += home_games
-        if away_games is not None:
-            completed_games += away_games
-    first_home = first == 1
-    home_serving = first_home if completed_games % 2 == 0 else not first_home
-    return home_serving, not home_serving
-
-
-def parse_sofascore_live_tennis_states(
-    payload: dict,
+def _tennis365_states_from_matches(
+    matches: tuple[Tennis365LiveMatch, ...] | list[Tennis365LiveMatch],
     *,
     fetched_at: datetime | None = None,
 ) -> tuple[TennisLiveScoreState, ...]:
-    """Parse SofaScore's public live Tennis slate, including Challenger/ITF.
-
-    The feed is used only as read-only match-state corroboration. It never
-    supplies the independent pre-match SportsEdge probability.
-    """
+    """Translate cloud-reachable Tennis365 lower-tour rows into live state."""
     fetched_at = (fetched_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     out: list[TennisLiveScoreState] = []
-
-    for event in (payload or {}).get("events", []) or []:
-        status = event.get("status") or {}
-        if str(status.get("type") or "").lower() != "inprogress":
-            continue
-        filters = event.get("eventFilters") or {}
-        categories = {str(x).lower() for x in (filters.get("category") or [])}
-        home = event.get("homeTeam") or {}
-        away = event.get("awayTeam") or {}
-        if categories and "singles" not in categories:
-            continue
-        if _sofascore_int(home.get("type")) not in {None, 1}:
-            continue
-        if _sofascore_int(away.get("type")) not in {None, 1}:
-            continue
-
-        names = [str(home.get("name") or "").strip(), str(away.get("name") or "").strip()]
-        if not all(names) or any("/" in name for name in names):
-            continue
-        try:
-            start_ts = int(event.get("startTimestamp"))
-            event_date = datetime.fromtimestamp(start_ts, tz=timezone.utc).date().isoformat()
-        except (TypeError, ValueError, OSError):
-            continue
-
-        period = _sofascore_period(event)
-        home_score = event.get("homeScore") or {}
-        away_score = event.get("awayScore") or {}
-        sets = [
-            (
-                _sofascore_int(home_score.get(f"period{set_no}")),
-                _sofascore_int(away_score.get(f"period{set_no}")),
-            )
-            for set_no in range(1, period + 1)
-        ]
-        completed_sets = sets[: max(0, period - 1)]
+    for match in matches:
+        event_date = (match.start_at or fetched_at).astimezone(timezone.utc).date().isoformat()
+        names = (match.home, match.away)
+        event_id = canonical_event_id("Tennis", names[0], names[1], event_date)
         set_winners: list[int | None] = []
-        for home_games, away_games in completed_sets:
-            if home_games is None or away_games is None or home_games == away_games:
+        for home_games, away_games in match.completed_sets:
+            if home_games == away_games:
                 set_winners.append(None)
             else:
                 set_winners.append(0 if home_games > away_games else 1)
 
-        current_home, current_away = sets[period - 1] if sets else (None, None)
-        score_parts = [
-            f"{home_games if home_games is not None else '-'}-{away_games if away_games is not None else '-'}"
-            for home_games, away_games in sets
-            if home_games is not None or away_games is not None
-        ]
-        pair_score = " · ".join(score_parts) if score_parts else f"Set {period}"
-        point_home = str(home_score.get("point") or "").strip() or None
-        point_away = str(away_score.get("point") or "").strip() or None
-        point_score = (
-            f"{point_home or '0'}-{point_away or '0'}"
-            if point_home is not None or point_away is not None
-            else None
-        )
-
-        tour = _sofascore_tour(event)
-        # Lower tours and WTA are best-of-three. ATP best-of-five is left to
-        # ESPN where Grand Slam format metadata is stronger; duplicate merges
-        # below prefer the agreeing ESPN structural state.
-        best_of = 3
-        sets_to_win = 2
-        home_serving, away_serving = _sofascore_current_server(event, period)
-        serving_flags = (home_serving, away_serving)
-        current_games = (current_home, current_away)
-        event_id = canonical_event_id("Tennis", names[0], names[1], event_date)
+        score_parts = [f"{a}-{b}" for a, b in match.completed_sets]
+        score_parts.append(f"{match.home_games}-{match.away_games}")
+        pair_score = " · ".join(score_parts)
+        serving_flags = (match.home_serving, match.away_serving)
+        current_games = (match.home_games, match.away_games)
+        points = (match.home_point, match.away_point)
 
         for player_i in (0, 1):
             opp_i = 1 - player_i
             player_sets = sum(1 for winner in set_winners if winner == player_i)
             opponent_sets = sum(1 for winner in set_winners if winner == opp_i)
+            # Trust both the completed-set reconstruction and Tennis365's sets
+            # totals. A mismatch means the row is internally inconsistent.
+            expected_sets = match.home_sets if player_i == 0 else match.away_sets
+            expected_opp_sets = match.away_sets if player_i == 0 else match.home_sets
+            score_conflict = (
+                player_sets != expected_sets or opponent_sets != expected_opp_sets
+            )
             lost_first = bool(set_winners and set_winners[0] == opp_i)
             latest_won = bool(set_winners and set_winners[-1] == player_i)
             player_games = current_games[player_i]
             opponent_games = current_games[opp_i]
-            current_lead = (
-                player_games - opponent_games
-                if player_games is not None and opponent_games is not None
-                else 0
-            )
             serving = serving_flags[player_i]
-            net_break_advantage = _net_break_advantage(
+            net_break = _net_break_advantage(
                 player_games, opponent_games, player_serving=serving
             )
-            deciding = (
-                period == best_of
-                and player_sets == opponent_sets == sets_to_win - 1
-            )
-            out.append(
-                TennisLiveScoreState(
-                    event_id=event_id,
-                    selection_key=canonical_participant("Tennis", names[player_i]),
-                    player=names[player_i],
-                    opponent=names[opp_i],
-                    tour=tour,
-                    period=period,
-                    player_sets=player_sets,
-                    opponent_sets=opponent_sets,
-                    player_games=player_games,
-                    opponent_games=opponent_games,
-                    lost_first_set=lost_first,
-                    won_latest_completed_set=latest_won,
-                    turnaround=lost_first and latest_won,
-                    deciding_set=deciding,
-                    current_set_lead=current_lead,
-                    score_label=f"{names[0]} vs {names[1]} · {pair_score}",
-                    fetched_at=fetched_at,
-                    best_of=best_of,
-                    sets_to_win=sets_to_win,
-                    serving=serving,
-                    net_break_advantage=net_break_advantage,
-                    at_tiebreak=current_home == 6 and current_away == 6,
-                    point_score=point_score,
-                    score_sources=("SofaScore",),
-                )
-            )
-
+            point_score = None
+            if points[player_i] is not None or points[opp_i] is not None:
+                point_score = f"{points[player_i] or '0'}-{points[opp_i] or '0'}"
+            out.append(TennisLiveScoreState(
+                event_id=event_id,
+                selection_key=canonical_participant("Tennis", names[player_i]),
+                player=names[player_i],
+                opponent=names[opp_i],
+                tour=match.tour,
+                period=match.period,
+                player_sets=player_sets,
+                opponent_sets=opponent_sets,
+                player_games=player_games,
+                opponent_games=opponent_games,
+                lost_first_set=lost_first,
+                won_latest_completed_set=latest_won,
+                turnaround=lost_first and latest_won,
+                deciding_set=(
+                    match.period == 3 and player_sets == opponent_sets == 1
+                ),
+                current_set_lead=player_games - opponent_games,
+                score_label=f"{names[0]} vs {names[1]} · {pair_score}",
+                fetched_at=fetched_at,
+                best_of=3,
+                sets_to_win=2,
+                serving=serving,
+                net_break_advantage=net_break,
+                at_tiebreak=player_games == 6 and opponent_games == 6,
+                point_score=point_score,
+                score_sources=("Tennis365",),
+                score_conflict=score_conflict,
+                source_url=match.source_url,
+            ))
     dedup = {(row.event_id, row.selection_key): row for row in out}
     return tuple(dedup.values())
 
 
-def fetch_sofascore_live_tennis_states(
+def fetch_tennis365_live_tennis_states(
     *,
     timeout: float = 12.0,
 ) -> tuple[TennisLiveScoreState, ...]:
-    fetched_at = datetime.now(timezone.utc)
-    headers = {
-        "Accept": "application/json,text/plain,*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.sofascore.com/",
-        "Origin": "https://www.sofascore.com",
-    }
-    try:
-        # SofaScore's public JSON sits behind a browser-oriented WAF. A normal
-        # datacenter requests fingerprint can be rejected even when the exact
-        # same endpoint is available in the browser. curl_cffi impersonates the
-        # browser TLS/HTTP fingerprint while remaining read-only.
-        from curl_cffi import requests as browser_requests
-
-        response = browser_requests.get(
-            SOFASCORE_TENNIS_LIVE_URL,
-            headers=headers,
-            impersonate="chrome",
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        return parse_sofascore_live_tennis_states(response.json(), fetched_at=fetched_at)
-    except Exception:
-        return ()
+    return _tennis365_states_from_matches(
+        fetch_tennis365_live_matches(timeout=timeout),
+        fetched_at=datetime.now(timezone.utc),
+    )
 
 def fetch_espn_live_tennis_states(
     *,
@@ -583,28 +441,26 @@ def fetch_live_tennis_states(
     *,
     timeout: float = 12.0,
 ) -> tuple[TennisLiveScoreState, ...]:
-    """Fetch and merge ESPN + SofaScore Tennis state.
+    """Fetch ESPN ATP/WTA plus Tennis365 Challenger/ITF live state.
 
-    ESPN remains the preferred ATP/WTA structural feed. SofaScore expands
-    coverage to Challenger/ITF and supplies lower-tour state. When both feeds
-    identify the same physical match they must agree on sets/games; otherwise
-    the state is flagged as conflicting so strong reversal promotion fails
-    closed rather than trusting whichever response arrived last.
+    ESPN remains preferred where it has ATP/WTA coverage. Tennis365 is the
+    cloud-reachable lower-tour source. If two sources ever identify the same
+    physical match, structural disagreement is retained as a fail-closed flag.
     """
     with ThreadPoolExecutor(max_workers=2) as pool:
         espn_future = pool.submit(fetch_espn_live_tennis_states, timeout=timeout)
-        sofa_future = pool.submit(fetch_sofascore_live_tennis_states, timeout=timeout)
+        lower_future = pool.submit(fetch_tennis365_live_tennis_states, timeout=timeout)
         try:
             espn = tuple(espn_future.result())
         except Exception:
             espn = ()
         try:
-            sofa = tuple(sofa_future.result())
+            lower = tuple(lower_future.result())
         except Exception:
-            sofa = ()
+            lower = ()
 
     merged: dict[tuple[str, str], TennisLiveScoreState] = {}
-    for row in sofa:
+    for row in lower:
         merged[(row.event_id, row.selection_key)] = row
     for row in espn:
         key = (row.event_id, row.selection_key)
