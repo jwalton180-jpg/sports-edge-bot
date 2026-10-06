@@ -206,6 +206,29 @@ def assess_tennis_reversal(
     momentum_ref = path[max(0, len(path) - 4)].close
     momentum = current - momentum_ref
     recent_volume = sum(x.volume for x in path[max(0, trough_i):])
+    post_trough = path[trough_i:]
+    recovery_confirmations = sum(
+        1
+        for previous, observed in zip(post_trough, post_trough[1:])
+        if observed.close - previous.close >= 0.005
+    )
+    sustained_recovery = (
+        len(post_trough) >= 3
+        and recovery_confirmations >= 2
+        and len(path) >= 2
+        and latest.close >= path[-2].close
+    )
+    current_spread_points = (
+        latest.spread * 100.0
+        if latest.spread is not None
+        else None
+    )
+    spread_limit = min(0.08, max(0.04, current * 0.45))
+    quote_quality = bool(
+        latest.quoted
+        and latest.spread is not None
+        and latest.spread <= spread_limit
+    )
 
     model_prior = clamp(float(leg.model_probability), 0.01, 0.99)
     prior_gap = model_prior - current
@@ -235,20 +258,51 @@ def assess_tennis_reversal(
     score_turnaround = bool(live_state and live_state.turnaround)
     deciding_set = bool(live_state and live_state.deciding_set)
     current_set_lead = int(live_state.current_set_lead) if live_state else 0
+    serving = live_state.serving if live_state is not None else None
+    net_break_advantage = (
+        live_state.net_break_advantage
+        if live_state is not None
+        else None
+    )
+    best_of = int(live_state.best_of) if live_state is not None else 3
 
-    # A completed-set turnaround is useful corroboration only while the current
-    # deciding-set score is not materially contradicting it. Without this guard,
-    # a player who lost Set 1 and won Set 2 could stay "turnaround=True" even
-    # after falling multiple games behind in Set 3, allowing stale score context
-    # to promote a cheap-price rebound that the live score no longer supports.
-    score_contradiction = deciding_set and current_set_lead <= -2
-    if deciding_set:
+    live_estimate = estimate_live_match_probability(model_prior, live_state)
+    live_probability = live_estimate.probability if live_estimate is not None else None
+    live_edge_points = (
+        (live_probability - current) * 100.0
+        if live_probability is not None
+        else None
+    )
+    deep_live_edge_floor = max(4.0, current * 20.0)
+    generic_live_edge_floor = max(3.0, current * 15.0)
+    live_value_support = bool(
+        live_probability is not None
+        and live_probability >= 0.18
+        and live_edge_points is not None
+        and live_edge_points >= deep_live_edge_floor
+    )
+    generic_live_support = bool(
+        live_probability is not None
+        and live_edge_points is not None
+        and live_edge_points >= generic_live_edge_floor
+    )
+
+    # Net-break state is more informative than raw game lead. A 0-1 score can
+    # simply mean the opponent held serve; being a full break down is the real
+    # contradiction. Fall back to the older deciding-set guard only when ESPN
+    # does not expose the current server and break state cannot be inferred.
+    if net_break_advantage is not None:
+        score_contradiction = net_break_advantage <= -1
         score_support = (
-            (score_turnaround and current_set_lead >= 0)
-            or current_set_lead >= 2
+            (score_turnaround and net_break_advantage >= 0)
+            or net_break_advantage >= 1
         )
     else:
-        score_support = score_turnaround
+        score_contradiction = deciding_set and current_set_lead <= -2
+        score_support = (
+            (score_turnaround and (not deciding_set or current_set_lead >= 0))
+            or (deciding_set and current_set_lead >= 2)
+        )
     deep_price = 0.04 <= current <= 0.25
     deep_drawdown = (
         trough <= 0.12
@@ -258,7 +312,9 @@ def assess_tennis_reversal(
         rebound_points >= 3.0
         and rebound_fraction >= 0.20
         and momentum_points >= 0.5
+        and sustained_recovery
     )
+    strong_price_confirmation = sustained_recovery and quote_quality
     fresh = latest_age <= 150.0
 
     reasons = [
@@ -280,38 +336,67 @@ def assess_tennis_reversal(
         reasons.append("Recent form/serve-return trajectory supports matchup context")
     if recent_volume > 0:
         reasons.append(f"{recent_volume:.0f} contracts traded since the detected trough window")
+    reasons.append(
+        f"Recovery confirmation: {recovery_confirmations} upward post-trough candle step(s); "
+        f"current spread {current_spread_points:.1f}pp"
+        if current_spread_points is not None
+        else f"Recovery confirmation: {recovery_confirmations} upward post-trough candle step(s); no complete executable quote"
+    )
     if live_state is not None:
         reasons.append(f"Live score: {live_state.score_label}")
+        reasons.append(f"Match format: best-of-{best_of}")
+        if live_probability is not None and live_edge_points is not None:
+            reasons.append(
+                f"Score-conditioned live model {live_probability:.1%} vs executable {current:.1%} "
+                f"({live_edge_points:+.1f}pp live edge)"
+            )
+        if serving is not None:
+            reasons.append("Player is serving now" if serving else "Opponent is serving now")
+        if net_break_advantage is not None:
+            reasons.append(f"Net break advantage {net_break_advantage:+d}")
         if score_turnaround:
             reasons.append("Live-score turnaround: lost the opening set, then won the latest completed set")
         if deciding_set:
             reasons.append(
-                f"Deciding-set state {live_state.player_sets}-{live_state.opponent_sets}; "
+                f"True deciding-set state {live_state.player_sets}-{live_state.opponent_sets}; "
                 f"current-set game lead {current_set_lead:+d}"
             )
 
     warnings = list(leg.model_warnings)
-    warnings.append("pregame model probability is a prior, not a live-score fair probability")
+    warnings.append(
+        "live score probability is a structural state-conditioned estimate, not a settlement guarantee"
+    )
+    if live_state is None:
+        warnings.append("detailed live score/server state unavailable; strong reversal promotion blocked")
     if not confirmed_live:
         warnings.append("live match-start/state not independently confirmed; treat as radar WATCH only")
     if latest_age > 150:
         warnings.append("latest Kalshi candle is stale")
+    if not sustained_recovery:
+        warnings.append("price rebound lacks multi-candle persistence")
+    if not quote_quality:
+        warnings.append("executable quote spread is missing or too wide for strong reversal promotion")
+    if live_probability is not None and live_edge_points is not None and live_edge_points <= 0:
+        warnings.append("score-conditioned live model does not support value at the current executable price")
     if score_contradiction:
         warnings.append(
-            "current deciding-set score materially contradicts the earlier turnaround; deep reversal promotion blocked"
+            "current net-break/game state materially contradicts the earlier turnaround; strong reversal promotion blocked"
         )
 
     score = 0.0
-    score += min(24.0, dip_points * 1.35)
-    score += min(20.0, rebound_points * 2.4)
-    score += min(18.0, max(0.0, prior_gap_points) * 0.9)
-    score += 14.0 * model_conf
-    score += 5.0 if h2h else 0.0
-    score += 5.0 if trend else 0.0
-    score += 5.0 if confirmed_live else 0.0
-    score += 7.0 if score_turnaround else 0.0
-    score += 4.0 if deciding_set and current_set_lead >= 2 else 0.0
-    score += 3.0 if recent_volume >= 100 else (1.0 if recent_volume > 0 else 0.0)
+    score += min(22.0, dip_points * 1.2)
+    score += min(18.0, rebound_points * 2.1)
+    score += min(10.0, max(0.0, prior_gap_points) * 0.6)
+    score += min(18.0, max(0.0, live_edge_points or 0.0) * 1.25)
+    score += 12.0 * model_conf
+    score += 4.0 if h2h else 0.0
+    score += 4.0 if trend else 0.0
+    score += 4.0 if confirmed_live else 0.0
+    score += 5.0 if score_turnaround else 0.0
+    score += 5.0 if (net_break_advantage or 0) >= 1 else 0.0
+    score += 4.0 if sustained_recovery else 0.0
+    score += 4.0 if quote_quality else 0.0
+    score += 2.0 if recent_volume >= 100 else (1.0 if recent_volume > 0 else 0.0)
     score = clamp(score, 0.0, 100.0)
 
     # Deep Reversal is the high-payout lane: a true collapse into the 4–25¢
@@ -325,12 +410,27 @@ def assess_tennis_reversal(
         and deep_recovery
         and model_sanity
         and score_support
+        and not score_contradiction
+        and live_value_support
+        and quote_quality
         and fresh
         and confirmed_live
+        and live_state is not None
         and score >= 68
     ):
         status = "DEEP REVERSAL"
-    elif major_dip and reversal and model_support and fresh and confirmed_live and score >= 68:
+    elif (
+        major_dip
+        and reversal
+        and model_sanity
+        and generic_live_support
+        and not score_contradiction
+        and strong_price_confirmation
+        and fresh
+        and confirmed_live
+        and live_state is not None
+        and score >= 68
+    ):
         status = "REVERSAL SIGNAL"
     elif major_dip and reversal and model_support and fresh and score >= 55:
         status = "WATCH"
@@ -357,9 +457,17 @@ def assess_tennis_reversal(
         latest_age_s=latest_age,
         confirmed_live=confirmed_live,
         live_score=live_state.score_label if live_state is not None else None,
+        live_probability=live_probability,
+        live_edge_points=live_edge_points,
         score_turnaround=score_turnaround,
         deciding_set=deciding_set,
         current_set_lead=current_set_lead,
+        serving=serving,
+        net_break_advantage=net_break_advantage,
+        best_of=best_of,
+        recovery_confirmations=recovery_confirmations,
+        current_spread_points=current_spread_points,
+        quote_quality=quote_quality,
         h2h_context=h2h,
         trend_context=trend,
         score=score,
