@@ -30,6 +30,21 @@ jobs:
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/itf/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp-challenger/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/challenger/scoreboard'
+          probe 'https://www.livescores.com/tennis/atp-challenger/antofagasta-chile/'
+          probe 'https://www.atptour.com/en/scores/current-challenger'
+          probe 'https://www.atptour.com/en/scores/current-challenger/antofagasta/2825/live-scores'
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.livescores.com/tennis/atp-challenger/antofagasta-chile/' -o /tmp/livescore
+          echo 'LIVESCORE_TARGET'
+          grep -in -C 3 -E 'Justo|Comesana|Guido|Francisco' /tmp/livescore | head -160 || true
+          echo 'LIVESCORE_SCRIPTS'
+          grep -Eo 'src="[^"]+"' /tmp/livescore | head -120 || true
+          echo 'LIVESCORE_API_HINTS'
+          grep -Eio '.{0,120}(api|graphql|fixture|match|score).{0,180}' /tmp/livescore | head -180 || true
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.atptour.com/en/scores/current-challenger' -o /tmp/atpchall
+          echo 'ATP_CHALL_TARGET'
+          grep -in -C 3 -E 'Justo|Comesana|Antofagasta' /tmp/atpchall | head -160 || true
+          echo 'ATP_CHALL_API_HINTS'
+          grep -Eio '.{0,120}(api|graphql|live.?score|scoreboard|challenger).{0,180}' /tmp/atpchall | head -180 || true
           probe 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-006/'
           probe 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-007/'
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.itftennis.com/en/tournament/m15-quito/ecu/2026/m-itf-ecu-2026-007/' -o /tmp/itf007
