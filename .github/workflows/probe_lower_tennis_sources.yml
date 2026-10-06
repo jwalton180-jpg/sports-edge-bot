@@ -30,6 +30,14 @@ jobs:
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/itf/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp-challenger/scoreboard'
           probe 'https://site.api.espn.com/apis/site/v2/sports/tennis/challenger/scoreboard'
+          probe 'https://www.tennisexplorer.com/live/'
+          probe 'https://www.tennisendirect.net/'
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisexplorer.com/live/' -o /tmp/texplorer
+          echo 'TENNISEXPLORER_TARGETS'
+          grep -in -C 5 -E 'M15 Quito|Quito|Antofagasta|Justo|Comesana|Bini|Alvarado|ITF' /tmp/texplorer | head -260 || true
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisendirect.net/' -o /tmp/tendirect
+          echo 'TENNISENDIRECT_TARGETS'
+          grep -in -C 5 -E 'M15 Quito|Quito|Antofagasta|Justo|Comesana|Bini|Alvarado|ITF' /tmp/tendirect | head -260 || true
           probe 'https://www.tennislive.net/'
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennislive.net/' -o /tmp/tennislive
           echo 'TENNISLIVE_TARGETS'
