@@ -242,6 +242,65 @@ def test_cross_feed_structural_disagreement_is_flagged_fail_closed():
     assert merged.score_sources == ("ESPN", "SofaScore")
 
 
+
+def _sofa_antofagasta_payload(*, first_to_serve=None):
+    event = {
+        "status": {"code": 10, "description": "3rd set", "type": "inprogress"},
+        "tournament": {
+            "name": "ATP Challenger Antofagasta",
+            "category": {"name": "Challenger", "slug": "challenger", "flag": "challenger"},
+        },
+        "eventFilters": {"category": ["singles"], "level": ["pro"], "tournament": ["challenger"], "gender": ["M"]},
+        "homeTeam": {"name": "Guido Ivan Justo", "gender": "M", "type": 1},
+        "awayTeam": {"name": "Francisco Comesana", "gender": "M", "type": 1},
+        "homeScore": {
+            "current": 1, "display": 1, "period1": 6, "period2": 7, "period3": 4, "point": "0"
+        },
+        "awayScore": {
+            "current": 1, "display": 1, "period1": 7, "period2": 6, "period3": 1, "point": "0"
+        },
+        "lastPeriod": "period3",
+        "startTimestamp": 1791313200,
+        "id": 17270001,
+    }
+    if first_to_serve is not None:
+        event["firstToServe"] = first_to_serve
+    return {"events": [event]}
+
+
+def test_sofascore_parser_covers_justo_comesana_challenger_reversal_state():
+    rows = parse_sofascore_live_tennis_states(
+        _sofa_antofagasta_payload(),
+        fetched_at=NOW,
+    )
+    assert len(rows) == 2
+    justo = next(row for row in rows if row.player == "Guido Ivan Justo")
+    assert justo.tour == "CHALLENGER"
+    assert justo.player_sets == 1
+    assert justo.opponent_sets == 1
+    assert justo.lost_first_set
+    assert justo.won_latest_completed_set
+    assert justo.turnaround
+    assert justo.deciding_set
+    assert justo.player_games == 4
+    assert justo.opponent_games == 1
+    assert justo.current_set_lead == 3
+    assert justo.score_sources == ("SofaScore",)
+    assert "6-7" in justo.score_label
+    assert "7-6" in justo.score_label
+    assert "4-1" in justo.score_label
+
+
+def test_justo_comesana_server_context_infers_break_control_when_available():
+    rows = parse_sofascore_live_tennis_states(
+        _sofa_antofagasta_payload(first_to_serve=2),
+        fetched_at=NOW,
+    )
+    justo = next(row for row in rows if row.player == "Guido Ivan Justo")
+    assert justo.serving is False
+    assert justo.net_break_advantage == 2
+
+
 def test_parser_excludes_completed_match():
     rows = parse_espn_live_tennis_states(
         _payload(_competition(state="post", completed=True)),
