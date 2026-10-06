@@ -47,3 +47,11 @@ jobs:
           grep -Eo 'href="[^"]+"' /tmp/itflive | grep -Ei 'api|score|live|match|json|js' | head -120 || true
           echo 'ITF_LIVE_KEYWORDS'
           grep -in -E 'tourkey|score|match|signalr|socket|api' /tmp/itflive | head -160 || true
+          echo 'ITF_WIDGET_CONTEXT'
+          grep -in -C 8 -E 'stadion|itf-widget|widget-sdk|tourkey' /tmp/itflive | head -180 || true
+          curl -L -sS --max-time 20 'https://widgets.itf-production.sports-data.stadion.io/itf-widget-sdk.umd.js' -o /tmp/itfsdk
+          echo "ITF_SDK_BYTES $(wc -c < /tmp/itfsdk)"
+          echo 'ITF_SDK_URLS'
+          grep -Eo 'https?://[^"[:space:]<>]+' /tmp/itfsdk | sort -u | head -160 || true
+          echo 'ITF_SDK_API_TOKENS'
+          grep -Eo '.{0,100}(graphql|api/|liveScore|live-score|matches|events|tournament|stadion).{0,180}' /tmp/itfsdk | head -180 || true
