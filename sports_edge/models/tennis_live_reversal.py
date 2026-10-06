@@ -51,6 +51,7 @@ class TennisReversalSignal:
     serving: bool | None
     net_break_advantage: int | None
     best_of: int
+    at_tiebreak: bool
     recovery_confirmations: int
     current_spread_points: float | None
     quote_quality: bool
@@ -265,6 +266,7 @@ def assess_tennis_reversal(
         else None
     )
     best_of = int(live_state.best_of) if live_state is not None else 3
+    at_tiebreak = bool(live_state and live_state.at_tiebreak)
 
     live_estimate = estimate_live_match_probability(model_prior, live_state)
     live_probability = live_estimate.probability if live_estimate is not None else None
@@ -273,8 +275,10 @@ def assess_tennis_reversal(
         if live_probability is not None
         else None
     )
-    deep_live_edge_floor = max(4.0, current * 20.0)
-    generic_live_edge_floor = max(3.0, current * 15.0)
+    # ESPN does not provide reliable point score inside the current game, so
+    # demand a margin large enough to absorb that hidden-state uncertainty.
+    deep_live_edge_floor = max(5.0, current * 25.0)
+    generic_live_edge_floor = max(4.0, current * 20.0)
     live_value_support = bool(
         live_probability is not None
         and live_probability >= 0.18
@@ -378,6 +382,10 @@ def assess_tennis_reversal(
         warnings.append("executable quote spread is missing or too wide for strong reversal promotion")
     if live_probability is not None and live_edge_points is not None and live_edge_points <= 0:
         warnings.append("score-conditioned live model does not support value at the current executable price")
+    if at_tiebreak:
+        warnings.append(
+            "tiebreak point score is unavailable from the live feed; strong reversal promotion blocked"
+        )
     if score_contradiction:
         warnings.append(
             "current net-break/game state materially contradicts the earlier turnaround; strong reversal promotion blocked"
@@ -413,6 +421,7 @@ def assess_tennis_reversal(
         and not score_contradiction
         and live_value_support
         and quote_quality
+        and not at_tiebreak
         and fresh
         and confirmed_live
         and live_state is not None
@@ -426,13 +435,21 @@ def assess_tennis_reversal(
         and generic_live_support
         and not score_contradiction
         and strong_price_confirmation
+        and not at_tiebreak
         and fresh
         and confirmed_live
         and live_state is not None
         and score >= 68
     ):
         status = "REVERSAL SIGNAL"
-    elif major_dip and reversal and model_support and fresh and score >= 55:
+    elif (
+        major_dip
+        and reversal
+        and model_sanity
+        and fresh
+        and (model_support or generic_live_support or live_value_support)
+        and score >= 55
+    ):
         status = "WATCH"
     else:
         status = "PASS"
@@ -465,6 +482,7 @@ def assess_tennis_reversal(
         serving=serving,
         net_break_advantage=net_break_advantage,
         best_of=best_of,
+        at_tiebreak=at_tiebreak,
         recovery_confirmations=recovery_confirmations,
         current_spread_points=current_spread_points,
         quote_quality=quote_quality,
