@@ -51,6 +51,26 @@ jobs:
                   shown+=1
                   if shown>=180: break
           PY
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisexplorer.com/antofagasta-challenger/2026/atp-men/' -o /tmp/te_ant
+          curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisexplorer.com/cipolletti-itf/2026/wta-women/' -o /tmp/te_itf
+          echo 'TE_ANT_ROWS'
+          python - <<'PY'
+          import html,re
+          for label,path in [('ANT','/tmp/te_ant'),('ITF','/tmp/te_itf')]:
+              s=open(path,encoding='utf-8',errors='ignore').read()
+              print(label,'BYTES',len(s))
+              rows=re.findall(r'<tr\b[^>]*>.*?</tr>',s,flags=re.I|re.S)
+              for i,row in enumerate(rows):
+                  text=html.unescape(re.sub(r'\s+',' ',re.sub(r'<[^>]+>',' | ',row))).strip(' |')
+                  attrs=(re.search(r'^<tr\b([^>]*)>',row,flags=re.I|re.S) or [None,''])[1]
+                  if text:
+                      print(label,'ROW',i,'ATTR',re.sub(r'\s+',' ',attrs)[:220],'TEXT',text[:1400])
+                      if i>=90: break
+          PY
+          echo 'TE_ANT_JUSTO_CONTEXT'
+          grep -in -C 8 -E 'Justo|Comesana' /tmp/te_ant | head -220 || true
+          echo 'TE_ITF_PLAYER_LINKS'
+          grep -Eo 'href="/player/[^"]+"' /tmp/te_itf | head -80 || true
           echo 'TENNISEXPLORER_TARGETS'
           grep -in -C 5 -E 'M15 Quito|Quito|Antofagasta|Justo|Comesana|Bini|Alvarado|ITF' /tmp/texplorer | head -260 || true
           curl -L -sS --max-time 15 -A 'Mozilla/5.0' 'https://www.tennisendirect.net/' -o /tmp/tendirect
