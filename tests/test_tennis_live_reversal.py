@@ -214,7 +214,10 @@ def _deep_state(*, lead=0, turnaround=True, net_break=None):
 
 def _deep_leg():
     event_id = canonical_event_id("Tennis", "Rigele TE", "Adam Walton", "2026-10-05")
-    return _leg(event_id=event_id, ticker="KX-RIG", fair=.10, confidence=.62)
+    return replace(
+        _leg(event_id=event_id, ticker="KX-RIG", fair=.10, confidence=.62),
+        selection="Rigele TE",
+    )
 
 
 def _deep_reversal_candles():
