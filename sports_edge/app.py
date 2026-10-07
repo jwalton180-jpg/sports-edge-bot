@@ -2462,12 +2462,13 @@ elif view == "Live Feed":
             "A match is called live only when a structural score feed confirms it. "
             "Kalshi start-time-passed matches without score state are shown separately as unverified."
         )
-        q1, q2, q3, q4, q5 = st.columns(5)
+        q1, q2, q3, q4, q5, q6 = st.columns(6)
         q1.metric("Open Kalshi matches", coverage.open_matches)
         q2.metric("Confirmed live", coverage.confirmed_live_matches)
-        q3.metric("Model covered live", coverage.model_covered_live_matches)
-        q4.metric("Unsupported live", coverage.unsupported_live_matches)
-        q5.metric("Start-passed unverified", coverage.start_passed_unverified_matches)
+        q3.metric("Score tracked", coverage.score_tracked_matches)
+        q4.metric("Model covered live", coverage.model_covered_live_matches)
+        q5.metric("Unsupported live", coverage.unsupported_live_matches)
+        q6.metric("Needs verification", coverage.start_passed_unverified_matches)
 
         if coverage.confirmed_live_matches:
             model_pct = (
@@ -2524,6 +2525,50 @@ elif view == "Live Feed":
                 )
         elif coverage.confirmed_live_matches:
             st.success("No known match-level coverage holes in the current confirmed-live Kalshi Tennis universe.")
+
+        unverified_rows = [
+            row for row in coverage.rows
+            if row.start_passed_unverified
+        ]
+        if unverified_rows:
+            with st.expander(
+                f"Needs verification — {len(unverified_rows)} start-time-passed match(es) without live score confirmation"
+            ):
+                st.caption(
+                    "These are not claimed live. Kalshi occurrence times can be delayed or placeholder times, "
+                    "so Sports Edge keeps them visible until a structural score feed confirms play or the market closes."
+                )
+                unverified_table = pd.DataFrame([
+                    {
+                        "Tour": row.tour,
+                        "Match": (
+                            " vs ".join(row.participants)
+                            if len(row.participants) == 2
+                            else row.title
+                        ),
+                        "Model covered": "yes" if row.model_covered else "no",
+                        "Model": row.model_name or "—",
+                        "Reason": "scheduled start passed; no structural live score confirmation",
+                        "Official ITF live": row.official_itf_url or "",
+                        "Official ITF tour": row.official_itf_tour_url or "",
+                    }
+                    for row in unverified_rows
+                ])
+                st.dataframe(
+                    unverified_table,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Official ITF live": st.column_config.LinkColumn(
+                            "Official ITF live",
+                            display_text="Open ITF live",
+                        ),
+                        "Official ITF tour": st.column_config.LinkColumn(
+                            "Official ITF tour",
+                            display_text="Open tour",
+                        ),
+                    },
+                )
 
         st.caption(
             "Official ITF cross-check: "
