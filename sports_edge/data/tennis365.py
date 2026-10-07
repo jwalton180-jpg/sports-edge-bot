@@ -160,9 +160,11 @@ def parse_tennis365_live_matches(page: str) -> tuple[Tennis365LiveMatch, ...]:
         href_match = re.search(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*class=["\'][^"\']*\bmatches_grid_anchor\b', block, flags=re.I)
         href = href_match.group(1) if href_match else ""
         tour = _tour_from_href(href)
-        # Lower-tour expansion is the purpose of this source; ATP/WTA remain
-        # on ESPN unless a future explicit integration chooses otherwise.
-        if tour not in {"CHALLENGER", "ITF"}:
+        # Parse all pro singles tours. ESPN remains the preferred ATP/WTA
+        # structural source; Tennis365 main-tour rows are used to enrich ESPN
+        # matches with a cloud-reachable detail URL for independent fallback
+        # context, not to override official/public score state.
+        if tour not in {"ATP", "WTA", "CHALLENGER", "ITF"}:
             continue
 
         home = _span_text(block, element_id=f"hn-{match_id}")
