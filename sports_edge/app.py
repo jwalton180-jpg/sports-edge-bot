@@ -132,6 +132,25 @@ build_lower_tour_live_fallback_candidates = getattr(
     _empty_lower_tour_candidates,
 )
 
+_tennis_coverage = import_module_fresh("sports_edge.models.tennis_live_coverage")
+
+def _empty_tennis_coverage(*args, **kwargs):
+    return SimpleNamespace(
+        rows=(),
+        open_matches=0,
+        live_or_due_matches=0,
+        score_tracked_matches=0,
+        model_covered_matches=0,
+        unsupported_matches=0,
+        source_counts=(),
+    )
+
+build_tennis_live_coverage = getattr(
+    _tennis_coverage,
+    "build_tennis_live_coverage",
+    _empty_tennis_coverage,
+)
+
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
@@ -2342,6 +2361,12 @@ elif view == "Live Feed":
         if lower_tour_candidates:
             tennis_candidates.extend(lower_tour_candidates)
 
+        coverage = build_tennis_live_coverage(
+            live_tennis_markets,
+            score_states,
+            tennis_candidates,
+        )
+
         tickers = tuple(sorted({
             str(row.kalshi_ticker)
             for row in tennis_candidates
@@ -2428,6 +2453,84 @@ elif view == "Live Feed":
         strong = [row for row in radar if row.status == "REVERSAL SIGNAL"]
         watch = [row for row in radar if row.status == "WATCH"]
 
+        st.markdown("### 🎾 Live Tennis Coverage")
+        st.caption(
+            "Match-level audit of the Kalshi Tennis reversal universe. "
+            "'Live / start passed' means a score feed confirms live play or Kalshi's scheduled "
+            "start has passed the delay-tolerant coverage window; unsupported matches are never hidden."
+        )
+        q1, q2, q3, q4, q5 = st.columns(5)
+        q1.metric("Open Kalshi matches", coverage.open_matches)
+        q2.metric("Live / start passed", coverage.live_or_due_matches)
+        q3.metric("Score tracked", coverage.score_tracked_matches)
+        q4.metric("Model covered", coverage.model_covered_matches)
+        q5.metric("Unsupported", coverage.unsupported_matches)
+
+        if coverage.live_or_due_matches:
+            score_pct = coverage.score_tracked_matches / coverage.live_or_due_matches
+            model_pct = coverage.model_covered_matches / coverage.live_or_due_matches
+            source_text = " · ".join(
+                f"{source}: {count}"
+                for source, count in coverage.source_counts
+            ) or "no live structural score sources"
+            st.caption(
+                f"Live/due coverage: score {score_pct:.0%} · model {model_pct:.0%} · "
+                f"sources: {source_text}"
+            )
+
+        unsupported_rows = [
+            row for row in coverage.rows
+            if row.live_or_due and row.unsupported_reason
+        ]
+        if unsupported_rows:
+            st.warning(
+                f"{len(unsupported_rows)} live/start-passed Tennis match(es) need coverage attention."
+            )
+            with st.expander("Coverage gaps — exact matches and reasons"):
+                gap_table = pd.DataFrame([
+                    {
+                        "Tour": row.tour,
+                        "Match": (
+                            " vs ".join(row.participants)
+                            if len(row.participants) == 2
+                            else row.title
+                        ),
+                        "Score tracked": "yes" if row.score_tracked else "no",
+                        "Score source": " + ".join(row.score_sources) or "—",
+                        "Model": row.model_name or "—",
+                        "Reason": row.unsupported_reason,
+                        "Official ITF live": row.official_itf_url or "",
+                        "Official ITF tour": row.official_itf_tour_url or "",
+                    }
+                    for row in unsupported_rows
+                ])
+                st.dataframe(
+                    gap_table,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Official ITF live": st.column_config.LinkColumn(
+                            "Official ITF live",
+                            display_text="Open ITF live",
+                        ),
+                        "Official ITF tour": st.column_config.LinkColumn(
+                            "Official ITF tour",
+                            display_text="Open tour",
+                        ),
+                    },
+                )
+        elif coverage.live_or_due_matches:
+            st.success("No known match-level coverage holes in the current live/start-passed Kalshi Tennis universe.")
+
+        st.caption(
+            "Official ITF cross-check: "
+            "[World Tennis Tour Live](https://www.itftennis.com/en/world-tennis-tour-live/) · "
+            "[Men's World Tennis Tour](https://www.itftennis.com/en/tours/mens-world-tennis-tour/) · "
+            "[Women's World Tennis Tour](https://www.itftennis.com/en/tours/womens-world-tennis-tour/). "
+            "These official pages are secondary corroboration; Sports Edge only treats machine-readable "
+            "sets/games/server state as score confirmation."
+        )
+
         # Put the cheapest already-qualified live opportunities at the top so a
         # fast-moving 4–15c reversal is visible before the full radar table.
         # This is presentation-only: a low price never creates a signal.
@@ -2502,12 +2605,11 @@ elif view == "Live Feed":
                 "No ≤15¢ Tennis underdog currently clears the live reversal WATCH gate."
             )
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Modeled sides", len(tennis_candidates))
-        c2.metric("Live matches", live_game_count)
-        c3.metric("Deep reversals", len(deep))
-        c4.metric("Signals", len(strong))
-        c5.metric("Watches", len(watch))
+        c2.metric("Deep reversals", len(deep))
+        c3.metric("Signals", len(strong))
+        c4.metric("Watches", len(watch))
 
         if not radar:
             st.info(
