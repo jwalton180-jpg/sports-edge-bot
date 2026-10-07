@@ -46,6 +46,7 @@ def lower_tour_prior(
     b: Tennis365PlayerContext,
     *,
     explorer: TennisExplorerPairContext | None = None,
+    explorer_corroborates: bool = False,
 ) -> LowerTourPrior | None:
     """Conservative independent prior for live Tennis model coverage gaps.
 
@@ -127,7 +128,8 @@ def lower_tour_prior(
     if explorer is not None:
         ea, eb = explorer.player_a, explorer.player_b
         reasons.append(
-            f"TennisExplorer cross-check: rank {ea.rank or '—'} vs {eb.rank or '—'}; "
+            f"TennisExplorer {'cross-check' if explorer_corroborates else 'context'}: "
+            f"rank {ea.rank or '—'} vs {eb.rank or '—'}; "
             f"recent {ea.recent_wins}-{ea.recent_losses} vs {eb.recent_wins}-{eb.recent_losses}"
         )
         if ea.h2h_matches:
@@ -139,7 +141,7 @@ def lower_tour_prior(
                 "Beta-shrunk and low-weighted"
             )
 
-        if min_recent >= 4 and min(ea.recent_matches, eb.recent_matches) >= 4:
+        if explorer_corroborates and min_recent >= 4 and min(ea.recent_matches, eb.recent_matches) >= 4:
             provider_delta = fa - fb
             efa = (ea.recent_wins + 2.0) / (ea.recent_matches + 4.0)
             efb = (eb.recent_wins + 2.0) / (eb.recent_matches + 4.0)
@@ -158,10 +160,10 @@ def lower_tour_prior(
                     "TennisExplorer recent form conflicts with Tennis365; fallback confidence reduced"
                 )
 
-        if a.rank and ea.rank and abs(a.rank - ea.rank) > max(40, int(0.30 * a.rank)):
+        if explorer_corroborates and a.rank and ea.rank and abs(a.rank - ea.rank) > max(40, int(0.30 * a.rank)):
             warnings.append("TennisExplorer and Tennis365 player-A rankings materially differ")
             confidence = max(0.40, confidence - 0.02)
-        if b.rank and eb.rank and abs(b.rank - eb.rank) > max(40, int(0.30 * b.rank)):
+        if explorer_corroborates and b.rank and eb.rank and abs(b.rank - eb.rank) > max(40, int(0.30 * b.rank)):
             warnings.append("TennisExplorer and Tennis365 player-B rankings materially differ")
             confidence = max(0.40, confidence - 0.02)
 
@@ -371,7 +373,12 @@ def build_lower_tour_live_fallback_candidates(
         ctx_b = _merge_player_context(primary_b, exp_b)
         if ctx_a is None or ctx_b is None:
             continue
-        prior = lower_tour_prior(ctx_a, ctx_b, explorer=explorer)
+        prior = lower_tour_prior(
+            ctx_a,
+            ctx_b,
+            explorer=explorer,
+            explorer_corroborates=primary is not None,
+        )
         if prior is None:
             continue
         probability_by_key = {
