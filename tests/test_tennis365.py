@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sports_edge.data.tennis365 import parse_tennis365_live_matches
+from sports_edge.data.tennis365 import parse_tennis365_live_matches, parse_tennis365_player_context
 from sports_edge.data.tennis_live import _tennis365_states_from_matches
 from sports_edge.models.event_identity import canonical_event_id
 
@@ -139,3 +139,30 @@ def test_main_tour_live_rows_are_parsed_but_non_live_rows_are_ignored():
     assert rows[0].home == "Alpha One"
     assert rows[0].away == "Beta Two"
     assert rows[0].source_url.endswith("/scores/atp-shanghai/a-vs-b/")
+
+
+def test_player_context_parses_surname_first_latest_games_and_target_outcome_side():
+    page = """
+    <html><body>
+      <h3>Jovic Iva Latest Games</h3>
+      <div>05/10/2026 W Jovic, Iva 2 - 0 Rakhimova, Kamilla L</div>
+      <div>19/09/2026 L Stearns, Peyton 0 - 2 Jovic, Iva W</div>
+      <h3>Swiatek Iga Latest Games</h3>
+      <div>05/10/2026 L Vekic, Donna 1 - 2 Swiatek, Iga W</div>
+      <div>07/09/2026 L Swiatek, Iga 0 - 2 Zheng, Qinwen W</div>
+      <h3>WTA World Rankings</h3>
+      <table>
+        <tr><td>9</td><td>Iga Swiatek</td><td>POL</td><td>4119</td></tr>
+        <tr><td>13</td><td>Iva Jovic</td><td>USA</td><td>2841</td></tr>
+      </table>
+    </body></html>
+    """
+    jovic, swiatek = parse_tennis365_player_context(
+        page,
+        player_a="Iva Jovic",
+        player_b="Iga Swiatek",
+    )
+    assert (jovic.rank, jovic.ranking_points) == (13, 2841)
+    assert (swiatek.rank, swiatek.ranking_points) == (9, 4119)
+    assert (jovic.recent_wins, jovic.recent_losses) == (2, 0)
+    assert (swiatek.recent_wins, swiatek.recent_losses) == (1, 1)
