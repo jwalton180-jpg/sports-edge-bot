@@ -41,28 +41,30 @@ jobs:
 
           print('OPEN_MARKETS',len(markets))
           print('OPEN_MATCHES',coverage.open_matches)
-          print('LIVE_OR_DUE',coverage.live_or_due_matches)
+          print('CONFIRMED_LIVE',coverage.confirmed_live_matches)
           print('SCORE_TRACKED',coverage.score_tracked_matches)
-          print('MODEL_COVERED',coverage.model_covered_matches)
-          print('UNSUPPORTED',coverage.unsupported_matches)
+          print('MODEL_COVERED_LIVE',coverage.model_covered_live_matches)
+          print('UNSUPPORTED_LIVE',coverage.unsupported_live_matches)
           print('SOURCES',coverage.source_counts)
           print('PRIMARY_SIDES',len(candidates)-len(fallback),'FALLBACK_SIDES',len(fallback))
 
+          print('START_PASSED_UNVERIFIED',coverage.start_passed_unverified_matches)
           reasons=Counter(row.unsupported_reason for row in coverage.rows if row.unsupported_reason)
           print('UNSUPPORTED_REASONS',dict(reasons))
           for row in coverage.rows:
-              if row.live_or_due:
+              if row.confirmed_live or row.start_passed_unverified:
                   print(
                       'ROW',row.tour,'|', ' vs '.join(row.participants) or row.title,
+                      '| confirmed',row.confirmed_live,'| unverified_due',row.start_passed_unverified,
                       '| score',row.score_tracked,'| model',row.model_covered,
                       '| sources',row.score_sources,'| conflict',row.score_conflict,
                       '| reason',row.unsupported_reason or 'OK'
                   )
 
           assert coverage.open_matches == len({m.get('event_ticker') or m.get('ticker') for m in markets})
-          assert coverage.score_tracked_matches <= coverage.live_or_due_matches
-          assert coverage.model_covered_matches <= coverage.live_or_due_matches
-          assert coverage.unsupported_matches <= coverage.live_or_due_matches
+          assert coverage.score_tracked_matches == coverage.confirmed_live_matches
+          assert coverage.model_covered_live_matches <= coverage.confirmed_live_matches
+          assert coverage.unsupported_live_matches <= coverage.confirmed_live_matches
           assert all(row.official_itf_url for row in coverage.rows if row.tour.startswith('ITF'))
           assert all(row.official_itf_url is None for row in coverage.rows if not row.tour.startswith('ITF'))
           print('LIVE_COVERAGE_AUDIT_OK')
