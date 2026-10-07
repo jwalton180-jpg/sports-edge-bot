@@ -117,6 +117,10 @@ def lower_tour_prior(
     ]
     if not have_points:
         warnings.append("ranking-points evidence incomplete")
+        if explorer is not None:
+            warnings.append(
+                "TennisExplorer rank/form context used without ranking points; stricter fallback reversal gates remain active"
+            )
     if sample < 6:
         warnings.append("fewer than six prior completed matches per player; strong reversal promotion blocked")
 
@@ -267,13 +271,19 @@ def build_lower_tour_live_fallback_candidates(
     Tennis365 detail pages and TennisExplorer provide independent ranking,
     completed-form and H2H context. The primary SportsEdge historical model
     always wins when available. For ATP/WTA the live structural state must still
-    come from ESPN; research sites never override the live-score authority.
+    come from ESPN; TennisExplorer can fill a missing prior but never override
+    the live-score authority. Lower-tour structural state remains fail-closed.
     """
     eligible_states: dict[tuple[str, str], TennisLiveScoreState] = {}
     for state in states:
         if state.tour not in {"ATP", "WTA", "CHALLENGER", "ITF", "ITF-W"}:
             continue
-        if not state.source_url or state.score_conflict:
+        if state.score_conflict:
+            continue
+        # Main-tour structural state remains ESPN-authoritative. TennisExplorer
+        # may provide the independent prior even when Tennis365 did not resolve
+        # a matching detail URL; it never supplies the live score itself.
+        if state.tour in {"ATP", "WTA"} and "ESPN" not in set(state.score_sources or ()):
             continue
         eligible_states[_pair_key(state.player, state.opponent)] = state
 
