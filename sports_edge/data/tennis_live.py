@@ -445,11 +445,11 @@ def fetch_live_tennis_states(
 ) -> tuple[TennisLiveScoreState, ...]:
     """Fetch ESPN ATP/WTA plus Tennis365 live state across supported tours.
 
-    ESPN remains the preferred ATP/WTA structural source. Tennis365 supplies
-    standalone Challenger/ITF state and enriches agreeing ATP/WTA rows with a
-    cloud-reachable match-detail URL for independent ranking/prior-form fallback.
-    Main-tour Tennis365 rows are never allowed to replace a missing ESPN score
-    row by themselves; this avoids weakening the preferred structural feed.
+    ESPN is authoritative for ATP/WTA structural score state. Tennis365 supplies
+    standalone Challenger/ITF state and may attach a cloud-reachable match-detail
+    URL to an ESPN-confirmed ATP/WTA match for independent ranking/prior-form
+    fallback. Auxiliary Tennis365 score lag never creates a main-tour score
+    conflict, and Tennis365 never replaces a missing ESPN ATP/WTA score row.
     """
     with ThreadPoolExecutor(max_workers=2) as pool:
         espn_future = pool.submit(fetch_espn_live_tennis_states, timeout=timeout)
@@ -491,11 +491,15 @@ def fetch_live_tennis_states(
             pair_hits = t365_by_pair.get((pair_key(row), row.selection_key), [])
             if len(pair_hits) == 1:
                 secondary = pair_hits[0]
-        merged[key] = (
-            _merge_live_score_state(row, secondary)
-            if secondary is not None
-            else row
-        )
+
+        # ESPN is authoritative for ATP/WTA structural score state. Tennis365
+        # can lag by a game while still identifying the same physical match,
+        # so do not manufacture a score conflict from that auxiliary feed.
+        # Only carry its detail URL for independent ranking/prior-form fallback.
+        if secondary is not None and secondary.source_url:
+            merged[key] = replace(row, source_url=secondary.source_url)
+        else:
+            merged[key] = row
     return tuple(merged.values())
 
 TENNIS_MATCH_SERIES = (
