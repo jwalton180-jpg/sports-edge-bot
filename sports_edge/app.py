@@ -138,10 +138,11 @@ def _empty_tennis_coverage(*args, **kwargs):
     return SimpleNamespace(
         rows=(),
         open_matches=0,
-        live_or_due_matches=0,
+        confirmed_live_matches=0,
         score_tracked_matches=0,
-        model_covered_matches=0,
-        unsupported_matches=0,
+        model_covered_live_matches=0,
+        unsupported_live_matches=0,
+        start_passed_unverified_matches=0,
         source_counts=(),
     )
 
@@ -2456,35 +2457,35 @@ elif view == "Live Feed":
         st.markdown("### 🎾 Live Tennis Coverage")
         st.caption(
             "Match-level audit of the Kalshi Tennis reversal universe. "
-            "'Live / start passed' means a score feed confirms live play or Kalshi's scheduled "
-            "start has passed the delay-tolerant coverage window; unsupported matches are never hidden."
+            "A match is called live only when a structural score feed confirms it. "
+            "Kalshi start-time-passed matches without score state are shown separately as unverified."
         )
         q1, q2, q3, q4, q5 = st.columns(5)
         q1.metric("Open Kalshi matches", coverage.open_matches)
-        q2.metric("Live / start passed", coverage.live_or_due_matches)
-        q3.metric("Score tracked", coverage.score_tracked_matches)
-        q4.metric("Model covered", coverage.model_covered_matches)
-        q5.metric("Unsupported", coverage.unsupported_matches)
+        q2.metric("Confirmed live", coverage.confirmed_live_matches)
+        q3.metric("Model covered live", coverage.model_covered_live_matches)
+        q4.metric("Unsupported live", coverage.unsupported_live_matches)
+        q5.metric("Start-passed unverified", coverage.start_passed_unverified_matches)
 
-        if coverage.live_or_due_matches:
-            score_pct = coverage.score_tracked_matches / coverage.live_or_due_matches
-            model_pct = coverage.model_covered_matches / coverage.live_or_due_matches
+        if coverage.confirmed_live_matches:
+            model_pct = (
+                coverage.model_covered_live_matches / coverage.confirmed_live_matches
+            )
             source_text = " · ".join(
                 f"{source}: {count}"
                 for source, count in coverage.source_counts
             ) or "no live structural score sources"
             st.caption(
-                f"Live/due coverage: score {score_pct:.0%} · model {model_pct:.0%} · "
-                f"sources: {source_text}"
+                f"Confirmed-live model coverage: {model_pct:.0%} · sources: {source_text}"
             )
 
         unsupported_rows = [
             row for row in coverage.rows
-            if row.live_or_due and row.unsupported_reason
+            if row.confirmed_live and row.unsupported_reason
         ]
         if unsupported_rows:
             st.warning(
-                f"{len(unsupported_rows)} live/start-passed Tennis match(es) need coverage attention."
+                f"{len(unsupported_rows)} confirmed-live Tennis match(es) need model/score attention."
             )
             with st.expander("Coverage gaps — exact matches and reasons"):
                 gap_table = pd.DataFrame([
@@ -2519,8 +2520,8 @@ elif view == "Live Feed":
                         ),
                     },
                 )
-        elif coverage.live_or_due_matches:
-            st.success("No known match-level coverage holes in the current live/start-passed Kalshi Tennis universe.")
+        elif coverage.confirmed_live_matches:
+            st.success("No known match-level coverage holes in the current confirmed-live Kalshi Tennis universe.")
 
         st.caption(
             "Official ITF cross-check: "
