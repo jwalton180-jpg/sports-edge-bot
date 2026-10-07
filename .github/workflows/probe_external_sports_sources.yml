@@ -1,0 +1,43 @@
+name: Probe TennisExplorer SofaScore
+
+on:
+  push:
+    branches:
+      - multi-source-sportsedge-intelligence-20261007
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Probe sources
+        run: |
+          python - <<'PY'
+          import requests
+          from datetime import date
+
+          urls = [
+              'https://www.tennisexplorer.com/',
+              'https://www.tennisexplorer.com/results/?year=2026&month=10&day=06',
+              'https://api.sofascore.com/api/v1/sport/tennis/events/live',
+              'https://api.sofascore.com/api/v1/sport/baseball/scheduled-events/2026-10-07',
+              'https://api.sofascore.com/api/v1/sport/basketball/scheduled-events/2026-10-07',
+              'https://api.sofascore.com/api/v1/sport/american-football/scheduled-events/2026-10-07',
+          ]
+          headers={'User-Agent':'SportsEdgeReadOnly/1.0','Accept':'application/json,text/html,*/*'}
+          for url in urls:
+              try:
+                  r=requests.get(url,headers=headers,timeout=15)
+                  print('PROBE',r.status_code,len(r.content),url)
+                  print('TYPE',r.headers.get('content-type'))
+                  sample=r.text[:500].replace('\n',' ')
+                  print('SAMPLE',sample)
+              except Exception as exc:
+                  print('ERROR',type(exc).__name__,str(exc),url)
+          PY
