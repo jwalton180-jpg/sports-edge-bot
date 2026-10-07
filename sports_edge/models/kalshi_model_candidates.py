@@ -94,6 +94,18 @@ def _event_key(market: dict) -> str:
     return str(market.get("event_ticker") or market.get("ticker") or "").strip()
 
 
+def _market_series_ticker(market: dict) -> str:
+    """Resolve series even when Kalshi omits series_ticker on live rows."""
+    explicit = str(market.get("series_ticker") or "").strip().upper()
+    if explicit:
+        return explicit
+    for key in ("event_ticker", "ticker"):
+        raw = str(market.get(key) or "").strip().upper()
+        if raw:
+            return raw.split("-", 1)[0]
+    return ""
+
+
 def _market_local_date(market: dict, timezone_name: str) -> date:
     """Resolve the actual event calendar date in the ticket timezone.
 
@@ -198,7 +210,7 @@ def _tennis_games_model(gender: str, year: int) -> TennisGamesModel:
 def _tennis_event_signature(market: dict) -> str:
     raw = str(market.get("event_ticker") or "").strip().upper()
     suffix = raw.split("-", 1)[1] if "-" in raw else raw
-    series = str(market.get("series_ticker") or raw.split("-", 1)[0]).upper()
+    series = _market_series_ticker(market) or raw.split("-", 1)[0]
     if series.startswith("KXWTA"):
         namespace = "WTA"
     elif series.startswith("KXITF"):
@@ -351,7 +363,7 @@ def _tennis_games_total_candidates(
             continue
 
         player_a, player_b = participants
-        series = str(market.get("series_ticker") or "")
+        series = _market_series_ticker(market)
         gender, level = tennis_level_from_series(series)
         best_of = _tennis_best_of(market, gender)
 
@@ -435,7 +447,7 @@ def _tennis_event_candidates(rows: list[KalshiSportMarket]) -> list[ParlayCandid
         return []
 
     first_market = choices[0][3]
-    series = str(first_market.get("series_ticker") or "")
+    series = _market_series_ticker(first_market)
     gender, level = tennis_level_from_series(series)
     event_date = _parse_date(first_market)
 
