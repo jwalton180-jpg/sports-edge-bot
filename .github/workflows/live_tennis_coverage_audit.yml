@@ -27,6 +27,7 @@ jobs:
           from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
           from sports_edge.models.tennis_lower_tour import build_lower_tour_live_fallback_candidates
           from sports_edge.models.tennis_live_coverage import build_tennis_live_coverage
+          from sports_edge.data.tennis365 import fetch_tennis365_player_context
 
           markets=list(fetch_open_tennis_match_markets())
           grouped=group_kalshi_sports(markets)
@@ -50,6 +51,20 @@ jobs:
 
           print('START_PASSED_UNVERIFIED',coverage.start_passed_unverified_matches)
           reasons=Counter(row.unsupported_reason for row in coverage.rows if row.unsupported_reason)
+          candidate_pairs={tuple(sorted(str(row.event_id).split(':',2)[2].split('|',1))) for row in candidates if str(row.event_id).count(':') >= 2 and '|' in str(row.event_id).split(':',2)[2]}
+          for state in states:
+              pair=tuple(sorted((state.selection_key, __import__('sports_edge.models.event_identity', fromlist=['canonical_participant']).canonical_participant('Tennis', state.opponent))))
+              if state.source_url and pair not in candidate_pairs:
+                  print('FALLBACK_DEBUG_STATE',state.player,'vs',state.opponent,'| tour',state.tour,'| url',state.source_url,'| sources',state.score_sources,'| conflict',state.score_conflict)
+                  try:
+                      ctx=fetch_tennis365_player_context(
+                          state.source_url,
+                          player_a=state.player,
+                          player_b=state.opponent,
+                      )
+                      print('FALLBACK_DEBUG_CONTEXT',repr(ctx))
+                  except Exception as exc:
+                      print('FALLBACK_DEBUG_ERROR',type(exc).__name__,str(exc))
           print('UNSUPPORTED_REASONS',dict(reasons))
           for row in coverage.rows:
               if row.confirmed_live or row.start_passed_unverified:
