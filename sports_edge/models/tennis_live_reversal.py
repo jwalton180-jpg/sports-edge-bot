@@ -11,6 +11,9 @@ from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_live_probability import estimate_live_match_probability
 
 
+CHEAP_TENNIS_REVERSAL_MAX_PRICE = 0.20
+
+
 @dataclass(frozen=True)
 class TennisPricePoint:
     end_ts: int
