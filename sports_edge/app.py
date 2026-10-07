@@ -2394,10 +2394,10 @@ elif view == "Live Feed":
         live_game_count = len(confirmed_live_ids)
 
         # Primary Tennis history stays first. Any confirmed-live physical match
-        # missing from that model may receive the independent Tennis365
-        # ranking/prior-form fallback. ATP/WTA requires ESPN structural score
-        # confirmation plus a matching Tennis365 detail URL; lower tours may use
-        # Tennis365 structural state directly.
+        # missing from that model may receive independent Tennis365 and/or
+        # TennisExplorer ranking/form/H2H context. ATP/WTA still requires ESPN
+        # structural score authority; lower tours may use Tennis365 structural
+        # state directly. Research providers never replace live-score authority.
         lower_tour_candidates = build_lower_tour_live_fallback_candidates(
             live_tennis_markets,
             score_states,
