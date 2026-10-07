@@ -36,6 +36,17 @@ jobs:
               if row.sport == 'Tennis' and row.market_key == 'model_h2h' and row.kalshi_ticker
           ]
           states=list(fetch_live_tennis_states())
+          pre_candidates=list(candidates)
+          print('TARGET_PRIMARY_CANDIDATES')
+          for row in pre_candidates:
+              hay=(str(row.selection)+' '+str(row.event_title)+' '+str(row.event_id)).lower()
+              if any(token in hay for token in ('swiatek','jovic','prozorova','okamura')):
+                  print('PRIMARY_CAND',row.selection,'|',row.event_id,'|',row.kalshi_ticker,'|',row.model_name,'| n',row.model_sample_size)
+          print('TARGET_MARKETS')
+          for m in markets:
+              hay=' '.join(str(m.get(k) or '') for k in ('event_title','title','yes_sub_title','no_sub_title','ticker','event_ticker')).lower()
+              if any(token in hay for token in ('swiatek','jovic','prozorova','okamura')):
+                  print('MKT',m.get('series_ticker'),'|',m.get('event_ticker'),'|',m.get('ticker'),'| yes=',m.get('yes_sub_title'),'| no=',m.get('no_sub_title'),'| title=',m.get('title'))
           fallback=build_lower_tour_live_fallback_candidates(markets,states,candidates)
           candidates.extend(fallback)
           coverage=build_tennis_live_coverage(markets,states,candidates)
