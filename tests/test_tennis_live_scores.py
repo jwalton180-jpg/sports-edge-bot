@@ -1,6 +1,7 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 
-from sports_edge.data.tennis_live import parse_espn_live_tennis_states
+from sports_edge.data.tennis_live import _merge_live_score_state, parse_espn_live_tennis_states
 from sports_edge.models.event_identity import canonical_event_id, canonical_participant
 
 
@@ -146,3 +147,59 @@ def test_parser_excludes_scheduled_match():
         fetched_at=NOW,
     )
     assert rows == ()
+
+
+def test_cross_feed_merge_helper_can_add_secondary_context_when_scores_agree():
+    espn = next(
+        row for row in parse_espn_live_tennis_states(
+            _payload(_competition()),
+            tour="ATP",
+            fetched_at=NOW,
+        )
+        if row.player == "Te Rigele"
+    )
+    tennis365 = replace(
+        espn,
+        score_sources=("Tennis365",),
+        source_url="https://livescore.tennis365.com/match/te-rigele-adam-walton",
+        serving=None,
+        net_break_advantage=None,
+    )
+    merged = _merge_live_score_state(espn, tennis365)
+    assert merged.score_sources == ("ESPN", "Tennis365")
+    assert merged.source_url == tennis365.source_url
+    assert merged.serving is True
+    assert merged.net_break_advantage == 1
+    assert not merged.score_conflict
+
+
+def test_fetch_live_main_tour_keeps_espn_structural_state_when_tennis365_lags(monkeypatch):
+    import sports_edge.data.tennis_live as live
+
+    espn = next(
+        row for row in parse_espn_live_tennis_states(
+            _payload(_competition()),
+            tour="ATP",
+            fetched_at=NOW,
+        )
+        if row.player == "Te Rigele"
+    )
+    lagged = replace(
+        espn,
+        player_games=max(0, espn.player_games - 1),
+        current_set_lead=espn.current_set_lead - 1,
+        score_label="lagged",
+        score_sources=("Tennis365",),
+        source_url="https://livescore.tennis365.com/match/te-rigele-adam-walton",
+    )
+    monkeypatch.setattr(live, "fetch_espn_live_tennis_states", lambda **kwargs: (espn,))
+    monkeypatch.setattr(live, "fetch_tennis365_live_tennis_states", lambda **kwargs: (lagged,))
+
+    rows = live.fetch_live_tennis_states(timeout=1)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.player_games == espn.player_games
+    assert row.score_label == espn.score_label
+    assert row.score_sources == ("ESPN",)
+    assert not row.score_conflict
+    assert row.source_url == lagged.source_url

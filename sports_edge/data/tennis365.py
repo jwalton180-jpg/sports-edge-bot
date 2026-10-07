@@ -160,9 +160,11 @@ def parse_tennis365_live_matches(page: str) -> tuple[Tennis365LiveMatch, ...]:
         href_match = re.search(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*class=["\'][^"\']*\bmatches_grid_anchor\b', block, flags=re.I)
         href = href_match.group(1) if href_match else ""
         tour = _tour_from_href(href)
-        # Lower-tour expansion is the purpose of this source; ATP/WTA remain
-        # on ESPN unless a future explicit integration chooses otherwise.
-        if tour not in {"CHALLENGER", "ITF"}:
+        # Parse all pro singles tours. ESPN remains the preferred ATP/WTA
+        # structural source; Tennis365 main-tour rows are used to enrich ESPN
+        # matches with a cloud-reachable detail URL for independent fallback
+        # context, not to override official/public score state.
+        if tour not in {"ATP", "WTA", "CHALLENGER", "ITF"}:
             continue
 
         home = _span_text(block, element_id=f"hn-{match_id}")
@@ -286,41 +288,86 @@ def parse_tennis365_player_context(
             return None, None
         return sorted(hits, key=lambda x: (-x[1], x[0]))[0]
 
+    plain = _clean_html_text(text)
+
+    def heading_forms(player: str) -> tuple[str, ...]:
+        cleaned = " ".join(unescape(player or "").replace(",", " ").split())
+        if not cleaned:
+            return ()
+        tokens = cleaned.split()
+        forms = {cleaned}
+        if len(tokens) >= 2:
+            forms.add(" ".join([tokens[-1], *tokens[:-1]]))
+        return tuple(sorted(forms, key=len, reverse=True))
+
+    def outcome_from_block(block: str, player: str) -> str | None:
+        normalized = _normalize_name(block)
+        if not normalized:
+            return None
+        player_forms = {_normalize_name(x) for x in heading_forms(player)}
+        player_forms.discard("")
+        spans: list[tuple[int, int]] = []
+        for form in player_forms:
+            start_at = normalized.find(form)
+            if start_at >= 0:
+                spans.append((start_at, start_at + len(form)))
+        if not spans:
+            return None
+        outcomes = list(re.finditer(r"\b([wl])\b", normalized))
+        if not outcomes:
+            return None
+
+        best: tuple[int, str] | None = None
+        for p_start, p_end in spans:
+            for match in outcomes:
+                if match.end() <= p_start:
+                    distance = p_start - match.end()
+                elif match.start() >= p_end:
+                    distance = match.start() - p_end
+                else:
+                    distance = 0
+                candidate = (distance, match.group(1).upper())
+                if best is None or candidate[0] < best[0]:
+                    best = candidate
+        return best[1] if best is not None else None
+
     def form_for(player: str, other_player: str) -> tuple[int, int]:
-        # Locate the player's own Latest Games header. The section ends at the
-        # opponent's Latest Games header or the ranking table.
-        forms = [player, player.replace(",", " ")]
-        starts = [text.lower().find(f"{form.lower()} latest games") for form in forms]
+        # Tennis365 headings use surname-first display names even when the
+        # ranking and Kalshi feeds use given-name-first. Parse a cleaned-text
+        # section so the form logic is resilient to table/div markup changes.
+        lower = plain.lower()
+        starts = [
+            lower.find(f"{form.lower()} latest games")
+            for form in heading_forms(player)
+        ]
         starts = [x for x in starts if x >= 0]
         if not starts:
             return 0, 0
         start = min(starts)
-        ends = []
-        other_forms = [other_player, other_player.replace(",", " ")]
-        for form in other_forms:
-            pos = text.lower().find(f"{form.lower()} latest games", start + 10)
+
+        ends: list[int] = []
+        for form in heading_forms(other_player):
+            pos = lower.find(f"{form.lower()} latest games", start + 10)
             if pos >= 0:
                 ends.append(pos)
-        if ranking_anchor and ranking_anchor.start() > start:
-            ends.append(ranking_anchor.start())
-        section = text[start:min(ends) if ends else min(len(text), start + 120000)]
-        rows = re.findall(r'<tr\b[^>]*>.*?</tr>', section, flags=re.I | re.S)
+        for marker in ("atp world rankings", "wta world rankings"):
+            pos = lower.find(marker, start + 10)
+            if pos >= 0:
+                ends.append(pos)
+        section = plain[start:min(ends) if ends else min(len(plain), start + 120000)]
+
+        dates = list(re.finditer(r"\b\d{1,2}/\d{1,2}/\d{4}\b", section))
         wins = losses = 0
-        for row in rows:
-            cleaned = _clean_html_text(row)
-            # A prior match row must contain a calendar date and the target.
-            if not re.search(r"\b\d{1,2}/\d{1,2}/\d{4}\b", cleaned):
-                continue
-            if not any(_name_matches(piece, player) for piece in re.findall(r"[A-Za-z][A-Za-z ,.'-]{2,60}", cleaned)):
-                continue
-            outcomes = re.findall(r"\b([WL])\b", cleaned)
-            if not outcomes:
-                continue
-            # Latest-game sections place the displayed player outcome first.
-            if outcomes[0] == "W":
+        for i, match in enumerate(dates):
+            block_end = dates[i + 1].start() if i + 1 < len(dates) else len(section)
+            block = section[match.start():block_end]
+            outcome = outcome_from_block(block, player)
+            if outcome == "W":
                 wins += 1
-            else:
+            elif outcome == "L":
                 losses += 1
+            else:
+                continue
             if wins + losses >= 10:
                 break
         return wins, losses

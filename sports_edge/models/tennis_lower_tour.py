@@ -15,7 +15,7 @@ from sports_edge.models.live_board import market_side_probability
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 
 
-LOWER_TOUR_MODEL = "Tennis lower-tour ranking + prior form"
+LOWER_TOUR_MODEL = "Tennis live ranking + prior form fallback"
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ def lower_tour_prior(
     a: Tennis365PlayerContext,
     b: Tennis365PlayerContext,
 ) -> LowerTourPrior | None:
-    """Conservative independent prior for live lower-tour coverage gaps.
+    """Conservative independent prior for live Tennis model coverage gaps.
 
     No live score, Kalshi price, sportsbook price, or current-match result is
     accepted here. Ranking/points establish baseline strength; completed prior
@@ -105,7 +105,7 @@ def lower_tour_prior(
         confidence = 0.43
 
     warnings = [
-        "lower-tour fallback used because the primary historical Tennis model had no usable player pair",
+        "live Tennis fallback used because the primary historical Tennis model had no usable player pair",
         "fallback prior excludes the current live match and all Kalshi/sportsbook prices",
     ]
     if not have_points:
@@ -120,6 +120,17 @@ def lower_tour_prior(
         reasons=tuple(reasons),
         warnings=tuple(warnings),
     )
+
+
+def _market_series_ticker(market: dict) -> str:
+    explicit = str(market.get("series_ticker") or "").strip().upper()
+    if explicit:
+        return explicit
+    for key in ("event_ticker", "ticker"):
+        raw = str(market.get(key) or "").strip().upper()
+        if raw:
+            return raw.split("-", 1)[0]
+    return ""
 
 
 def _selection_from_market(market: dict) -> str:
@@ -147,16 +158,21 @@ def build_lower_tour_live_fallback_candidates(
     *,
     max_workers: int = 6,
 ) -> list[ParlayCandidateLeg]:
-    """Fill only live Challenger/ITF model holes for the reversal radar."""
-    lower_states: dict[tuple[str, str], TennisLiveScoreState] = {}
-    for state in states:
-        if state.tour not in {"CHALLENGER", "ITF", "ITF-W"}:
-            continue
-        if not state.source_url:
-            continue
-        lower_states[_pair_key(state.player, state.opponent)] = state
+    """Fill confirmed-live Tennis model holes without replacing the primary model.
 
-    if not lower_states:
+    Tennis365 detail pages provide ranking + completed prior-form context. For
+    ATP/WTA the live structural state must still come from ESPN; Tennis365 only
+    contributes the independent fallback context URL after cross-feed matching.
+    """
+    eligible_states: dict[tuple[str, str], TennisLiveScoreState] = {}
+    for state in states:
+        if state.tour not in {"ATP", "WTA", "CHALLENGER", "ITF", "ITF-W"}:
+            continue
+        if not state.source_url or state.score_conflict:
+            continue
+        eligible_states[_pair_key(state.player, state.opponent)] = state
+
+    if not eligible_states:
         return []
 
     existing_pairs: set[tuple[str, str]] = set()
@@ -167,9 +183,17 @@ def build_lower_tour_live_fallback_candidates(
             existing_pairs.add(tuple(sorted((a, b))))
 
     grouped: dict[str, list[dict]] = {}
+    supported_series = {
+        "KXATPMATCH",
+        "KXATPCHALLENGERMATCH",
+        "KXWTAMATCH",
+        "KXWTACHALLENGERMATCH",
+        "KXITFMATCH",
+        "KXITFWMATCH",
+    }
     for market in markets:
-        series = str(market.get("series_ticker") or "").upper()
-        if not ("CHALLENGER" in series or series.startswith("KXITF")):
+        series = _market_series_ticker(market)
+        if series not in supported_series:
             continue
         event = str(market.get("event_ticker") or "").strip()
         selection = _selection_from_market(market)
@@ -189,7 +213,7 @@ def build_lower_tour_live_fallback_candidates(
         pair = _pair_key(names[0], names[1])
         if pair in existing_pairs:
             continue
-        state = lower_states.get(pair)
+        state = eligible_states.get(pair)
         if state is None:
             continue
         jobs.append((pair, state, event_markets, names[0], names[1]))

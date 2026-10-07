@@ -25,14 +25,20 @@ def _context(player, *, rank, points, wins, losses):
     )
 
 
-def _state(a="Guido Ivan Justo", b="Francisco Comesana"):
+def _state(
+    a="Guido Ivan Justo",
+    b="Francisco Comesana",
+    *,
+    tour="CHALLENGER",
+    source_url="https://livescore.tennis365.com/match/justo-comesana",
+):
     event_id = canonical_event_id("Tennis", a, b, "2026-10-06")
     return TennisLiveScoreState(
         event_id=event_id,
         selection_key=canonical_participant("Tennis", a),
         player=a,
         opponent=b,
-        tour="CHALLENGER",
+        tour=tour,
         period=3,
         player_sets=1,
         opponent_sets=1,
@@ -51,7 +57,7 @@ def _state(a="Guido Ivan Justo", b="Francisco Comesana"):
         net_break_advantage=2,
         point_score="0-30",
         score_sources=("Tennis365",),
-        source_url="https://livescore.tennis365.com/match/justo-comesana",
+        source_url=source_url,
     )
 
 
@@ -162,3 +168,116 @@ def test_fallback_does_not_override_primary_model_pair(monkeypatch):
         max_workers=1,
     )
     assert rows == []
+
+
+def test_fallback_can_fill_main_tour_live_model_hole_after_cross_feed_match(monkeypatch):
+    state = _state(
+        "Iga Swiatek",
+        "Iva Jovic",
+        tour="WTA",
+        source_url="https://livescore.tennis365.com/match/swiatek-jovic",
+    )
+    event = "KXWTAMATCH-26OCT07SWIJOV"
+    markets = [
+        {
+            "series_ticker": "KXWTAMATCH",
+            "event_ticker": event,
+            "ticker": event + "-SWI",
+            "yes_sub_title": "Iga Swiatek",
+            "yes_ask_dollars": "0.72",
+        },
+        {
+            "series_ticker": "KXWTAMATCH",
+            "event_ticker": event,
+            "ticker": event + "-JOV",
+            "yes_sub_title": "Iva Jovic",
+            "yes_ask_dollars": "0.29",
+        },
+    ]
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        lambda *args, **kwargs: (
+            _context("Iga Swiatek", rank=3, points=6409, wins=8, losses=2),
+            _context("Iva Jovic", rank=16, points=2436, wins=7, losses=3),
+        ),
+    )
+    rows = build_lower_tour_live_fallback_candidates(
+        markets,
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    assert {row.selection for row in rows} == {"Iga Swiatek", "Iva Jovic"}
+    assert all(row.model_name == LOWER_TOUR_MODEL for row in rows)
+    assert all(row.model_sample_size == 10 for row in rows)
+    assert all("live Tennis fallback" in " ".join(row.model_warnings) for row in rows)
+
+
+def test_main_tour_fallback_requires_tennis365_context_url(monkeypatch):
+    state = _state(
+        "Iga Swiatek",
+        "Iva Jovic",
+        tour="WTA",
+        source_url=None,
+    )
+    called = False
+
+    def should_not_call(*args, **kwargs):
+        nonlocal called
+        called = True
+        return None
+
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        should_not_call,
+    )
+    event = "KXWTAMATCH-26OCT07SWIJOV"
+    markets = [
+        {
+            "series_ticker": "KXWTAMATCH",
+            "event_ticker": event,
+            "ticker": event + "-SWI",
+            "yes_sub_title": "Iga Swiatek",
+            "yes_ask_dollars": "0.72",
+        },
+        {
+            "series_ticker": "KXWTAMATCH",
+            "event_ticker": event,
+            "ticker": event + "-JOV",
+            "yes_sub_title": "Iva Jovic",
+            "yes_ask_dollars": "0.29",
+        },
+    ]
+    assert build_lower_tour_live_fallback_candidates(
+        markets,
+        [state],
+        [],
+        max_workers=1,
+    ) == []
+    assert not called
+
+
+def test_fallback_infers_series_from_ticker_when_live_market_omits_series_ticker(monkeypatch):
+    state = _state()
+    markets = _markets()
+    for market in markets:
+        market.pop("series_ticker", None)
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        lambda *args, **kwargs: (
+            _context("Guido Ivan Justo", rank=310, points=190, wins=6, losses=4),
+            _context("Francisco Comesana", rank=125, points=480, wins=7, losses=3),
+        ),
+    )
+    rows = build_lower_tour_live_fallback_candidates(
+        markets,
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    assert {row.selection for row in rows} == {"Guido Ivan Justo", "Francisco Comesana"}

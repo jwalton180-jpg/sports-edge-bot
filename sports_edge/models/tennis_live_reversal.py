@@ -254,7 +254,8 @@ def assess_tennis_reversal(
         and leg.model_sample_size >= 6
         and prior_gap_points >= 3.0
     )
-    lower_tour_fallback = str(leg.model_name or "").startswith("Tennis lower-tour")
+    fallback_model = "ranking + prior form fallback" in str(leg.model_name or "").lower()
+    lower_tour_fallback = fallback_model
     model_sanity = (
         model_conf >= 0.45
         and leg.model_sample_size >= 6
@@ -392,7 +393,7 @@ def assess_tennis_reversal(
     )
     if lower_tour_fallback:
         warnings.append(
-            "lower-tour fallback has a stricter live-edge threshold than the primary Tennis model"
+            "ranking/prior-form fallback has a stricter live-edge threshold than the primary Tennis model"
         )
     if live_state is None:
         warnings.append("detailed live score/server state unavailable; strong reversal promotion blocked")
