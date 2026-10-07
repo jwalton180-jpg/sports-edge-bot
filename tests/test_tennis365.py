@@ -114,7 +114,7 @@ def test_justo_comesana_challenger_reversal_fixture_is_parsed_and_stateful():
     assert not justo.score_conflict
 
 
-def test_non_live_or_non_lower_tour_blocks_are_ignored():
+def test_main_tour_live_rows_are_parsed_but_non_live_rows_are_ignored():
     live_atp = _match_html(
         match_id="99",
         href="/scores/atp-shanghai/a-vs-b/",
@@ -133,4 +133,9 @@ def test_non_live_or_non_lower_tour_blocks_are_ignored():
         set2=(3, 6),
         current=(1, 1),
     ).replace('<span class="live_icon">LIVE</span>', '')
-    assert parse_tennis365_live_matches(live_atp + not_live) == ()
+    rows = parse_tennis365_live_matches(live_atp + not_live)
+    assert len(rows) == 1
+    assert rows[0].tour == "ATP"
+    assert rows[0].home == "Alpha One"
+    assert rows[0].away == "Beta Two"
+    assert rows[0].source_url.endswith("/scores/atp-shanghai/a-vs-b/")
