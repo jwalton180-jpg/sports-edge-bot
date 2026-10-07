@@ -122,6 +122,17 @@ def lower_tour_prior(
     )
 
 
+def _market_series_ticker(market: dict) -> str:
+    explicit = str(market.get("series_ticker") or "").strip().upper()
+    if explicit:
+        return explicit
+    for key in ("event_ticker", "ticker"):
+        raw = str(market.get(key) or "").strip().upper()
+        if raw:
+            return raw.split("-", 1)[0]
+    return ""
+
+
 def _selection_from_market(market: dict) -> str:
     for key in ("yes_sub_title", "yes_title", "yes_label"):
         value = str(market.get(key) or "").strip()
@@ -181,7 +192,7 @@ def build_lower_tour_live_fallback_candidates(
         "KXITFWMATCH",
     }
     for market in markets:
-        series = str(market.get("series_ticker") or "").upper()
+        series = _market_series_ticker(market)
         if series not in supported_series:
             continue
         event = str(market.get("event_ticker") or "").strip()
