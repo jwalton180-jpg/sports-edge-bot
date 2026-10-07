@@ -82,10 +82,10 @@ def test_coverage_counts_physical_matches_not_contract_sides():
     ]
     summary = build_tennis_live_coverage(markets, [_state("Alpha", "Beta")], [_candidate("Alpha", "Beta")], now=NOW)
     assert summary.open_matches == 1
-    assert summary.live_or_due_matches == 1
+    assert summary.confirmed_live_matches == 1
     assert summary.score_tracked_matches == 1
-    assert summary.model_covered_matches == 1
-    assert summary.unsupported_matches == 0
+    assert summary.model_covered_live_matches == 1
+    assert summary.unsupported_live_matches == 0
     assert summary.source_counts == (("ESPN", 1),)
 
 
@@ -93,11 +93,13 @@ def test_started_match_without_score_state_is_exposed_as_coverage_hole():
     markets = [_market("KXATPMATCH-26OCT06AB", "KXATPMATCH", "Alpha", "Beta")]
     summary = build_tennis_live_coverage(markets, [], [_candidate("Alpha", "Beta")], now=NOW)
     row = summary.rows[0]
-    assert row.live_or_due
+    assert not row.confirmed_live
+    assert row.start_passed_unverified
     assert not row.score_tracked
     assert row.model_covered
-    assert row.unsupported_reason == "scheduled start passed; no live score state"
-    assert summary.unsupported_matches == 1
+    assert row.unsupported_reason is None
+    assert summary.unsupported_live_matches == 0
+    assert summary.start_passed_unverified_matches == 1
 
 
 def test_upcoming_match_inside_grace_is_not_mislabeled_live():
@@ -106,9 +108,10 @@ def test_upcoming_match_inside_grace_is_not_mislabeled_live():
         start="2026-10-06T21:55:00Z", close="2026-10-07T00:00:00Z"
     )]
     summary = build_tennis_live_coverage(markets, [], [], now=NOW, start_grace_minutes=10)
-    assert not summary.rows[0].live_or_due
-    assert summary.live_or_due_matches == 0
-    assert summary.unsupported_matches == 0
+    assert not summary.rows[0].confirmed_live
+    assert not summary.rows[0].start_passed_unverified
+    assert summary.confirmed_live_matches == 0
+    assert summary.unsupported_live_matches == 0
 
 
 def test_live_score_without_model_is_exposed_as_model_hole():
@@ -136,5 +139,5 @@ def test_score_conflict_is_fail_closed_and_visible():
     assert row.tour == "ITF Women"
     assert row.score_conflict
     assert row.unsupported_reason == "live score sources disagree"
-    assert summary.unsupported_matches == 1
+    assert summary.unsupported_live_matches == 1
     assert row.official_itf_tour_url and "womens-world-tennis-tour" in row.official_itf_tour_url
