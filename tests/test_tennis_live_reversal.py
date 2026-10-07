@@ -5,6 +5,7 @@ from sports_edge.data.tennis_live import TennisLiveScoreState
 from sports_edge.models.event_identity import canonical_event_id, canonical_participant
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
 from sports_edge.models.tennis_live_reversal import (
+    CHEAP_TENNIS_REVERSAL_MAX_PRICE,
     assess_tennis_reversal,
     build_tennis_reversal_radar,
     executable_path,
@@ -12,6 +13,10 @@ from sports_edge.models.tennis_live_reversal import (
 
 
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc)
+
+
+def test_cheap_tennis_reversal_lane_extends_through_twenty_cents():
+    assert CHEAP_TENNIS_REVERSAL_MAX_PRICE == 0.20
 
 
 def _leg(event_id="TENNIS:2026-09-29:alpha|beta", ticker="KX-T1", fair=0.38, confidence=0.72):
