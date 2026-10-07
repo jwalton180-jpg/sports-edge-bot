@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -458,6 +458,35 @@ def test_tennisexplorer_h2h_adjustment_is_small_and_shrunk():
     assert h2h.probability_a > base.probability_a
     assert h2h.probability_a - base.probability_a < 0.04
     assert any("Beta-shrunk and low-weighted" in reason for reason in h2h.reasons)
+
+
+def test_fallback_anchors_tennisexplorer_context_to_live_event_date(monkeypatch):
+    state = _state()
+    seen = {}
+
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        lambda *args, **kwargs: None,
+    )
+
+    def explorer(a, b, *, as_of=None, **kwargs):
+        seen["as_of"] = as_of
+        return _explorer_pair(a, b)
+
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennisexplorer_pair_context",
+        explorer,
+    )
+    rows = build_lower_tour_live_fallback_candidates(
+        _markets(),
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    assert seen["as_of"] == date(2026, 10, 6)
 
 
 def test_fallback_infers_series_from_ticker_when_live_market_omits_series_ticker(monkeypatch):
