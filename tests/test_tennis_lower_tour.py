@@ -102,6 +102,7 @@ def _state(
     *,
     tour="CHALLENGER",
     source_url="https://livescore.tennis365.com/match/justo-comesana",
+    score_sources=("Tennis365",),
 ):
     event_id = canonical_event_id("Tennis", a, b, "2026-10-06")
     return TennisLiveScoreState(
@@ -127,7 +128,7 @@ def _state(
         serving=False,
         net_break_advantage=2,
         point_score="0-30",
-        score_sources=("Tennis365",),
+        score_sources=score_sources,
         source_url=source_url,
     )
 
@@ -247,6 +248,7 @@ def test_fallback_can_fill_main_tour_live_model_hole_after_cross_feed_match(monk
         "Iva Jovic",
         tour="WTA",
         source_url="https://livescore.tennis365.com/match/swiatek-jovic",
+        score_sources=("ESPN", "Tennis365"),
     )
     event = "KXWTAMATCH-26OCT07SWIJOV"
     markets = [
