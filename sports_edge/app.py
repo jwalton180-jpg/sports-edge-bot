@@ -120,6 +120,9 @@ build_tennis_reversal_radar = getattr(
     "build_tennis_reversal_radar",
     _empty_tennis_reversal_radar,
 )
+CHEAP_TENNIS_REVERSAL_MAX_PRICE = float(
+    getattr(_tennis_reversal, "CHEAP_TENNIS_REVERSAL_MAX_PRICE", 0.20)
+)
 
 _tennis_lower_tour = import_module_fresh("sports_edge.models.tennis_lower_tour")
 
@@ -2622,7 +2625,7 @@ elif view == "Live Feed":
         )
 
         # Put the cheapest already-qualified live opportunities at the top so a
-        # fast-moving 4–15c reversal is visible before the full radar table.
+        # fast-moving 4–20c reversal is visible before the full radar table.
         # This is presentation-only: a low price never creates a signal.
         cheap_status_priority = {
             "DEEP REVERSAL": 0,
@@ -2632,7 +2635,7 @@ elif view == "Live Feed":
         cheap_live = sorted(
             [
                 row for row in radar
-                if row.current_price <= 0.15
+                if row.current_price <= CHEAP_TENNIS_REVERSAL_MAX_PRICE
                 and row.status in cheap_status_priority
             ],
             key=lambda row: (
@@ -2643,7 +2646,7 @@ elif view == "Live Feed":
             ),
         )
 
-        st.markdown("### 🔥 Cheap Live Underdogs ≤15¢")
+        st.markdown(f"### 🔥 Cheap Live Underdogs ≤{CHEAP_TENNIS_REVERSAL_MAX_PRICE * 100:.0f}¢")
         st.caption(
             "Only already-qualified Tennis reversal rows appear here. "
             "Strong promotion now requires score-conditioned live value, server/break context, "
@@ -2692,7 +2695,7 @@ elif view == "Live Feed":
                 )
         else:
             st.caption(
-                "No ≤15¢ Tennis underdog currently clears the live reversal WATCH gate."
+                f"No ≤{CHEAP_TENNIS_REVERSAL_MAX_PRICE * 100:.0f}¢ Tennis underdog currently clears the live reversal WATCH gate."
             )
 
         c1, c2, c3, c4 = st.columns(4)
