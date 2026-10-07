@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import date
 from math import exp, log
 
 from sports_edge.core.math import clamp
@@ -10,6 +11,11 @@ from sports_edge.data.tennis365 import (
     fetch_tennis365_player_context,
 )
 from sports_edge.data.tennis_live import TennisLiveScoreState
+from sports_edge.data.tennisexplorer import (
+    TennisExplorerPairContext,
+    TennisExplorerPlayerContext,
+    fetch_tennisexplorer_pair_context,
+)
 from sports_edge.models.event_identity import canonical_participant
 from sports_edge.models.live_board import market_side_probability
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
@@ -39,6 +45,9 @@ def _sigmoid(x: float) -> float:
 def lower_tour_prior(
     a: Tennis365PlayerContext,
     b: Tennis365PlayerContext,
+    *,
+    explorer: TennisExplorerPairContext | None = None,
+    explorer_corroborates: bool = False,
 ) -> LowerTourPrior | None:
     """Conservative independent prior for live Tennis model coverage gaps.
 
@@ -110,15 +119,61 @@ def lower_tour_prior(
     ]
     if not have_points:
         warnings.append("ranking-points evidence incomplete")
+        if explorer is not None:
+            warnings.append(
+                "TennisExplorer rank/form context used without ranking points; stricter fallback reversal gates remain active"
+            )
     if sample < 6:
         warnings.append("fewer than six prior completed matches per player; strong reversal promotion blocked")
+
+    if explorer is not None:
+        ea, eb = explorer.player_a, explorer.player_b
+        reasons.append(
+            f"TennisExplorer {'cross-check' if explorer_corroborates else 'context'}: "
+            f"rank {ea.rank or '—'} vs {eb.rank or '—'}; "
+            f"recent {ea.recent_wins}-{ea.recent_losses} vs {eb.recent_wins}-{eb.recent_losses}"
+        )
+        if ea.h2h_matches:
+            h2h_p = (ea.h2h_wins + 2.0) / (ea.h2h_matches + 4.0)
+            h2h_delta = clamp(h2h_p - 0.50, -0.25, 0.25)
+            p = _sigmoid(_safe_logit(p) + 0.35 * h2h_delta)
+            reasons.append(
+                f"TennisExplorer prior H2H {a.player} {ea.h2h_wins}-{ea.h2h_losses}; "
+                "Beta-shrunk and low-weighted"
+            )
+
+        if explorer_corroborates and min_recent >= 4 and min(ea.recent_matches, eb.recent_matches) >= 4:
+            provider_delta = fa - fb
+            efa = (ea.recent_wins + 2.0) / (ea.recent_matches + 4.0)
+            efb = (eb.recent_wins + 2.0) / (eb.recent_matches + 4.0)
+            explorer_delta = efa - efb
+            same_direction = (
+                abs(provider_delta) < 0.08
+                or abs(explorer_delta) < 0.08
+                or provider_delta * explorer_delta > 0
+            )
+            if same_direction:
+                confidence = min(0.53, confidence + 0.015)
+                reasons.append("TennisExplorer recent-form direction corroborates the fallback prior")
+            else:
+                confidence = max(0.40, confidence - 0.05)
+                warnings.append(
+                    "TennisExplorer recent form conflicts with Tennis365; fallback confidence reduced"
+                )
+
+        if explorer_corroborates and a.rank and ea.rank and abs(a.rank - ea.rank) > max(40, int(0.30 * a.rank)):
+            warnings.append("TennisExplorer and Tennis365 player-A rankings materially differ")
+            confidence = max(0.40, confidence - 0.02)
+        if explorer_corroborates and b.rank and eb.rank and abs(b.rank - eb.rank) > max(40, int(0.30 * b.rank)):
+            warnings.append("TennisExplorer and Tennis365 player-B rankings materially differ")
+            confidence = max(0.40, confidence - 0.02)
 
     return LowerTourPrior(
         probability_a=clamp(p, 0.12, 0.88),
         confidence=confidence,
         sample_size=sample,
         reasons=tuple(reasons),
-        warnings=tuple(warnings),
+        warnings=tuple(dict.fromkeys(warnings)),
     )
 
 
@@ -151,6 +206,71 @@ def _pair_key(a: str, b: str) -> tuple[str, str]:
     )))
 
 
+def _explorer_as_base_context(
+    row: TennisExplorerPlayerContext,
+) -> Tennis365PlayerContext:
+    return Tennis365PlayerContext(
+        player=row.player,
+        rank=row.rank,
+        ranking_points=None,
+        recent_wins=row.recent_wins,
+        recent_losses=row.recent_losses,
+    )
+
+
+def _merge_player_context(
+    primary: Tennis365PlayerContext | None,
+    explorer: TennisExplorerPlayerContext | None,
+) -> Tennis365PlayerContext | None:
+    if primary is None:
+        return _explorer_as_base_context(explorer) if explorer is not None else None
+    if explorer is None:
+        return primary
+    use_explorer_form = explorer.recent_matches > primary.recent_matches
+    return Tennis365PlayerContext(
+        player=primary.player,
+        rank=primary.rank or explorer.rank,
+        ranking_points=primary.ranking_points,
+        recent_wins=explorer.recent_wins if use_explorer_form else primary.recent_wins,
+        recent_losses=explorer.recent_losses if use_explorer_form else primary.recent_losses,
+    )
+
+
+def _fetch_fallback_contexts(
+    *,
+    source_url: str,
+    player_a: str,
+    player_b: str,
+    event_date: str | None = None,
+) -> tuple[
+    tuple[Tennis365PlayerContext, Tennis365PlayerContext] | None,
+    TennisExplorerPairContext | None,
+]:
+    primary = None
+    if source_url:
+        try:
+            primary = fetch_tennis365_player_context(
+                source_url,
+                player_a=player_a,
+                player_b=player_b,
+            )
+        except Exception:
+            primary = None
+    try:
+        as_of = date.fromisoformat(event_date) if event_date else None
+    except ValueError:
+        as_of = None
+    try:
+        explorer = fetch_tennisexplorer_pair_context(
+            player_a,
+            player_b,
+            as_of=as_of,
+        )
+    except Exception:
+        explorer = None
+    return primary, explorer
+
+
 def build_lower_tour_live_fallback_candidates(
     markets: list[dict] | tuple[dict, ...],
     states: list[TennisLiveScoreState] | tuple[TennisLiveScoreState, ...],
@@ -160,15 +280,22 @@ def build_lower_tour_live_fallback_candidates(
 ) -> list[ParlayCandidateLeg]:
     """Fill confirmed-live Tennis model holes without replacing the primary model.
 
-    Tennis365 detail pages provide ranking + completed prior-form context. For
-    ATP/WTA the live structural state must still come from ESPN; Tennis365 only
-    contributes the independent fallback context URL after cross-feed matching.
+    Tennis365 detail pages and TennisExplorer provide independent ranking,
+    completed-form and H2H context. The primary SportsEdge historical model
+    always wins when available. For ATP/WTA the live structural state must still
+    come from ESPN; TennisExplorer can fill a missing prior but never override
+    the live-score authority. Lower-tour structural state remains fail-closed.
     """
     eligible_states: dict[tuple[str, str], TennisLiveScoreState] = {}
     for state in states:
         if state.tour not in {"ATP", "WTA", "CHALLENGER", "ITF", "ITF-W"}:
             continue
-        if not state.source_url or state.score_conflict:
+        if state.score_conflict:
+            continue
+        # Main-tour structural state remains ESPN-authoritative. TennisExplorer
+        # may provide the independent prior even when Tennis365 did not resolve
+        # a matching detail URL; it never supplies the live score itself.
+        if state.tour in {"ATP", "WTA"} and "ESPN" not in set(state.score_sources or ()):
             continue
         eligible_states[_pair_key(state.player, state.opponent)] = state
 
@@ -221,14 +348,25 @@ def build_lower_tour_live_fallback_candidates(
     if not jobs:
         return []
 
-    contexts: dict[tuple[str, str], tuple[Tennis365PlayerContext, Tennis365PlayerContext] | None] = {}
+    contexts: dict[
+        tuple[str, str],
+        tuple[
+            tuple[Tennis365PlayerContext, Tennis365PlayerContext] | None,
+            TennisExplorerPairContext | None,
+        ],
+    ] = {}
     with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(jobs)))) as pool:
         future_map = {
             pool.submit(
-                fetch_tennis365_player_context,
-                state.source_url or "",
+                _fetch_fallback_contexts,
+                source_url=state.source_url or "",
                 player_a=a,
                 player_b=b,
+                event_date=(
+                    str(state.event_id).split(":", 2)[1]
+                    if str(state.event_id).count(":") >= 2
+                    else None
+                ),
             ): pair
             for pair, state, _, a, b in jobs
         }
@@ -237,15 +375,25 @@ def build_lower_tour_live_fallback_candidates(
             try:
                 contexts[pair] = future.result()
             except Exception:
-                contexts[pair] = None
+                contexts[pair] = (None, None)
 
     out: list[ParlayCandidateLeg] = []
     for pair, state, event_markets, a, b in jobs:
-        context = contexts.get(pair)
-        if context is None:
+        primary, explorer = contexts.get(pair, (None, None))
+        exp_a = explorer.player_a if explorer is not None else None
+        exp_b = explorer.player_b if explorer is not None else None
+        primary_a = primary[0] if primary is not None else None
+        primary_b = primary[1] if primary is not None else None
+        ctx_a = _merge_player_context(primary_a, exp_a)
+        ctx_b = _merge_player_context(primary_b, exp_b)
+        if ctx_a is None or ctx_b is None:
             continue
-        ctx_a, ctx_b = context
-        prior = lower_tour_prior(ctx_a, ctx_b)
+        prior = lower_tour_prior(
+            ctx_a,
+            ctx_b,
+            explorer=explorer,
+            explorer_corroborates=primary is not None,
+        )
         if prior is None:
             continue
         probability_by_key = {

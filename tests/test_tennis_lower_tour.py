@@ -1,6 +1,12 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+
+import pytest
 
 from sports_edge.data.tennis365 import Tennis365PlayerContext
+from sports_edge.data.tennisexplorer import (
+    TennisExplorerPairContext,
+    TennisExplorerPlayerContext,
+)
 from sports_edge.data.tennis_live import TennisLiveScoreState
 from sports_edge.models.event_identity import canonical_event_id, canonical_participant
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
@@ -25,12 +31,78 @@ def _context(player, *, rank, points, wins, losses):
     )
 
 
+def _explorer_player(player, *, rank, wins, losses, h2h_wins=0, h2h_losses=0):
+    return TennisExplorerPlayerContext(
+        player=player,
+        profile_url="https://www.tennisexplorer.com/player/test/",
+        rank=rank,
+        highest_rank=rank,
+        year_wins=max(wins, 0) + 20,
+        year_losses=max(losses, 0) + 10,
+        recent_wins=wins,
+        recent_losses=losses,
+        clay_wins=20,
+        clay_losses=10,
+        hard_wins=5,
+        hard_losses=4,
+        indoor_wins=0,
+        indoor_losses=0,
+        grass_wins=0,
+        grass_losses=0,
+        h2h_wins=h2h_wins,
+        h2h_losses=h2h_losses,
+    )
+
+
+def _explorer_pair(
+    a="Guido Ivan Justo",
+    b="Francisco Comesana",
+    *,
+    a_rank=188,
+    b_rank=54,
+    a_wins=7,
+    a_losses=3,
+    b_wins=6,
+    b_losses=4,
+    a_h2h_wins=1,
+    a_h2h_losses=0,
+):
+    return TennisExplorerPairContext(
+        _explorer_player(
+            a,
+            rank=a_rank,
+            wins=a_wins,
+            losses=a_losses,
+            h2h_wins=a_h2h_wins,
+            h2h_losses=a_h2h_losses,
+        ),
+        _explorer_player(
+            b,
+            rank=b_rank,
+            wins=b_wins,
+            losses=b_losses,
+            h2h_wins=a_h2h_losses,
+            h2h_losses=a_h2h_wins,
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _disable_tennisexplorer_network(monkeypatch):
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennisexplorer_pair_context",
+        lambda *args, **kwargs: None,
+    )
+
+
 def _state(
     a="Guido Ivan Justo",
     b="Francisco Comesana",
     *,
     tour="CHALLENGER",
     source_url="https://livescore.tennis365.com/match/justo-comesana",
+    score_sources=("Tennis365",),
 ):
     event_id = canonical_event_id("Tennis", a, b, "2026-10-06")
     return TennisLiveScoreState(
@@ -56,7 +128,7 @@ def _state(
         serving=False,
         net_break_advantage=2,
         point_score="0-30",
-        score_sources=("Tennis365",),
+        score_sources=score_sources,
         source_url=source_url,
     )
 
@@ -176,6 +248,7 @@ def test_fallback_can_fill_main_tour_live_model_hole_after_cross_feed_match(monk
         "Iva Jovic",
         tour="WTA",
         source_url="https://livescore.tennis365.com/match/swiatek-jovic",
+        score_sources=("ESPN", "Tennis365"),
     )
     event = "KXWTAMATCH-26OCT07SWIJOV"
     markets = [
@@ -215,12 +288,18 @@ def test_fallback_can_fill_main_tour_live_model_hole_after_cross_feed_match(monk
     assert all("live Tennis fallback" in " ".join(row.model_warnings) for row in rows)
 
 
-def test_main_tour_fallback_requires_tennis365_context_url(monkeypatch):
+def test_main_tour_fallback_can_use_verified_tennisexplorer_prior_without_tennis365_url(monkeypatch):
     state = _state(
         "Iga Swiatek",
         "Iva Jovic",
         tour="WTA",
         source_url=None,
+    )
+    state = TennisLiveScoreState(
+        **{
+            **state.__dict__,
+            "score_sources": ("ESPN",),
+        }
     )
     called = False
 
@@ -233,6 +312,63 @@ def test_main_tour_fallback_requires_tennis365_context_url(monkeypatch):
         tennis_lower_tour,
         "fetch_tennis365_player_context",
         should_not_call,
+    )
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennisexplorer_pair_context",
+        lambda *args, **kwargs: _explorer_pair(
+            "Iga Swiatek",
+            "Iva Jovic",
+            a_rank=3,
+            b_rank=16,
+            a_wins=8,
+            a_losses=2,
+            b_wins=7,
+            b_losses=3,
+            a_h2h_wins=0,
+            a_h2h_losses=0,
+        ),
+    )
+    event = "KXWTAMATCH-26OCT07SWIJOV"
+    markets = [
+        {
+            "series_ticker": "KXWTAMATCH",
+            "event_ticker": event,
+            "ticker": event + "-SWI",
+            "yes_sub_title": "Iga Swiatek",
+            "yes_ask_dollars": "0.72",
+        },
+        {
+            "series_ticker": "KXWTAMATCH",
+            "event_ticker": event,
+            "ticker": event + "-JOV",
+            "yes_sub_title": "Iva Jovic",
+            "yes_ask_dollars": "0.29",
+        },
+    ]
+    rows = build_lower_tour_live_fallback_candidates(
+        markets,
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    assert not called
+    assert all("TennisExplorer" in " ".join(row.model_reasons) for row in rows)
+    assert all("ranking-points evidence incomplete" in " ".join(row.model_warnings) for row in rows)
+
+
+def test_main_tour_without_espn_structural_state_still_fails_closed(monkeypatch):
+    state = _state(
+        "Iga Swiatek",
+        "Iva Jovic",
+        tour="WTA",
+        source_url=None,
+    )
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennisexplorer_pair_context",
+        lambda *args, **kwargs: _explorer_pair("Iga Swiatek", "Iva Jovic"),
     )
     event = "KXWTAMATCH-26OCT07SWIJOV"
     markets = [
@@ -257,7 +393,102 @@ def test_main_tour_fallback_requires_tennis365_context_url(monkeypatch):
         [],
         max_workers=1,
     ) == []
-    assert not called
+
+
+def test_tennisexplorer_fills_lower_tour_context_when_tennis365_context_is_missing(monkeypatch):
+    state = _state()
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennisexplorer_pair_context",
+        lambda *args, **kwargs: _explorer_pair(),
+    )
+    rows = build_lower_tour_live_fallback_candidates(
+        _markets(),
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    justo = next(row for row in rows if row.selection == "Guido Ivan Justo")
+    assert 0.12 <= justo.model_probability <= 0.88
+    assert justo.model_sample_size == 10
+    assert "TennisExplorer" in " ".join(justo.model_reasons)
+    assert "stricter fallback reversal gates remain active" in " ".join(justo.model_warnings)
+
+
+def test_cross_source_form_conflict_reduces_fallback_confidence():
+    a = _context("Guido Ivan Justo", rank=188, points=None, wins=8, losses=2)
+    b = _context("Francisco Comesana", rank=54, points=None, wins=2, losses=8)
+    aligned = lower_tour_prior(
+        a,
+        b,
+        explorer=_explorer_pair(
+            a_wins=8, a_losses=2, b_wins=2, b_losses=8, a_h2h_wins=0, a_h2h_losses=0
+        ),
+        explorer_corroborates=True,
+    )
+    conflict = lower_tour_prior(
+        a,
+        b,
+        explorer=_explorer_pair(
+            a_wins=2, a_losses=8, b_wins=8, b_losses=2, a_h2h_wins=0, a_h2h_losses=0
+        ),
+        explorer_corroborates=True,
+    )
+    assert aligned is not None and conflict is not None
+    assert aligned.confidence > conflict.confidence
+    assert any("conflicts with Tennis365" in warning for warning in conflict.warnings)
+
+
+def test_tennisexplorer_h2h_adjustment_is_small_and_shrunk():
+    a = _context("Guido Ivan Justo", rank=188, points=None, wins=6, losses=4)
+    b = _context("Francisco Comesana", rank=54, points=None, wins=6, losses=4)
+    base = lower_tour_prior(a, b)
+    h2h = lower_tour_prior(
+        a,
+        b,
+        explorer=_explorer_pair(
+            a_wins=6, a_losses=4, b_wins=6, b_losses=4, a_h2h_wins=3, a_h2h_losses=0
+        ),
+    )
+    assert base is not None and h2h is not None
+    assert h2h.probability_a > base.probability_a
+    assert h2h.probability_a - base.probability_a < 0.04
+    assert any("Beta-shrunk and low-weighted" in reason for reason in h2h.reasons)
+
+
+def test_fallback_anchors_tennisexplorer_context_to_live_event_date(monkeypatch):
+    state = _state()
+    seen = {}
+
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        lambda *args, **kwargs: None,
+    )
+
+    def explorer(a, b, *, as_of=None, **kwargs):
+        seen["as_of"] = as_of
+        return _explorer_pair(a, b)
+
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennisexplorer_pair_context",
+        explorer,
+    )
+    rows = build_lower_tour_live_fallback_candidates(
+        _markets(),
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    assert seen["as_of"] == date(2026, 10, 6)
 
 
 def test_fallback_infers_series_from_ticker_when_live_market_omits_series_ticker(monkeypatch):

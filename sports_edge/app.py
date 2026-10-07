@@ -152,6 +152,17 @@ build_tennis_live_coverage = getattr(
     _empty_tennis_coverage,
 )
 
+_sofascore = import_module_fresh("sports_edge.data.sofascore")
+
+def _empty_sofascore_snapshot(*args, **kwargs):
+    return ()
+
+fetch_sofascore_live_snapshot = getattr(
+    _sofascore,
+    "fetch_sofascore_live_snapshot",
+    _empty_sofascore_snapshot,
+)
+
 from sports_edge.models.parlay_candidates import (
     ParlayCandidateLeg,
     candidate_legs_from_h2h,
@@ -456,6 +467,15 @@ def get_tennis_candles_live(tickers: tuple[str, ...]):
         ), None
     except Exception as exc:
         return {}, _safe_error(exc)
+
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_sofascore_live_snapshot_cached():
+    try:
+        return tuple(fetch_sofascore_live_snapshot()), None
+    except Exception as exc:
+        return (), _safe_error(exc)
 
 
 @st.cache_data(ttl=12, show_spinner=False)
@@ -2309,6 +2329,28 @@ elif view == "Parlay Generator":
 elif view == "Live Feed":
     _section_hero("LIVE COMMAND", "What is changing now", "Current game state and live reversal intelligence, with freshness checks and fail-closed evidence rules.")
     st.markdown('<div class="section-note">Fast official/public game-state feeds plus Tennis price-path reversal intelligence. This page is for what is happening now, not futures.</div>', unsafe_allow_html=True)
+
+    sofascore_snapshot, sofascore_err = get_sofascore_live_snapshot_cached()
+    with st.expander("External corroboration sources", expanded=False):
+        st.caption(
+            "TennisExplorer: active Tennis research source for ranking, yearly/surface record, recent form and prior H2H when the primary Tennis model has a coverage hole."
+        )
+        if sofascore_err:
+            st.caption("SofaScore: optional cross-sport corroboration unavailable — " + sofascore_err)
+        elif sofascore_snapshot:
+            source_rows = []
+            for result in sofascore_snapshot:
+                if result.available:
+                    state = f"available · {len(result.events)} live event(s)"
+                elif result.blocked:
+                    state = f"blocked by upstream ({result.status_code}); excluded from evidence"
+                else:
+                    state = result.error or "unavailable; excluded from evidence"
+                source_rows.append({"Sport": result.sport, "SofaScore": state})
+            st.dataframe(pd.DataFrame(source_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("SofaScore: no usable response; excluded from SportsEdge evidence.")
+
     nfl, nerr = get_nfl_live()
     mlb, merr = get_mlb_live()
 
@@ -2316,7 +2358,7 @@ elif view == "Live Feed":
     st.caption(
         "Scans all open ATP/WTA/Challenger/ITF match-winner contracts for a major executable-price dip followed by a real rebound. "
         "The DEEP REVERSAL lane targets 4–25¢ underdogs only when executable-price recovery is corroborated by live sets/games from ESPN or the cloud-reachable Tennis365 lower-tour layer. "
-        "Sports Edge's Tennis model remains the independent pre-match prior (Elo + form trajectory + serve/return trend + workload + H2H)."
+        "Sports Edge's primary Tennis model remains first; TennisExplorer can independently fill rank/form/H2H context only when that model has a coverage hole."
     )
 
     def _render_tennis_reversal_radar():
@@ -2352,10 +2394,10 @@ elif view == "Live Feed":
         live_game_count = len(confirmed_live_ids)
 
         # Primary Tennis history stays first. Any confirmed-live physical match
-        # missing from that model may receive the independent Tennis365
-        # ranking/prior-form fallback. ATP/WTA requires ESPN structural score
-        # confirmation plus a matching Tennis365 detail URL; lower tours may use
-        # Tennis365 structural state directly.
+        # missing from that model may receive independent Tennis365 and/or
+        # TennisExplorer ranking/form/H2H context. ATP/WTA still requires ESPN
+        # structural score authority; lower tours may use Tennis365 structural
+        # state directly. Research providers never replace live-score authority.
         lower_tour_candidates = build_lower_tour_live_fallback_candidates(
             live_tennis_markets,
             score_states,
