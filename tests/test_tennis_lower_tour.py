@@ -258,3 +258,26 @@ def test_main_tour_fallback_requires_tennis365_context_url(monkeypatch):
         max_workers=1,
     ) == []
     assert not called
+
+
+def test_fallback_infers_series_from_ticker_when_live_market_omits_series_ticker(monkeypatch):
+    state = _state()
+    markets = _markets()
+    for market in markets:
+        market.pop("series_ticker", None)
+    monkeypatch.setattr(
+        tennis_lower_tour,
+        "fetch_tennis365_player_context",
+        lambda *args, **kwargs: (
+            _context("Guido Ivan Justo", rank=310, points=190, wins=6, losses=4),
+            _context("Francisco Comesana", rank=125, points=480, wins=7, losses=3),
+        ),
+    )
+    rows = build_lower_tour_live_fallback_candidates(
+        markets,
+        [state],
+        [],
+        max_workers=1,
+    )
+    assert len(rows) == 2
+    assert {row.selection for row in rows} == {"Guido Ivan Justo", "Francisco Comesana"}
