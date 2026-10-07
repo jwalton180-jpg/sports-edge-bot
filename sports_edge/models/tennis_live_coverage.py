@@ -160,7 +160,7 @@ def build_tennis_live_coverage(
     """Audit match-level coverage for the Kalshi Tennis reversal universe.
 
     ``live_or_due`` means a score feed currently confirms the match as live OR
-    Kalshi's scheduled occurrence time has passed while the market remains open.
+    Kalshi's scheduled occurrence time has passed by the configured grace period while the market remains open.
     The second case is deliberately labelled as due rather than definitely live
     because delayed matches exist; it is still the right bucket for coverage
     holes that need attention.
@@ -202,7 +202,7 @@ def build_tennis_live_coverage(
         close = item["close"]
         scheduled_due = bool(
             start is not None
-            and start <= now + grace
+            and start <= now - grace
             and (close is None or close >= now - grace)
         )
         live_or_due = score_tracked or scheduled_due
