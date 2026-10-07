@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import date
 from math import exp, log
 
 from sports_edge.core.math import clamp
@@ -240,6 +241,7 @@ def _fetch_fallback_contexts(
     source_url: str,
     player_a: str,
     player_b: str,
+    event_date: str | None = None,
 ) -> tuple[
     tuple[Tennis365PlayerContext, Tennis365PlayerContext] | None,
     TennisExplorerPairContext | None,
@@ -255,7 +257,15 @@ def _fetch_fallback_contexts(
         except Exception:
             primary = None
     try:
-        explorer = fetch_tennisexplorer_pair_context(player_a, player_b)
+        as_of = date.fromisoformat(event_date) if event_date else None
+    except ValueError:
+        as_of = None
+    try:
+        explorer = fetch_tennisexplorer_pair_context(
+            player_a,
+            player_b,
+            as_of=as_of,
+        )
     except Exception:
         explorer = None
     return primary, explorer
@@ -352,6 +362,11 @@ def build_lower_tour_live_fallback_candidates(
                 source_url=state.source_url or "",
                 player_a=a,
                 player_b=b,
+                event_date=(
+                    str(state.event_id).split(":", 2)[1]
+                    if str(state.event_id).count(":") >= 2
+                    else None
+                ),
             ): pair
             for pair, state, _, a, b in jobs
         }
