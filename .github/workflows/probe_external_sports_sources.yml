@@ -29,6 +29,10 @@ jobs:
               'https://api.sofascore.com/api/v1/sport/baseball/scheduled-events/2026-10-07',
               'https://api.sofascore.com/api/v1/sport/basketball/scheduled-events/2026-10-07',
               'https://api.sofascore.com/api/v1/sport/american-football/scheduled-events/2026-10-07',
+              'https://www.sofascore.com/api/v1/sport/tennis/events/live',
+              'https://www.sofascore.com/api/v1/sport/baseball/events/live',
+              'https://www.sofascore.com/api/v1/sport/basketball/events/live',
+              'https://www.sofascore.com/api/v1/sport/american-football/events/live',
           ]
           headers={'User-Agent':'SportsEdgeReadOnly/1.0','Accept':'application/json,text/html,*/*'}
           te=requests.get('https://www.tennisexplorer.com/',headers=headers,timeout=15).text
