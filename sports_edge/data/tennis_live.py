@@ -427,6 +427,7 @@ def _merge_live_score_state(
             player_serving=serving,
         )
     point_score = primary.point_score or secondary.point_score
+    source_url = primary.source_url or secondary.source_url
     return replace(
         primary,
         serving=serving,
@@ -434,6 +435,7 @@ def _merge_live_score_state(
         point_score=point_score,
         score_sources=sources,
         score_conflict=False,
+        source_url=source_url,
     )
 
 
@@ -441,31 +443,59 @@ def fetch_live_tennis_states(
     *,
     timeout: float = 12.0,
 ) -> tuple[TennisLiveScoreState, ...]:
-    """Fetch ESPN ATP/WTA plus Tennis365 Challenger/ITF live state.
+    """Fetch ESPN ATP/WTA plus Tennis365 live state across supported tours.
 
-    ESPN remains preferred where it has ATP/WTA coverage. Tennis365 is the
-    cloud-reachable lower-tour source. If two sources ever identify the same
-    physical match, structural disagreement is retained as a fail-closed flag.
+    ESPN remains the preferred ATP/WTA structural source. Tennis365 supplies
+    standalone Challenger/ITF state and enriches agreeing ATP/WTA rows with a
+    cloud-reachable match-detail URL for independent ranking/prior-form fallback.
+    Main-tour Tennis365 rows are never allowed to replace a missing ESPN score
+    row by themselves; this avoids weakening the preferred structural feed.
     """
     with ThreadPoolExecutor(max_workers=2) as pool:
         espn_future = pool.submit(fetch_espn_live_tennis_states, timeout=timeout)
-        lower_future = pool.submit(fetch_tennis365_live_tennis_states, timeout=timeout)
+        tennis365_future = pool.submit(fetch_tennis365_live_tennis_states, timeout=timeout)
         try:
             espn = tuple(espn_future.result())
         except Exception:
             espn = ()
         try:
-            lower = tuple(lower_future.result())
+            tennis365 = tuple(tennis365_future.result())
         except Exception:
-            lower = ()
+            tennis365 = ()
+
+    def pair_key(row: TennisLiveScoreState) -> tuple[str, str]:
+        return tuple(sorted((
+            canonical_participant("Tennis", row.player),
+            canonical_participant("Tennis", row.opponent),
+        )))
+
+    t365_by_exact = {
+        (row.event_id, row.selection_key): row
+        for row in tennis365
+    }
+    t365_by_pair: dict[tuple[tuple[str, str], str], list[TennisLiveScoreState]] = {}
+    for row in tennis365:
+        t365_by_pair.setdefault((pair_key(row), row.selection_key), []).append(row)
 
     merged: dict[tuple[str, str], TennisLiveScoreState] = {}
-    for row in lower:
-        merged[(row.event_id, row.selection_key)] = row
+    # Challenger/ITF may have no ESPN coverage, so Tennis365 is allowed to
+    # stand alone there. ATP/WTA requires ESPN structural confirmation.
+    for row in tennis365:
+        if row.tour in {"CHALLENGER", "ITF", "ITF-W"}:
+            merged[(row.event_id, row.selection_key)] = row
+
     for row in espn:
         key = (row.event_id, row.selection_key)
-        old = merged.get(key)
-        merged[key] = _merge_live_score_state(row, old) if old is not None else row
+        secondary = t365_by_exact.get(key)
+        if secondary is None:
+            pair_hits = t365_by_pair.get((pair_key(row), row.selection_key), [])
+            if len(pair_hits) == 1:
+                secondary = pair_hits[0]
+        merged[key] = (
+            _merge_live_score_state(row, secondary)
+            if secondary is not None
+            else row
+        )
     return tuple(merged.values())
 
 TENNIS_MATCH_SERIES = (
