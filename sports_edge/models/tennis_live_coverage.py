@@ -20,7 +20,8 @@ class TennisLiveCoverageRow:
     title: str
     tour: str
     participants: tuple[str, ...]
-    live_or_due: bool
+    confirmed_live: bool
+    start_passed_unverified: bool
     score_tracked: bool
     model_covered: bool
     model_name: str | None
@@ -35,10 +36,11 @@ class TennisLiveCoverageRow:
 class TennisLiveCoverageSummary:
     rows: tuple[TennisLiveCoverageRow, ...]
     open_matches: int
-    live_or_due_matches: int
+    confirmed_live_matches: int
     score_tracked_matches: int
-    model_covered_matches: int
-    unsupported_matches: int
+    model_covered_live_matches: int
+    unsupported_live_matches: int
+    start_passed_unverified_matches: int
     source_counts: tuple[tuple[str, int], ...]
 
 
@@ -159,11 +161,10 @@ def build_tennis_live_coverage(
 ) -> TennisLiveCoverageSummary:
     """Audit match-level coverage for the Kalshi Tennis reversal universe.
 
-    ``live_or_due`` means a score feed currently confirms the match as live OR
-    Kalshi's scheduled occurrence time has passed by the configured grace period while the market remains open.
-    The second case is deliberately labelled as due rather than definitely live
-    because delayed matches exist; it is still the right bucket for coverage
-    holes that need attention.
+    A match is called confirmed live only when a structural score feed currently
+    identifies it. Kalshi scheduled start times are tracked separately because
+    delayed matches and placeholder times make them insufficient proof of live
+    play. Start-passed/unverified rows are attention candidates, not claimed live.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     grace = timedelta(minutes=max(0, int(start_grace_minutes)))
@@ -205,14 +206,13 @@ def build_tennis_live_coverage(
             and start <= now - grace
             and (close is None or close >= now - grace)
         )
-        live_or_due = score_tracked or scheduled_due
+        confirmed_live = score_tracked
+        start_passed_unverified = scheduled_due and not score_tracked
 
         reason = None
-        if live_or_due:
+        if confirmed_live:
             if pair is None:
                 reason = "participant identity unresolved"
-            elif not score_tracked:
-                reason = "scheduled start passed; no live score state"
             elif score_conflict:
                 reason = "live score sources disagree"
             elif not model_covered:
@@ -230,7 +230,8 @@ def build_tennis_live_coverage(
             title=item["title"],
             tour=item["tour"],
             participants=item["participants"],
-            live_or_due=live_or_due,
+            confirmed_live=confirmed_live,
+            start_passed_unverified=start_passed_unverified,
             score_tracked=score_tracked,
             model_covered=model_covered,
             model_name=model_name,
@@ -241,14 +242,27 @@ def build_tennis_live_coverage(
             official_itf_tour_url=official_tour,
         ))
 
-    rows.sort(key=lambda row: (not row.live_or_due, row.tour, row.title, row.event_ticker))
-    live_rows = [row for row in rows if row.live_or_due]
+    rows.sort(
+        key=lambda row: (
+            not row.confirmed_live,
+            not row.start_passed_unverified,
+            row.tour,
+            row.title,
+            row.event_ticker,
+        )
+    )
+    live_rows = [row for row in rows if row.confirmed_live]
     return TennisLiveCoverageSummary(
         rows=tuple(rows),
         open_matches=len(rows),
-        live_or_due_matches=len(live_rows),
+        confirmed_live_matches=len(live_rows),
         score_tracked_matches=sum(1 for row in live_rows if row.score_tracked),
-        model_covered_matches=sum(1 for row in live_rows if row.model_covered),
-        unsupported_matches=sum(1 for row in live_rows if row.unsupported_reason is not None),
+        model_covered_live_matches=sum(1 for row in live_rows if row.model_covered),
+        unsupported_live_matches=sum(
+            1 for row in live_rows if row.unsupported_reason is not None
+        ),
+        start_passed_unverified_matches=sum(
+            1 for row in rows if row.start_passed_unverified
+        ),
         source_counts=tuple(sorted(source_counter.items())),
     )
