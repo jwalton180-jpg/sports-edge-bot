@@ -428,6 +428,7 @@ def test_cross_source_form_conflict_reduces_fallback_confidence():
         explorer=_explorer_pair(
             a_wins=8, a_losses=2, b_wins=2, b_losses=8, a_h2h_wins=0, a_h2h_losses=0
         ),
+        explorer_corroborates=True,
     )
     conflict = lower_tour_prior(
         a,
@@ -435,6 +436,7 @@ def test_cross_source_form_conflict_reduces_fallback_confidence():
         explorer=_explorer_pair(
             a_wins=2, a_losses=8, b_wins=8, b_losses=2, a_h2h_wins=0, a_h2h_losses=0
         ),
+        explorer_corroborates=True,
     )
     assert aligned is not None and conflict is not None
     assert aligned.confidence > conflict.confidence
