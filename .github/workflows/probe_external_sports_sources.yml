@@ -16,49 +16,49 @@ jobs:
           python-version: '3.11'
       - name: Install
         run: pip install -r requirements.txt
-      - name: Probe sources
+      - name: Validate external sports sources
         run: |
           python - <<'PY'
-          import requests
           from datetime import date
+          from sports_edge.data.tennisexplorer import fetch_tennisexplorer_pair_context
+          from sports_edge.data.sofascore import fetch_sofascore_live_snapshot
 
-          urls = [
-              'https://www.tennisexplorer.com/',
-              'https://www.tennisexplorer.com/results/?year=2026&month=10&day=06',
-              'https://api.sofascore.com/api/v1/sport/tennis/events/live',
-              'https://api.sofascore.com/api/v1/sport/baseball/scheduled-events/2026-10-07',
-              'https://api.sofascore.com/api/v1/sport/basketball/scheduled-events/2026-10-07',
-              'https://api.sofascore.com/api/v1/sport/american-football/scheduled-events/2026-10-07',
-              'https://www.sofascore.com/api/v1/sport/tennis/events/live',
-              'https://www.sofascore.com/api/v1/sport/baseball/events/live',
-              'https://www.sofascore.com/api/v1/sport/basketball/events/live',
-              'https://www.sofascore.com/api/v1/sport/american-football/events/live',
+          pairs = [
+              ("Guido Ivan Justo", "Francisco Comesana"),
+              ("Darwin Andres Macias Elizalde", "Felipe de Dios"),
           ]
-          headers={'User-Agent':'SportsEdgeReadOnly/1.0','Accept':'application/json,text/html,*/*'}
-          te=requests.get('https://www.tennisexplorer.com/',headers=headers,timeout=15).text
-          open('/tmp/te.html','w').write(te)
-          import re
-          for token in ('Justo','Comesana','Macias Elizalde','De Dios'):
-              print('TOKEN',token)
-              for m in re.finditer(token,te,re.I):
-                  print(te[max(0,m.start()-350):m.end()+500].replace('\n',' ')[:1000])
-                  break
-          print('SEARCH_FORMS')
-          for m in re.finditer(r'<form[^>]*>.*?</form>',te,re.I|re.S):
-              block=m.group(0)
-              if 'search' in block.lower():
-                  print(block[:2500].replace('\n',' '))
-          print('PLAYER_LINK_SAMPLES')
-          links=re.findall(r'href=["\']([^"\']*/player/[^"\']+)["\']',te,re.I)
-          print(links[:40])
+          for a, b in pairs:
+              ctx = fetch_tennisexplorer_pair_context(
+                  a, b, as_of=date(2026, 10, 7), timeout=15
+              )
+              assert ctx is not None, f"TennisExplorer pair failed: {a} vs {b}"
+              print(
+                  "TENNIS_EXPLORER",
+                  a, "| rank", ctx.player_a.rank,
+                  "| recent", f"{ctx.player_a.recent_wins}-{ctx.player_a.recent_losses}",
+                  "| h2h", f"{ctx.player_a.h2h_wins}-{ctx.player_a.h2h_losses}",
+                  "|", b, "| rank", ctx.player_b.rank,
+                  "| recent", f"{ctx.player_b.recent_wins}-{ctx.player_b.recent_losses}",
+              )
+              assert ctx.player_a.rank is not None or ctx.player_a.recent_matches >= 4
+              assert ctx.player_b.rank is not None or ctx.player_b.recent_matches >= 4
 
-          for url in urls:
-              try:
-                  r=requests.get(url,headers=headers,timeout=15)
-                  print('PROBE',r.status_code,len(r.content),url)
-                  print('TYPE',r.headers.get('content-type'))
-                  sample=r.text[:500].replace('\n',' ')
-                  print('SAMPLE',sample)
-              except Exception as exc:
-                  print('ERROR',type(exc).__name__,str(exc),url)
+          snapshot = fetch_sofascore_live_snapshot(timeout=10)
+          assert {x.sport for x in snapshot} == {"Tennis", "MLB", "NFL", "NBA", "WNBA"}
+          for result in snapshot:
+              print(
+                  "SOFASCORE",
+                  result.sport,
+                  "| available", result.available,
+                  "| blocked", result.blocked,
+                  "| status", result.status_code,
+                  "| events", len(result.events),
+                  "| error", result.error,
+              )
+              if result.blocked:
+                  assert not result.available
+                  assert result.events == ()
+              if result.available:
+                  assert result.status_code == 200
+          print("EXTERNAL_SOURCE_AUDIT_OK")
           PY
