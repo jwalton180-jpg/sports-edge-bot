@@ -110,6 +110,12 @@ build_intelligent_parlay = _pi.build_intelligent_parlay
 
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context, _market_local_date
 
+_tennis_early = import_module_fresh("sports_edge.models.tennis_early_research")
+build_early_reversal_watches = getattr(
+    _tennis_early, "build_early_reversal_watches", lambda *args, **kwargs: ()
+)
+_tennis_ledger = import_module_fresh("sports_edge.models.tennis_reversal_ledger")
+
 _tennis_reversal = import_module_fresh("sports_edge.models.tennis_live_reversal")
 
 def _empty_tennis_reversal_radar(*args, **kwargs):
@@ -2496,6 +2502,77 @@ elif view == "Live Feed":
             confirmed_live_event_ids=confirmed_live_ids,
             live_states=live_state_index,
         )
+        early_watches = build_early_reversal_watches(
+            tennis_candidates, candles, live_state_index,
+        )
+        # Only operator-configured persistent storage may be used for a
+        # prospective first-trigger ledger. Streamlit's ephemeral filesystem
+        # is intentionally NOT accepted as a production ledger.
+        ledger_path = os.environ.get("SPORTSEDGE_TENNIS_LEDGER_PATH")
+        ledger_metrics = None
+        ledger_error = None
+        if ledger_path:
+            try:
+                ledger = _tennis_ledger.TennisSignalLedger(ledger_path)
+                utc_now = datetime.now(timezone.utc)
+                for early in early_watches:
+                    side = next(
+                        (str(candidate.kalshi_side).upper()
+                         for candidate in tennis_candidates
+                         if str(candidate.kalshi_ticker) == early.ticker),
+                        "YES",
+                    )
+                    ledger.record_first(_tennis_ledger.SignalObservation(
+                        event_id=early.event_id, ticker=early.ticker,
+                        selection=early.selection,side=side,lane=early.status,
+                        model_version=early.model_version, observed_at=utc_now,
+                        entry_ask=early.price,model_fair=early.fair,
+                        score_state=early.score,
+                        evidence={"edge_pp":early.edge_pp,
+                                  "trough":early.trough,
+                                  "quote_spread_pp":early.quote_spread_pp,
+                                  "point_aware":early.point_aware},
+                    ))
+                ledger_metrics = ledger.metrics()
+            except Exception as exc:
+                ledger_error = str(exc)
+        st.markdown("### 🔬 Early Tennis Reversal Watch · Research")
+        st.caption(
+            "Experimental, uncalibrated pre-confirmation signals; not DEEP REVERSAL "
+            "entries. Requires live score authority, independent model value, "
+            "fresh two-sided quotes and a prior collapse. A point-aware "
+            "estimate is used only when server and point score are known."
+        )
+        if early_watches:
+            st.dataframe(pd.DataFrame([
+                {"Player":row.selection,"Ask":f"{row.price:.0%}",
+                 "Structural fair":f"{row.fair:.0%}",
+                 "Estimated edge":f"{row.edge_pp:+.1f}pp",
+                 "Trough":f"{row.trough:.0%}",
+                 "Rebound":f"+{row.rebound_pp:.1f}pp",
+                 "Point-aware":"yes" if row.point_aware else "no",
+                 "Score":row.score,"Status":row.status}
+                for row in early_watches[:20]
+            ]),use_container_width=True,hide_index=True)
+        else:
+            st.caption("No early research watches currently meet the quality requirements.")
+        if ledger_metrics:
+            st.caption(
+                f"Prospective first-observation ledger: {ledger_metrics['total']} recorded, "
+                f"{ledger_metrics['settled']} settled, {ledger_metrics['pending']} pending. "
+                + (f"Observed win rate {ledger_metrics['hit_rate']:.1%}."
+                   if ledger_metrics['hit_rate'] is not None
+                   else "Win rate not established.")
+            )
+        elif ledger_error:
+            st.warning("Tennis ledger storage unavailable: " + ledger_error)
+        else:
+            st.caption(
+                "Durable first-trigger recording is disabled until "
+                "SPORTSEDGE_TENNIS_LEDGER_PATH is configured on persistent storage. "
+                "No historical win rate is claimed."
+            )
+
         live_game_count = len(confirmed_live_ids)
         deep = [row for row in radar if row.status == "DEEP REVERSAL"]
         strong = [row for row in radar if row.status == "REVERSAL SIGNAL"]
