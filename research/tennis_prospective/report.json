@@ -56,7 +56,7 @@
     "settlement_checks_due": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 4,
+  "recorded_snapshots": 6,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 1,
