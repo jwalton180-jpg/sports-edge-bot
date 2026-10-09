@@ -80,7 +80,7 @@
     },
     "WATCH": {
       "10-15c": {
-        "settled": 0,
+        "settled": 1,
         "wins": 0
       },
       "15-20c": {
@@ -106,30 +106,30 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 1.0,
-      "hypothetical_gross_dollars_per_contract": 0.36,
-      "losses": 1,
-      "model_brier": 0.2551858950605,
-      "observations": 7,
+      "hypothetical_gross_dollars_per_contract": 0.22,
+      "losses": 2,
+      "model_brier": 0.17548799371533333,
+      "observations": 8,
       "pending": 5,
-      "quote_brier": 0.30279999999999996,
+      "quote_brier": 0.20839999999999997,
       "second_half_win_rate": 0.0,
-      "settled": 2,
-      "win_rate": 0.5,
+      "settled": 3,
+      "win_rate": 0.3333333333333333,
       "wins": 1
     }
   },
   "last_worker_run": {
-    "confirmed_radar_signals": 0,
+    "confirmed_radar_signals": 3,
     "early_watches": 0,
     "errors": [],
     "healthy": true,
-    "model_sides": 176,
-    "new_settlements": 0,
-    "new_signals": 0,
-    "observed_at": "2026-10-09T13:07:52.175552+00:00",
-    "open_contracts": 188,
-    "pending_settlements": 2,
-    "quoted_snapshots_added": 2,
+    "model_sides": 162,
+    "new_settlements": 1,
+    "new_signals": 1,
+    "observed_at": "2026-10-09T14:12:25.197841+00:00",
+    "open_contracts": 174,
+    "pending_settlements": 8,
+    "quoted_snapshots_added": 0,
     "score_states": 10,
     "settlement_checks_due": 1
   },
@@ -137,7 +137,7 @@
   "recorded_snapshots": 22,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 12,
+  "total_observations": 13,
   "total_pending": 8,
-  "total_settled": 4
+  "total_settled": 5
 }
