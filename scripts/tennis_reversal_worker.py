@@ -219,7 +219,27 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
     # markets are degraded, earlier observations can finish grading.
     client = KalshiPublicClient()
     market_cache = {}
-    for signal in store.pending()[:max(0, int(max_grades))]:
+    pending = store.pending()
+    checks = []
+    for signal in pending:
+        try:
+            seen_at = datetime.fromisoformat(signal["first_observed_at"])
+            age = (now-seen_at).total_seconds()
+        except (ValueError, KeyError, TypeError):
+            continue
+        if age < 180:
+            continue
+        # Rate-limited deterministic staggering. Newly observed markets are
+        # checked roughly every 15m, older markets hourly, and archival
+        # survivors every 6h. Missing a poll never creates a fake settlement.
+        ticks = 3 if age < 2*3600 else (12 if age < 72*3600 else 72)
+        ticker = str(signal["ticker"])
+        phase = int(stable_id(ticker)[:8], 16) % ticks
+        if int(now.timestamp() // 300) % ticks == phase:
+            checks.append(signal)
+    checks = sorted(checks, key=lambda s: stable_id(s["signal_id"]))
+    diagnostics["settlement_checks_due"] = len(checks)
+    for signal in checks[:max(0, int(max_grades))]:
         ticker = signal["ticker"]
         if ticker not in market_cache:
             try:
