@@ -2,7 +2,7 @@
   "by_lane": {
     "EARLY WATCH \u2014 RESEARCH": {
       "10-15c": {
-        "settled": 0,
+        "settled": 1,
         "wins": 0
       },
       "15-20c": {
@@ -28,14 +28,14 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.0,
-      "hypothetical_gross_dollars_per_contract": -0.27,
-      "losses": 2,
-      "model_brier": 0.08778717520250001,
+      "hypothetical_gross_dollars_per_contract": -0.4,
+      "losses": 3,
+      "model_brier": 0.07080216176466667,
       "observations": 4,
-      "pending": 2,
-      "quote_brier": 0.020249999999999997,
+      "pending": 1,
+      "quote_brier": 0.019133333333333332,
       "second_half_win_rate": 0.0,
-      "settled": 2,
+      "settled": 3,
       "win_rate": 0.0,
       "wins": 0
     },
@@ -105,17 +105,17 @@
       },
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.3333333333333333,
-      "hypothetical_gross_dollars_per_contract": 0.83,
+      "first_half_win_rate": 0.25,
+      "hypothetical_gross_dollars_per_contract": 1.45,
       "losses": 4,
-      "model_brier": 0.2981589738404286,
+      "model_brier": 0.3131096576615,
       "observations": 11,
-      "pending": 4,
-      "quote_brier": 0.26489999999999997,
-      "second_half_win_rate": 0.5,
-      "settled": 7,
-      "win_rate": 0.42857142857142855,
-      "wins": 3
+      "pending": 3,
+      "quote_brier": 0.27983749999999996,
+      "second_half_win_rate": 0.75,
+      "settled": 8,
+      "win_rate": 0.5,
+      "wins": 4
     }
   },
   "last_worker_run": {
@@ -134,10 +134,10 @@
     "settlement_checks_due": 1
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 29,
+  "recorded_snapshots": 30,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 18,
-  "total_pending": 7,
-  "total_settled": 11
+  "total_pending": 5,
+  "total_settled": 13
 }
