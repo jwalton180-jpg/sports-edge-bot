@@ -48,7 +48,7 @@ def test_git_branch_store_append_only_idempotent_across_process_restarts(tmp_pat
     assert store.add_signal(first)
     assert not store.add_signal(observation(price=.63))
     assert store.add_snapshots([{"snapshot_id":"s1","price":.10},{"snapshot_id":"s1","price":.75}])==1
-    assert not store.add_run({"observed_at":NOW.isoformat()},hourly_only=True) is False
+    assert store.add_run({"observed_at":NOW.isoformat()},hourly_only=True)
     assert not store.add_run({"observed_at":(NOW+timedelta(minutes=5)).isoformat()},hourly_only=True)
     grade=verified_kalshi_settlement(
         market(),ticker=first["ticker"],side="YES",signal_id=first["signal_id"],
