@@ -31,8 +31,8 @@
       "hypothetical_gross_dollars_per_contract": -0.09,
       "losses": 1,
       "model_brier": 0.095445159364,
-      "observations": 3,
-      "pending": 2,
+      "observations": 4,
+      "pending": 3,
       "quote_brier": 0.0081,
       "second_half_win_rate": null,
       "settled": 1,
@@ -134,10 +134,10 @@
     "settlement_checks_due": 2
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 28,
+  "recorded_snapshots": 29,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 17,
-  "total_pending": 7,
+  "total_observations": 18,
+  "total_pending": 8,
   "total_settled": 10
 }
