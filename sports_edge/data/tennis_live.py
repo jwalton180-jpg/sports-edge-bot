@@ -519,6 +519,7 @@ def _payload(result):
 def fetch_open_tennis_match_markets(
     *,
     max_workers: int = 6,
+    strict: bool = False,
 ) -> tuple[dict, ...]:
     """Fetch only current open Tennis match-winner markets.
 
@@ -536,15 +537,18 @@ def fetch_open_tennis_match_markets(
         return list((payload or {}).get("markets", []) or [])
 
     rows: list[dict] = []
+    errors: list[str] = []
     with ThreadPoolExecutor(max_workers=max(1, min(int(max_workers), len(TENNIS_MATCH_SERIES)))) as pool:
         futures = {pool.submit(one, series): series for series in TENNIS_MATCH_SERIES}
         for future in as_completed(futures):
             try:
                 rows.extend(future.result())
-            except Exception:
-                # Live radar is fail-soft across series. The UI reports coverage
-                # from the returned rows rather than inventing missing markets.
-                continue
+            except Exception as exc:
+                errors.append(f"{futures[future]}: {type(exc).__name__}")
+                # The interactive UI remains fail-soft. For the unattended
+                # prospective observer, strict=True refuses partial coverage.
+    if strict and errors:
+        raise RuntimeError("Tennis market coverage incomplete: " + ", ".join(sorted(errors)))
 
     dedup = {str(row.get("ticker") or ""): row for row in rows if row.get("ticker")}
     return tuple(dedup.values())
