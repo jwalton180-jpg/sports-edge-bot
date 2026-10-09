@@ -1,0 +1,25 @@
+{
+  "by_lane": {},
+  "last_worker_run": {
+    "confirmed_radar_signals": 3,
+    "early_watches": 0,
+    "errors": [],
+    "healthy": true,
+    "model_sides": 248,
+    "new_settlements": 0,
+    "new_signals": 0,
+    "observed_at": "2026-10-09T10:00:36.083019+00:00",
+    "open_contracts": 276,
+    "pending_settlements": 0,
+    "quoted_snapshots_added": 3,
+    "score_states": 8,
+    "settlement_checks_due": 0
+  },
+  "no_hindsight": "first observations are immutable; no holdout was reopened",
+  "recorded_snapshots": 3,
+  "schema_version": 1,
+  "status": "prospective observational research, no confirmed model uplift",
+  "total_observations": 0,
+  "total_pending": 0,
+  "total_settled": 0
+}
