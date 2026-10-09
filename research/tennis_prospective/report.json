@@ -66,17 +66,17 @@
       },
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": null,
-      "hypothetical_gross_dollars_per_contract": -0.4,
+      "first_half_win_rate": 0.0,
+      "hypothetical_gross_dollars_per_contract": 0.22,
       "losses": 1,
-      "model_brier": 0.259232704201,
+      "model_brier": 0.23954479926099997,
       "observations": 3,
-      "pending": 2,
-      "quote_brier": 0.16000000000000003,
-      "second_half_win_rate": null,
-      "settled": 1,
-      "win_rate": 0.0,
-      "wins": 0
+      "pending": 1,
+      "quote_brier": 0.2722,
+      "second_half_win_rate": 1.0,
+      "settled": 2,
+      "win_rate": 0.5,
+      "wins": 1
     },
     "WATCH": {
       "10-15c": {
@@ -109,8 +109,8 @@
       "hypothetical_gross_dollars_per_contract": 0.22,
       "losses": 2,
       "model_brier": 0.17548799371533333,
-      "observations": 8,
-      "pending": 5,
+      "observations": 9,
+      "pending": 6,
       "quote_brier": 0.20839999999999997,
       "second_half_win_rate": 0.0,
       "settled": 3,
@@ -137,7 +137,7 @@
   "recorded_snapshots": 22,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 13,
+  "total_observations": 14,
   "total_pending": 8,
-  "total_settled": 5
+  "total_settled": 6
 }
