@@ -145,7 +145,12 @@ class ProspectiveResearchStore:
         return True
 
     def add_snapshots(self, rows: list[dict]) -> int:
-        unseen = [r for r in rows if r["snapshot_id"] not in self._snapshot_ids]
+        seen = set(self._snapshot_ids)
+        unseen = []
+        for r in rows:
+            if r["snapshot_id"] not in seen:
+                unseen.append(r)
+                seen.add(r["snapshot_id"])
         append_jsonl(self.root / DATA_FILES[2], unseen)
         self.snapshots.extend(unseen)
         self._snapshot_ids.update(r["snapshot_id"] for r in unseen)
@@ -210,6 +215,33 @@ class ProspectiveResearchStore:
                     "settled":len(group),
                     "wins":sum(g["outcome"]=="WIN" for _,g in group),
                 }
+            # Prequential evaluation: an earlier result counts as training
+            # only if Kalshi's verification was already recorded BEFORE the
+            # test observation. This cannot use future settlement labels.
+            forward = []
+            for test_signal, test_grade in ordered:
+                known_prior = [
+                    (train_signal, train_grade)
+                    for train_signal, train_grade in ordered
+                    if train_signal["event_id"] != test_signal["event_id"]
+                    and train_signal["first_observed_at"] < test_signal["first_observed_at"]
+                    and train_grade["checked_at"] < test_signal["first_observed_at"]
+                ]
+                if len(known_prior) < min_train:
+                    continue
+                target = int(test_grade["outcome"] == "WIN")
+                forward.append((
+                    (test_signal["model_fair"]-target)**2,
+                    (test_signal["entry_ask"]-target)**2,
+                ))
+            lane_metrics["causal_forward"] = {
+                "minimum_prior_verified": min_train,
+                "evaluated": len(forward),
+                "model_brier": round(mean(x[0] for x in forward), 6) if forward else None,
+                "quote_brier": round(mean(x[1] for x in forward), 6) if forward else None,
+                "sufficient_for_exploration": len(forward) >= 20,
+                "trained_on_future_results": False,
+            }
             by_lane[lane]=lane_metrics
         report = {
             "schema_version":1,
