@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import importlib
 import inspect
 import os
+import requests
 from statistics import median
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -485,6 +486,23 @@ def get_sofascore_live_snapshot_cached():
         return tuple(fetch_sofascore_live_snapshot()), None
     except Exception as exc:
         return (), _safe_error(exc)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_tennis_cloud_prospective_report():
+    url = (
+        "https://raw.githubusercontent.com/jwalton180-jpg/sports-edge-bot/"
+        "tennis-prospective-data/research/tennis_prospective/report.json"
+    )
+    try:
+        response = requests.get(url, timeout=8)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict) or data.get("schema_version") != 1:
+            return None, "Unrecognized research report schema."
+        return data, None
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        return None, _safe_error(exc)
 
 
 @st.cache_data(ttl=12, show_spinner=False)
@@ -2556,6 +2574,64 @@ elif view == "Live Feed":
             ]),use_container_width=True,hide_index=True)
         else:
             st.caption("No early research watches currently meet the quality requirements.")
+        cloud_report, cloud_report_error = get_tennis_cloud_prospective_report()
+        with st.expander("Prospective Tennis reversal results · Git-backed", expanded=False):
+            st.caption(
+                "Observations are recorded by a separate scheduled, read-only GitHub worker. "
+                "First observed quoted asks are NOT actual fills. Kalshi settlement grades "
+                "are separate and never inferred from the live score."
+            )
+            if cloud_report is not None:
+                st.caption(
+                    f"Persistent samples: {cloud_report.get('total_observations', 0)} · "
+                    f"Officially graded: {cloud_report.get('total_settled', 0)} · "
+                    f"Pending: {cloud_report.get('total_pending', 0)} · "
+                    f"Price/score snapshots: {cloud_report.get('recorded_snapshots', 0)}"
+                )
+                run_status = cloud_report.get("last_worker_run")
+                if isinstance(run_status, dict):
+                    st.caption(
+                        f"Last recorded worker heartbeat: {run_status.get('observed_at', 'unknown')} · "
+                        f"Healthy: {run_status.get('healthy', False)}"
+                    )
+                summary_rows = []
+                for lane, metrics in (cloud_report.get("by_lane") or {}).items():
+                    causal = metrics.get("causal_forward") or {}
+                    summary_rows.append({
+                        "Lane": lane,
+                        "First observations": metrics.get("observations", 0),
+                        "Kalshi-settled": metrics.get("settled", 0),
+                        "Wins": metrics.get("wins", 0),
+                        "Losses": metrics.get("losses", 0),
+                        "Win rate": (
+                            f"{metrics['win_rate']:.1%}"
+                            if metrics.get("win_rate") is not None else "not established"
+                        ),
+                        "Causal forward samples": causal.get("evaluated", 0),
+                        "Forward model Brier": (
+                            f"{causal['model_brier']:.3f}"
+                            if causal.get("model_brier") is not None else "—"
+                        ),
+                        "Forward Kalshi Brier": (
+                            f"{causal['quote_brier']:.3f}"
+                            if causal.get("quote_brier") is not None else "—"
+                        ),
+                    })
+                if summary_rows:
+                    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("Prospective data collection is running, but no first-trigger Tennis signals have been recorded.")
+                st.caption("No calibrated accuracy gain or realized ROI is claimed before unseen verified outcomes exist.")
+            else:
+                st.caption(
+                    "No readable durable cloud report yet. The worker or its data branch may "
+                    f"not be accessible from this app. {cloud_report_error or ''}"
+                )
+            st.markdown(
+                "[Open Git-backed Tennis research ledger](https://github.com/"
+                "jwalton180-jpg/sports-edge-bot/tree/tennis-prospective-data/research/tennis_prospective)"
+            )
+
         if ledger_metrics:
             st.caption(
                 f"Prospective first-observation ledger: {ledger_metrics['total']} recorded, "
