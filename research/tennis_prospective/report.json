@@ -1,5 +1,45 @@
 {
-  "by_lane": {},
+  "by_lane": {
+    "WATCH": {
+      "10-15c": {
+        "settled": 0,
+        "wins": 0
+      },
+      "15-20c": {
+        "settled": 0,
+        "wins": 0
+      },
+      "20-25c": {
+        "settled": 0,
+        "wins": 0
+      },
+      "4-10c": {
+        "settled": 0,
+        "wins": 0
+      },
+      "causal_forward": {
+        "evaluated": 0,
+        "minimum_prior_verified": 30,
+        "model_brier": null,
+        "quote_brier": null,
+        "sufficient_for_exploration": false,
+        "trained_on_future_results": false
+      },
+      "chronological_out_of_sample_ready": false,
+      "fees_fills_slippage": "unknown; not realized ROI",
+      "first_half_win_rate": null,
+      "hypothetical_gross_dollars_per_contract": 0,
+      "losses": 0,
+      "model_brier": null,
+      "observations": 1,
+      "pending": 1,
+      "quote_brier": null,
+      "second_half_win_rate": null,
+      "settled": 0,
+      "win_rate": null,
+      "wins": 0
+    }
+  },
   "last_worker_run": {
     "confirmed_radar_signals": 3,
     "early_watches": 0,
@@ -16,10 +56,10 @@
     "settlement_checks_due": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 3,
+  "recorded_snapshots": 4,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 0,
-  "total_pending": 0,
+  "total_observations": 1,
+  "total_pending": 1,
   "total_settled": 0
 }
