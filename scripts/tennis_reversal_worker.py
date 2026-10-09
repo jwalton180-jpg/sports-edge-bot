@@ -117,20 +117,17 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         diagnostics["early_watches"] = len(early)
         diagnostics["confirmed_radar_signals"] = len(radar)
 
-        by_id = {
-            (c.event_id, c.selection, str(c.kalshi_ticker)): c
-            for c in candidates
-        }
         snapshots = []
         quotes = {}
         for c in candidates:
-            if str(c.kalshi_ticker) in quotes:
+            quote_key = (str(c.kalshi_ticker), str(c.kalshi_side).upper())
+            if quote_key in quotes:
                 continue
-            quotes[str(c.kalshi_ticker)] = _fresh_quote(c, candles, now)
+            quotes[quote_key] = _fresh_quote(c, candles, now)
 
         for c in candidates:
             state = _match_state(c, state_index, by_pair)
-            quote = quotes.get(str(c.kalshi_ticker))
+            quote = quotes.get((str(c.kalshi_ticker), str(c.kalshi_side).upper()))
             if not state or not quote or state.score_conflict or not state.score_sources:
                 continue
             if abs((now - state.fetched_at).total_seconds()) > 150:
@@ -165,7 +162,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
                       and str(c.kalshi_ticker) == s.ticker), None)
             if c is None:
                 continue
-            quote = quotes.get(s.ticker)
+            quote = quotes.get((s.ticker, str(c.kalshi_side).upper()))
             if quote is None:
                 continue
             record = first_signal_record(
@@ -188,7 +185,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
                       and c.selection == s.selection and str(c.kalshi_ticker) == s.ticker), None)
             if c is None:
                 continue
-            quote = quotes.get(s.ticker)
+            quote = quotes.get((s.ticker, str(c.kalshi_side).upper()))
             state = _match_state(c, state_index, by_pair)
             # A WATCH derived from unquoted trade data is not an executable
             # observation. Reject stale or contradicted structural state.
