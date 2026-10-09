@@ -15,5 +15,6 @@ jobs:
         run: pip install -r requirements.txt
       - name: Probe live observer without changing durable data
         run: |
+          export PYTHONPATH="$(pwd)"
           python scripts/tennis_reversal_worker.py --data-dir /tmp/tennis-reversal-probe
           cat /tmp/tennis-reversal-probe/report.json
