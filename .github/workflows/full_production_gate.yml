@@ -20,7 +20,7 @@ jobs:
       - name: Full tests
         run: pytest -q
       - name: Compile
-        run: python -m compileall -q sports_edge app.py launch_on_demand.py
+        run: python -m compileall -q sports_edge scripts app.py launch_on_demand.py
       - name: Critical imports
         run: |
           python - <<'PY'
@@ -29,6 +29,7 @@ jobs:
           from sports_edge.models.tennis_research import TennisResearchModel
           from sports_edge.models.parlay_intelligence import build_intelligent_parlay
           import sports_edge.app
+          from scripts.tennis_reversal_worker import observe_once
           print("production-imports-ok")
           PY
       - name: Streamlit smoke
