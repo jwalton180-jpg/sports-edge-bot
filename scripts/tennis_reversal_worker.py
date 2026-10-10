@@ -80,7 +80,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
     diagnostics = {
         "observed_at": utc_iso(now), "healthy": False, "errors": [],
         "open_contracts": 0, "score_states": 0, "model_sides": 0,
-        "quoted_snapshots_added": 0, "extreme_dip_observations": 0, "recovery_building": 0, "early_watches": 0,
+        "quoted_snapshots_added": 0, "extreme_dip_observations": 0, "recovery_building": 0, "post_surge_audits": 0, "early_watches": 0,
         "confirmed_radar_signals": 0, "new_signals": 0, "new_settlements": 0,
         "pending_settlements": 0,
     }
@@ -125,6 +125,9 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         diagnostics["recovery_building"] = sum(
             row.lane == "RECOVERY BUILDING — RESEARCH" for row in extreme
         )
+        diagnostics["post_surge_audits"] = sum(
+            row.lane == "MOVED ALREADY — POSTMORTEM" for row in extreme
+        )
         extreme_by_market = {
             (row.event_id, row.selection, row.ticker): row
             for row in extreme
@@ -146,7 +149,12 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
                 continue
             if abs((now - state.fetched_at).total_seconds()) > 150:
                 continue
-            if not (.01 <= quote.close <= .25):
+            extreme_key = (c.event_id, c.selection, str(c.kalshi_ticker))
+            is_post_surge = (
+                extreme_key in extreme_by_market
+                and extreme_by_market[extreme_key].lane == "MOVED ALREADY — POSTMORTEM"
+            )
+            if not (.01 <= quote.close <= .25 or is_post_surge):
                 continue
             live = estimate_live_match_probability(float(c.model_probability), state)
             if live is None:
