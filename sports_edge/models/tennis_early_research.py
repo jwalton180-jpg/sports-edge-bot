@@ -233,10 +233,11 @@ def build_extreme_cheap_observations(
 ) -> tuple[ExtremeCheapObservation, ...]:
     """Discover 1–4¢ live prices without pretending the longshot is a pick.
 
-    Continue watching recoveries up to 20¢ when the last-hour quoted trough was
-    <=4¢. Promote only to *research-only* recovery-building after a fresh
-    independent live probability, a material rebound, and no known break-state
-    contradiction. Existing confirmed lanes are unchanged.
+    Continue watching fresh recoveries through 20¢ and separately label
+    already-moved 20–90¢ rebounds as postmortems, never entries.
+    Use actual historical quoted *ask closes*, not trade lows or intraminute
+    unverified lows. This prevents imaginary 3¢ executable prices.
+    Existing confirmed lanes remain unchanged.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     out: list[ExtremeCheapObservation] = []
@@ -257,21 +258,26 @@ def build_extreme_cheap_observations(
         age = now.timestamp() - latest.end_ts
         if not (0 <= age <= 150 and latest.quoted and latest.spread is not None):
             continue
-        if not (0.01 <= latest.close <= 0.20):
+        if not (0.01 <= latest.close <= 0.90):
             continue
         spread_limit = min(.08, max(.04, latest.close * .45))
         if latest.spread > spread_limit:
             continue
-        # This is the actual quoted trough in the currently retrieved lookback,
-        # not an inferred entry or a candle that only traded at 1¢.
-        trough = min(p.low for p in path if p.quoted)
+        # Quote CLOSE is observed for both sides. Candle LOW can be a trade
+        # low without a matching executable ask and must never become a
+        # purported quoted entry price.
+        trough = min(p.close for p in path if p.quoted)
         if trough > .04:
             continue
         rebound = max(0., (latest.close - trough) * 100.)
         live = estimate_live_match_probability(float(leg.model_probability), state)
         fair = live.probability if live is not None else None
         phase = "EXTREME DIP — TRACKING ONLY"
-        if (latest.close > .04 and rebound >= 1.0
+        if latest.close > .20:
+            if rebound < 15.0:
+                continue
+            phase = "MOVED ALREADY — POSTMORTEM"
+        elif (latest.close > .04 and rebound >= 1.0
                 and fair is not None and fair - latest.close >= .04
                 and (leg.model_confidence or 0) >= .45
                 and (leg.model_sample_size or 0) >= 6
@@ -292,5 +298,10 @@ def build_extreme_cheap_observations(
             score_sources=tuple(state.score_sources),
             latest_age_s=age,
         ))
-    out.sort(key=lambda r:(r.lane.startswith("RECOVERY"), r.rebound_pp, r.current_ask),reverse=True)
+    priority = {
+        "RECOVERY BUILDING — RESEARCH": 3,
+        "EXTREME DIP — TRACKING ONLY": 2,
+        "MOVED ALREADY — POSTMORTEM": 1,
+    }
+    out.sort(key=lambda r:(priority.get(r.lane, 0), r.rebound_pp),reverse=True)
     return tuple(out)
