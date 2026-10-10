@@ -126,11 +126,11 @@
     "model_sides": 178,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-10T02:00:33.356614+00:00",
+    "observed_at": "2026-10-10T03:16:49.857102+00:00",
     "open_contracts": 198,
     "pending_settlements": 0,
     "quoted_snapshots_added": 0,
-    "score_states": 0,
+    "score_states": 10,
     "settlement_checks_due": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
