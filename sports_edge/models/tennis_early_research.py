@@ -19,6 +19,7 @@ from sports_edge.models.tennis_live_probability import (
 from sports_edge.models.tennis_live_reversal import executable_path, _drawdown
 from sports_edge.data.tennis_live import TennisLiveScoreState
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
+from sports_edge.models.event_identity import canonical_participant
 
 POINTS = {"0": 0, "15": 1, "30": 2, "40": 3, "A": 4, "AD": 4, "ADV": 4}
 
@@ -144,7 +145,7 @@ def build_early_reversal_watches(
             continue
         if not leg.kalshi_ticker or not leg.kalshi_side or (leg.model_sample_size or 0)<6:
             continue
-        state=live_states.get((leg.event_id,__import__("sports_edge.models.event_identity",fromlist=["canonical_participant"]).canonical_participant("Tennis",leg.selection)))
+        state=_resolve_live_state(leg, live_states)
         if state is None or state.score_conflict or not state.score_sources:
             continue
         if abs((now-state.fetched_at).total_seconds())>150:
@@ -155,7 +156,7 @@ def build_early_reversal_watches(
         last=path[-1]
         if not (last.quoted and last.spread is not None and 0<=(now.timestamp()-last.end_ts)<=150):
             continue
-        if not (.04<=last.close<=.20) or last.spread>min(.08,max(.04,last.close*.45)):
+        if not (.02<=last.close<=.20) or last.spread>min(.08,max(.04,last.close*.45)):
             continue
         peak,trough,idx,dd=_drawdown(path)
         if dd<.08 or trough>=last.close or idx>=len(path)-1:
@@ -184,3 +185,111 @@ def build_early_reversal_watches(
         ))
     output.sort(key=lambda x:(-x.edge_pp,x.price))
     return tuple(output)
+
+
+
+def _resolve_live_state(
+    leg: ParlayCandidateLeg,
+    live_states: dict[tuple[str, str], TennisLiveScoreState],
+) -> TennisLiveScoreState | None:
+    """Exact pair preferred; unique pair fallback accounts for UTC/local-date mismatches."""
+    player_key = canonical_participant("Tennis", leg.selection)
+    exact = live_states.get((leg.event_id, player_key))
+    if exact is not None:
+        return exact
+    parts = str(leg.event_id).split(":", 2)
+    if len(parts) != 3:
+        return None
+    pair = [
+        state for state in live_states.values()
+        if state.selection_key == player_key
+        and len(str(state.event_id).split(":", 2)) == 3
+        and str(state.event_id).split(":", 2)[2] == parts[2]
+    ]
+    return pair[0] if len(pair) == 1 else None
+
+
+@dataclass(frozen=True)
+class ExtremeCheapObservation:
+    event_id: str
+    ticker: str
+    selection: str
+    current_ask: float
+    observed_trough: float
+    rebound_pp: float
+    live_fair: float | None
+    score: str
+    lane: str
+    score_sources: tuple[str, ...]
+    latest_age_s: float
+
+
+def build_extreme_cheap_observations(
+    candidates: list[ParlayCandidateLeg] | tuple[ParlayCandidateLeg, ...],
+    candles: dict[str, list[dict] | tuple[dict, ...]],
+    live_states: dict[tuple[str, str], TennisLiveScoreState],
+    *,
+    now: datetime | None = None,
+) -> tuple[ExtremeCheapObservation, ...]:
+    """Discover 1–4¢ live prices without pretending the longshot is a pick.
+
+    Continue watching recoveries up to 20¢ when the last-hour quoted trough was
+    <=4¢. Promote only to *research-only* recovery-building after a fresh
+    independent live probability, a material rebound, and no known break-state
+    contradiction. Existing confirmed lanes are unchanged.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    out: list[ExtremeCheapObservation] = []
+    for leg in candidates:
+        if leg.sport != "Tennis" or leg.market_key != "model_h2h":
+            continue
+        if leg.model_probability is None or not leg.kalshi_ticker or not leg.kalshi_side:
+            continue
+        state = _resolve_live_state(leg, live_states)
+        if state is None or not state.score_sources or state.score_conflict:
+            continue
+        if abs((now - state.fetched_at).total_seconds()) > 150 or state.at_tiebreak:
+            continue
+        path = executable_path(candles.get(str(leg.kalshi_ticker), ()), leg.kalshi_side)
+        if not path:
+            continue
+        latest = path[-1]
+        age = now.timestamp() - latest.end_ts
+        if not (0 <= age <= 150 and latest.quoted and latest.spread is not None):
+            continue
+        if not (0.01 <= latest.close <= 0.20):
+            continue
+        spread_limit = min(.08, max(.04, latest.close * .45))
+        if latest.spread > spread_limit:
+            continue
+        # This is the actual quoted trough in the currently retrieved lookback,
+        # not an inferred entry or a candle that only traded at 1¢.
+        trough = min(p.low for p in path if p.quoted)
+        if trough > .04:
+            continue
+        rebound = max(0., (latest.close - trough) * 100.)
+        live = estimate_live_match_probability(float(leg.model_probability), state)
+        fair = live.probability if live is not None else None
+        phase = "EXTREME DIP — TRACKING ONLY"
+        if (latest.close > .04 and rebound >= 1.0
+                and fair is not None and fair - latest.close >= .04
+                and (leg.model_confidence or 0) >= .45
+                and (leg.model_sample_size or 0) >= 6
+                and state.net_break_advantage is not None
+                and state.net_break_advantage >= 0):
+            phase = "RECOVERY BUILDING — RESEARCH"
+        out.append(ExtremeCheapObservation(
+            event_id=leg.event_id,
+            ticker=str(leg.kalshi_ticker),
+            selection=leg.selection,
+            current_ask=latest.close,
+            observed_trough=trough,
+            rebound_pp=rebound,
+            live_fair=fair,
+            score=state.score_label,
+            lane=phase,
+            score_sources=tuple(state.score_sources),
+            latest_age_s=age,
+        ))
+    out.sort(key=lambda r:(r.lane.startswith("RECOVERY"), -r.rebound_pp, -r.current_ask),reverse=True)
+    return tuple(out)
