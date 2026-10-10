@@ -264,6 +264,10 @@ class ProspectiveResearchStore:
                 row.get("research_observation") == "RECOVERY BUILDING — RESEARCH"
                 for row in self.snapshots
             ),
+            "already_moved_postmortems":sum(
+                row.get("research_observation") == "MOVED ALREADY — POSTMORTEM"
+                for row in self.snapshots
+            ),
             "total_observations":len(self.signals),
             "total_settled":len(self.settlements),
             "total_pending":len(self.pending()),
