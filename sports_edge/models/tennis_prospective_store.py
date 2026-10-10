@@ -160,6 +160,11 @@ class ProspectiveResearchStore:
         # Keep a durable hourly heartbeat, not 288 Git commits per day in
         # markets where no candidates or settlements changed.
         hour = str(row["observed_at"])[:13]
+        # A separate mutable heartbeat improves observability even when no
+        # qualifying signals/snapshots change during the current hour.
+        (self.root / "latest_poll.json").write_text(
+            json.dumps(row, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+        )
         if hourly_only and any(str(r.get("observed_at", ""))[:13] == hour for r in self.runs):
             return False
         append_jsonl(self.root / DATA_FILES[3], [row])
@@ -206,7 +211,7 @@ class ProspectiveResearchStore:
                 "chronological_out_of_sample_ready": n >= min_train+20,
             }
             for label,lo,hi in (
-                ("4-10c", .04,.10), ("10-15c",.10,.15),
+                ("1-4c", .01,.04), ("4-10c", .04,.10), ("10-15c",.10,.15),
                 ("15-20c",.15,.20), ("20-25c",.20,.25),
             ):
                 group = [(s,g) for s,g in ordered if lo <= s["entry_ask"] < hi or
@@ -243,13 +248,27 @@ class ProspectiveResearchStore:
                 "trained_on_future_results": False,
             }
             by_lane[lane]=lane_metrics
+        latest_file = self.root / "latest_poll.json"
+        latest_poll = (
+            json.loads(latest_file.read_text(encoding="utf-8"))
+            if latest_file.exists() else (self.runs[-1] if self.runs else None)
+        )
+        research_snapshots = [
+            row for row in self.snapshots
+            if str(row.get("research_observation", "")).startswith("EXTREME DIP")
+        ]
         report = {
             "schema_version":1,
+            "extreme_dip_quote_snapshots":len(research_snapshots),
+            "recovery_building_quote_snapshots":sum(
+                row.get("research_observation") == "RECOVERY BUILDING — RESEARCH"
+                for row in self.snapshots
+            ),
             "total_observations":len(self.signals),
             "total_settled":len(self.settlements),
             "total_pending":len(self.pending()),
             "recorded_snapshots":len(self.snapshots),
-            "last_worker_run":self.runs[-1] if self.runs else None,
+            "last_worker_run":latest_poll,
             "by_lane":by_lane,
             "status":"prospective observational research, no confirmed model uplift",
             "no_hindsight":"first observations are immutable; no holdout was reopened",
