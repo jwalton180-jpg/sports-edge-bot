@@ -203,3 +203,37 @@ def test_extreme_dip_can_transition_to_recovery_research_without_promoting_deep(
     assert len(rows)==1
     assert rows[0].lane=="RECOVERY BUILDING — RESEARCH"
     assert rows[0].rebound_pp>=4.
+
+
+
+def test_trade_only_three_cent_low_does_not_imply_three_cent_executable_quote():
+    leg,state,history=_shi_scenario(.15)
+    history[-1]["price"]["low_dollars"]=".03"
+    del history[-1]["yes_ask"]["low_dollars"]
+    rows=build_extreme_cheap_observations(
+        [leg],{leg.kalshi_ticker:history},
+        {(state.event_id,state.selection_key):state},now=NOW,
+    )
+    # All truly quoted ASK closes were 5c or higher.
+    assert rows==()
+
+
+def test_shi_three_to_fifty_five_cent_jump_is_postmortem_not_entry():
+    leg,state,history=_shi_scenario(.03)
+    history[-1]["end_period_ts"]=int((NOW-timedelta(minutes=1)).timestamp())
+    history.append({
+        "end_period_ts":int(NOW.timestamp()),"volume_fp":"40",
+        "price":{"close_dollars":".55","low_dollars":".55","high_dollars":".55"},
+        "yes_ask":{"close_dollars":".55","low_dollars":".55","high_dollars":".55"},
+        "yes_bid":{"close_dollars":".54","low_dollars":".54","high_dollars":".54"},
+    })
+    rows=build_extreme_cheap_observations(
+        [leg],{leg.kalshi_ticker:history},
+        {(state.event_id,state.selection_key):state},now=NOW,
+    )
+    assert len(rows)==1
+    assert rows[0].current_ask==.55
+    assert rows[0].observed_trough==.03
+    assert rows[0].rebound_pp==52.
+    assert rows[0].lane=="MOVED ALREADY — POSTMORTEM"
+    assert "RESEARCH" not in rows[0].lane
