@@ -49,6 +49,12 @@ jobs:
           cache-dependency-path: code/requirements.txt
       - name: Install read-only analysis dependencies
         run: python -m pip install -r code/requirements.txt
+      - name: Preflight standalone Tennis worker
+        shell: bash
+        run: |
+          export PYTHONPATH="$(pwd)/code"
+          python -m py_compile code/scripts/tennis_reversal_worker.py
+          python -c "from scripts.tennis_reversal_worker import observe_once; print('tennis-worker-import-ok')"
       - name: Poll Tennis repeatedly while runner is active
         id: observe
         shell: bash
