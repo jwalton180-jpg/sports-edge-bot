@@ -127,3 +127,19 @@ def test_latest_poll_heartbeat_advances_inside_same_hour(tmp_path):
     assert len(store.runs)==1
     assert store.report()["last_worker_run"]["observed_at"]=="2026-10-10T06:27:00Z"
     assert store.save_report()["last_worker_run"]["healthy"]
+
+
+
+def test_already_moved_surge_is_counted_as_postmortem_not_signal(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    post={
+        "snapshot_id":"shi-55c-after-three",
+        "ticker":"KXWTAMATCH-26OCT09STESHI-SHI",
+        "executable_ask":.55,
+        "research_observation":"MOVED ALREADY — POSTMORTEM",
+    }
+    store.add_snapshots([post])
+    report=store.report()
+    assert report["already_moved_postmortems"]==1
+    assert report["total_observations"]==0
+    assert report["total_settled"]==0
