@@ -174,7 +174,7 @@
       "wins": 10
     }
   },
-  "extreme_dip_quote_snapshots": 33,
+  "extreme_dip_quote_snapshots": 37,
   "last_worker_run": {
     "confirmed_radar_signals": 4,
     "early_watches": 0,
@@ -184,17 +184,17 @@
     "model_sides": 146,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-10T09:18:17.749699+00:00",
+    "observed_at": "2026-10-10T09:22:42.397397+00:00",
     "open_contracts": 160,
     "pending_settlements": 14,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 4,
     "recovery_building": 0,
-    "score_states": 14,
-    "settlement_checks_due": 0
+    "score_states": 16,
+    "settlement_checks_due": 4
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 322,
+  "recorded_snapshots": 339,
   "recovery_building_quote_snapshots": 0,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
