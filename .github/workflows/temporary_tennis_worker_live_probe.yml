@@ -19,3 +19,17 @@ jobs:
           python -m py_compile scripts/tennis_reversal_worker.py
           python scripts/tennis_reversal_worker.py --data-dir /tmp/tennis-worker-probe
           cat /tmp/tennis-worker-probe/report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path=Path("/tmp/tennis-worker-probe/snapshots.jsonl")
+          for line in path.read_text().splitlines():
+              row=json.loads(line)
+              if row.get("research_observation") != "STANDARD LIVE QUOTE":
+                  print("SPECIAL_SNAPSHOT",json.dumps({
+                      key:row.get(key) for key in (
+                          "ticker","selection","executable_ask","score",
+                          "research_observation","candle_end_ts"
+                      )
+                  },sort_keys=True))
+          PY
