@@ -2582,12 +2582,12 @@ elif view == "Live Feed":
                 ledger_metrics = ledger.metrics()
             except Exception as exc:
                 ledger_error = str(exc)
-        st.markdown("### 🎯 Extreme Dip Tracker · 1–4¢")
+        st.markdown("### 🎯 Extreme Dip Tracker & Already-Moved Surges")
         st.caption(
-            "Tracks extremely cheap live Tennis contracts, including 3¢ prices, "
-            "even when the match state makes a win unlikely. "
-            "TRACKING ONLY is NOT a pick. RECOVERY BUILDING requires improving "
-            "price, fresh quotes and positive independent model value."
+            "Tracks verified quoted asks as low as 1–4¢ even when a match "
+            "looks unfavorable. RECOVERY BUILDING requires supported live value. "
+            "MOVED ALREADY flags a rebound past 20¢ for postmortem study, "
+            "not as an entry. Candle trade lows are never presented as quoted fills."
         )
         if extreme_dips:
             st.dataframe(pd.DataFrame([
@@ -2678,7 +2678,8 @@ elif view == "Live Feed":
                     f"Officially graded: {cloud_report.get('total_settled', 0)} · "
                     f"Pending: {cloud_report.get('total_pending', 0)} · "
                     f"Price/score snapshots: {cloud_report.get('recorded_snapshots', 0)} · "
-                    f"Extreme-dip snapshots: {cloud_report.get('extreme_dip_quote_snapshots', 0)}"
+                    f"Extreme-dip snapshots: {cloud_report.get('extreme_dip_quote_snapshots', 0)} · "
+                    f"Already-moved audits: {cloud_report.get('already_moved_postmortems', 0)}"
                 )
                 run_status = cloud_report.get("last_worker_run")
                 if isinstance(run_status, dict):
