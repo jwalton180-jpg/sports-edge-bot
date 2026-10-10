@@ -31,8 +31,8 @@
       "hypothetical_gross_dollars_per_contract": -0.56,
       "losses": 4,
       "model_brier": 0.07922991912975,
-      "observations": 4,
-      "pending": 0,
+      "observations": 5,
+      "pending": 1,
       "quote_brier": 0.02075,
       "second_half_win_rate": 0.0,
       "settled": 4,
@@ -105,17 +105,17 @@
       },
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.4,
-      "hypothetical_gross_dollars_per_contract": 1.69,
+      "first_half_win_rate": 0.3333333333333333,
+      "hypothetical_gross_dollars_per_contract": 2.29,
       "losses": 6,
-      "model_brier": 0.2745532641627273,
-      "observations": 14,
+      "model_brier": 0.28547092428250004,
+      "observations": 15,
       "pending": 3,
-      "quote_brier": 0.26293636363636363,
-      "second_half_win_rate": 0.5,
-      "settled": 11,
-      "win_rate": 0.45454545454545453,
-      "wins": 5
+      "quote_brier": 0.27102499999999996,
+      "second_half_win_rate": 0.6666666666666666,
+      "settled": 12,
+      "win_rate": 0.5,
+      "wins": 6
     }
   },
   "last_worker_run": {
@@ -134,10 +134,10 @@
     "settlement_checks_due": 1
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 37,
+  "recorded_snapshots": 42,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 21,
-  "total_pending": 3,
-  "total_settled": 18
+  "total_observations": 23,
+  "total_pending": 4,
+  "total_settled": 19
 }
