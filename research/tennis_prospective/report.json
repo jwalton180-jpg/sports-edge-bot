@@ -93,7 +93,7 @@
         "wins": 0
       },
       "10-15c": {
-        "settled": 4,
+        "settled": 5,
         "wins": 0
       },
       "15-20c": {
@@ -119,43 +119,43 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.5,
-      "hypothetical_gross_dollars_per_contract": 3.19,
-      "losses": 11,
-      "model_brier": 0.25763795178660004,
+      "hypothetical_gross_dollars_per_contract": 3.07,
+      "losses": 12,
+      "model_brier": 0.24597114974133336,
       "observations": 28,
-      "pending": 8,
-      "quote_brier": 0.266945,
-      "second_half_win_rate": 0.4,
-      "settled": 20,
-      "win_rate": 0.45,
+      "pending": 7,
+      "quote_brier": 0.2549190476190476,
+      "second_half_win_rate": 0.36363636363636365,
+      "settled": 21,
+      "win_rate": 0.42857142857142855,
       "wins": 9
     }
   },
-  "extreme_dip_quote_snapshots": 4,
+  "extreme_dip_quote_snapshots": 6,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 2,
     "early_watches": 0,
     "errors": [],
-    "extreme_dip_observations": 0,
+    "extreme_dip_observations": 1,
     "healthy": true,
-    "model_sides": 164,
+    "model_sides": 162,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-10T07:50:23.844501+00:00",
-    "open_contracts": 184,
-    "pending_settlements": 13,
+    "observed_at": "2026-10-10T07:54:44.908003+00:00",
+    "open_contracts": 182,
+    "pending_settlements": 12,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 3,
     "recovery_building": 0,
-    "score_states": 10,
-    "settlement_checks_due": 9
+    "score_states": 8,
+    "settlement_checks_due": 8
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 183,
+  "recorded_snapshots": 195,
   "recovery_building_quote_snapshots": 0,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 45,
-  "total_pending": 13,
-  "total_settled": 32
+  "total_pending": 12,
+  "total_settled": 33
 }
