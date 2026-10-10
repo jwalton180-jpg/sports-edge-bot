@@ -100,3 +100,30 @@ def test_corrupt_or_forged_orphan_grade_fails_closed(tmp_path):
         "signal_id":"orphan","outcome":"WIN","source":"fake"})+"\n")
     with pytest.raises(ValueError,match="Orphan"):
         ProspectiveResearchStore(root)
+
+
+
+def test_extreme_dip_snapshot_is_separate_from_a_betting_signal(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    obs={
+        "snapshot_id":"shi-3c-1",
+        "ticker":"KXWTAMATCH-26OCT09STESHI-SHI",
+        "selection":"Han Shi",
+        "executable_ask":.03,
+        "research_observation":"EXTREME DIP — TRACKING ONLY",
+    }
+    assert store.add_snapshots([obs])==1
+    assert store.add_snapshots([obs])==0
+    assert store.signals==[]
+    assert store.report()["extreme_dip_quote_snapshots"]==1
+    assert store.report()["total_observations"]==0
+    assert store.report()["total_settled"]==0
+
+
+def test_latest_poll_heartbeat_advances_inside_same_hour(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    assert store.add_run({"observed_at":"2026-10-10T06:01:00Z","healthy":True})
+    assert not store.add_run({"observed_at":"2026-10-10T06:27:00Z","healthy":True})
+    assert len(store.runs)==1
+    assert store.report()["last_worker_run"]["observed_at"]=="2026-10-10T06:27:00Z"
+    assert store.save_report()["last_worker_run"]["healthy"]

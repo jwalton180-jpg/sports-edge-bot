@@ -3,6 +3,7 @@ from datetime import datetime,timezone,timedelta
 
 from sports_edge.models.tennis_early_research import (
     parse_point_score, point_aware_live_probability, build_early_reversal_watches,
+    build_extreme_cheap_observations,
 )
 from sports_edge.models.tennis_reversal_ledger import TennisSignalLedger,SignalObservation
 from sports_edge.data.tennis_live import TennisLiveScoreState
@@ -105,3 +106,100 @@ def test_ledger_freezes_first_trigger_and_grades_once(tmp_path):
     assert not ledger.settle_verified(key,"LOSS",source="Kalshi official",settled_at=NOW+timedelta(hours=2))
     assert ledger.metrics()["wins"]==1
     assert ledger.metrics()["settled"]==1
+
+
+
+def _shi_scenario(price: float = .03):
+    """Synthetic stress case; screenshot's selected 3c chart time and live 2–6, 3–5 score are not proven simultaneous."""
+    state = _state()
+    state = replace(
+        state,
+        event_id=canonical_event_id("Tennis", "Han Shi", "Peyton Stearns", "2026-10-09"),
+        selection_key=canonical_participant("Tennis", "Han Shi"),
+        player="Han Shi", opponent="Peyton Stearns", tour="WTA",
+        period=2, player_sets=0, opponent_sets=1,
+        player_games=3, opponent_games=5,
+        lost_first_set=True, won_latest_completed_set=False,
+        turnaround=False, deciding_set=False,
+        current_set_lead=-2, serving=False,
+        net_break_advantage=-1, point_score=None,
+        score_sources=("ESPN",),
+        score_label="Han Shi vs Peyton Stearns · 2-6 · 3-5",
+    )
+    leg = replace(
+        _leg(), event_id=state.event_id, selection="Han Shi",
+        model_probability=.416, model_confidence=.88,
+        kalshi_ticker="KXWTAMATCH-26OCT09STESHI-SHI",
+    )
+    quoted=[.32,.19,.10,.05,price]
+    candles=[]
+    for i,p in enumerate(quoted):
+        timestamp=int((NOW-timedelta(minutes=4-i)).timestamp())
+        candles.append({
+            "end_period_ts": timestamp, "volume_fp":"12",
+            "price":{"close_dollars":str(p),"low_dollars":str(p),"high_dollars":str(p)},
+            "yes_ask":{"close_dollars":str(p),"low_dollars":str(p),"high_dollars":str(p)},
+            "yes_bid":{"close_dollars":str(max(.01,p-.01)),
+                       "low_dollars":str(max(.01,p-.01)),
+                       "high_dollars":str(max(.01,p-.01))},
+        })
+    return leg,state,candles
+
+
+def test_stearns_shi_three_cent_snapshot_is_tracked_not_misrepresented_as_pick():
+    leg,state,history=_shi_scenario(.03)
+    index={(state.event_id,state.selection_key):state}
+    rows=build_extreme_cheap_observations(
+        [leg], {leg.kalshi_ticker:history}, index, now=NOW
+    )
+    assert len(rows)==1
+    assert rows[0].current_ask==.03
+    assert rows[0].observed_trough==.03
+    assert rows[0].lane=="EXTREME DIP — TRACKING ONLY"
+    assert rows[0].score_sources==("ESPN",)
+    assert build_early_reversal_watches(
+        [leg], {leg.kalshi_ticker:history}, index, now=NOW
+    )==()
+
+
+def test_extreme_dip_requires_fresh_two_sided_quote_and_structural_score():
+    leg,state,history=_shi_scenario(.03)
+    key={(state.event_id,state.selection_key):state}
+    stale=replace(state,fetched_at=NOW-timedelta(minutes=10))
+    assert not build_extreme_cheap_observations(
+        [leg], {leg.kalshi_ticker:history},
+        {(state.event_id,state.selection_key):stale}, now=NOW
+    )
+    assert not build_extreme_cheap_observations(
+        [leg], {leg.kalshi_ticker:history},
+        {(state.event_id,state.selection_key):replace(state,score_conflict=True)}, now=NOW
+    )
+    no_bid=[{**x,"yes_bid":{}} for x in history]
+    assert not build_extreme_cheap_observations(
+        [leg], {leg.kalshi_ticker:no_bid}, key, now=NOW
+    )
+
+
+def test_extreme_dip_can_transition_to_recovery_research_without_promoting_deep():
+    leg,state,history=_shi_scenario(.03)
+    # Independent synthetic stronger-score scenario, not the user's actual match.
+    state=replace(state,player_sets=1,opponent_sets=1,
+                  period=3,player_games=3,opponent_games=3,
+                  current_set_lead=0,serving=True,net_break_advantage=0,
+                  deciding_set=True,turnaround=True)
+    leg=replace(leg,model_probability=.55)
+    history[-1]["end_period_ts"]=int((NOW-timedelta(minutes=1)).timestamp())
+    end=int(NOW.timestamp())
+    history.append({
+        "end_period_ts":end,"volume_fp":"12",
+        "price":{"close_dollars":".08","low_dollars":".08","high_dollars":".08"},
+        "yes_ask":{"close_dollars":".08","low_dollars":".08","high_dollars":".08"},
+        "yes_bid":{"close_dollars":".07","low_dollars":".07","high_dollars":".07"},
+    })
+    rows=build_extreme_cheap_observations(
+        [leg], {leg.kalshi_ticker:history},
+        {(state.event_id,state.selection_key):state},now=NOW,
+    )
+    assert len(rows)==1
+    assert rows[0].lane=="RECOVERY BUILDING — RESEARCH"
+    assert rows[0].rebound_pp>=4.

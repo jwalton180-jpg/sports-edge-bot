@@ -21,7 +21,8 @@ from sports_edge.data.tennis_live import (
 from sports_edge.models.event_identity import canonical_participant
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
 from sports_edge.models.kalshi_sports import group_kalshi_sports
-from sports_edge.models.tennis_early_research import build_early_reversal_watches
+from sports_edge.models.tennis_early_research import (
+    build_early_reversal_watches, build_extreme_cheap_observations,\n)
 from sports_edge.models.tennis_live_probability import estimate_live_match_probability
 from sports_edge.models.tennis_live_reversal import (
     build_tennis_reversal_radar,
@@ -79,7 +80,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
     diagnostics = {
         "observed_at": utc_iso(now), "healthy": False, "errors": [],
         "open_contracts": 0, "score_states": 0, "model_sides": 0,
-        "quoted_snapshots_added": 0, "early_watches": 0,
+        "quoted_snapshots_added": 0, "extreme_dip_observations": 0, "recovery_building": 0, "early_watches": 0,
         "confirmed_radar_signals": 0, "new_signals": 0, "new_settlements": 0,
         "pending_settlements": 0,
     }
@@ -115,6 +116,19 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
             candidates, candles, state_index, now=now,
         )
         diagnostics["early_watches"] = len(early)
+        extreme = build_extreme_cheap_observations(
+            candidates, candles, state_index, now=now,
+        )
+        diagnostics["extreme_dip_observations"] = sum(
+            row.current_ask <= .04 for row in extreme
+        )
+        diagnostics["recovery_building"] = sum(
+            row.lane == "RECOVERY BUILDING — RESEARCH" for row in extreme
+        )
+        extreme_by_market = {
+            (row.event_id, row.selection, row.ticker): row
+            for row in extreme
+        }
         diagnostics["confirmed_radar_signals"] = len(radar)
 
         snapshots = []
@@ -132,7 +146,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
                 continue
             if abs((now - state.fetched_at).total_seconds()) > 150:
                 continue
-            if not (.04 <= quote.close <= .25):
+            if not (.01 <= quote.close <= .25):
                 continue
             live = estimate_live_match_probability(float(c.model_probability), state)
             if live is None:
@@ -152,9 +166,42 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
                 "score": state.score_label, "score_sources": list(state.score_sources),
                 "state_fetched_at": utc_iso(state.fetched_at),
                 "score_conflict": False, "model_version": SIGNAL_VERSION,
+                "research_observation": (
+                    extreme_by_market[(c.event_id, c.selection, ticker)].lane
+                    if (c.event_id, c.selection, ticker) in extreme_by_market
+                    else "STANDARD LIVE QUOTE"
+                ),
                 "is_executable_quote_observation_not_fill": True,
             })
         diagnostics["quoted_snapshots_added"] = store.add_snapshots(snapshots)
+
+        for observed in extreme:
+            if observed.lane != "RECOVERY BUILDING — RESEARCH":
+                continue
+            c = next((c for c in candidates if c.event_id == observed.event_id
+                      and c.selection == observed.selection
+                      and str(c.kalshi_ticker) == observed.ticker), None)
+            if c is None or observed.live_fair is None:
+                continue
+            quote = quotes.get((observed.ticker, str(c.kalshi_side).upper()))
+            if quote is None:
+                continue
+            record = first_signal_record(
+                event_id=observed.event_id, ticker=observed.ticker,
+                selection=observed.selection, side=str(c.kalshi_side).upper(),
+                lane=observed.lane, price=quote.close,
+                fair=observed.live_fair, score=observed.score,
+                observed_at=now, model_version="tennis-extreme-recovery-v1",
+                candle_end_ts=quote.end_ts,
+                spread_pp=quote.spread * 100,
+                evidence={
+                    "trough": observed.observed_trough,
+                    "rebound_pp": observed.rebound_pp,
+                    "score_sources": list(observed.score_sources),
+                    "research_only": True,
+                },
+            )
+            diagnostics["new_signals"] += int(store.add_signal(record))
 
         for s in early:
             c = next((c for c in candidates

@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 import importlib
 import inspect
+import json
 import os
 import requests
 from statistics import median
@@ -114,6 +115,9 @@ from sports_edge.models.kalshi_model_candidates import model_candidates_from_kal
 _tennis_early = import_module_fresh("sports_edge.models.tennis_early_research")
 build_early_reversal_watches = getattr(
     _tennis_early, "build_early_reversal_watches", lambda *args, **kwargs: ()
+)
+build_extreme_cheap_observations = getattr(
+    _tennis_early, "build_extreme_cheap_observations", lambda *args, **kwargs: ()
 )
 _tennis_ledger = import_module_fresh("sports_edge.models.tennis_reversal_ledger")
 
@@ -485,6 +489,27 @@ def get_sofascore_live_snapshot_cached():
     try:
         return tuple(fetch_sofascore_live_snapshot()), None
     except Exception as exc:
+        return (), _safe_error(exc)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_tennis_recent_prospective_signals():
+    url = (
+        "https://raw.githubusercontent.com/jwalton180-jpg/sports-edge-bot/"
+        "tennis-prospective-data/research/tennis_prospective/signals.jsonl"
+    )
+    try:
+        response = requests.get(url, timeout=8)
+        response.raise_for_status()
+        rows = [
+            json.loads(line)
+            for line in response.text.splitlines()
+            if line.strip()
+        ]
+        rows = [row for row in rows if isinstance(row, dict)]
+        rows.sort(key=lambda row: row.get("first_observed_at", ""), reverse=True)
+        return tuple(rows[:100]), None
+    except (requests.RequestException, ValueError, TypeError) as exc:
         return (), _safe_error(exc)
 
 
@@ -2523,6 +2548,9 @@ elif view == "Live Feed":
         early_watches = build_early_reversal_watches(
             tennis_candidates, candles, live_state_index,
         )
+        extreme_dips = build_extreme_cheap_observations(
+            tennis_candidates, candles, live_state_index,
+        )
         # Only operator-configured persistent storage may be used for a
         # prospective first-trigger ledger. Streamlit's ephemeral filesystem
         # is intentionally NOT accepted as a production ledger.
@@ -2554,6 +2582,69 @@ elif view == "Live Feed":
                 ledger_metrics = ledger.metrics()
             except Exception as exc:
                 ledger_error = str(exc)
+        st.markdown("### 🎯 Extreme Dip Tracker · 1–4¢")
+        st.caption(
+            "Tracks extremely cheap live Tennis contracts, including 3¢ prices, "
+            "even when the match state makes a win unlikely. "
+            "TRACKING ONLY is NOT a pick. RECOVERY BUILDING requires improving "
+            "price, fresh quotes and positive independent model value."
+        )
+        if extreme_dips:
+            st.dataframe(pd.DataFrame([
+                {
+                    "Player": row.selection,
+                    "Current ask": f"{row.current_ask:.0%}",
+                    "Quoted trough": f"{row.observed_trough:.0%}",
+                    "Recovered": f"+{row.rebound_pp:.1f}pp",
+                    "Live fair estimate": (
+                        f"{row.live_fair:.1%}" if row.live_fair is not None else "unavailable"
+                    ),
+                    "Live score": row.score,
+                    "Status": row.lane,
+                }
+                for row in extreme_dips[:30]
+            ]), use_container_width=True, hide_index=True)
+        else:
+            st.caption(
+                "No current 1–4¢ quoted dip or eligible early recovery. "
+                "This is not proof that no cheap prices exist in markets without live score/model coverage."
+            )
+
+        recent_signals, recent_error = get_tennis_recent_prospective_signals()
+        current_utc = datetime.now(timezone.utc)
+        recently_seen = []
+        for signal in recent_signals:
+            try:
+                first = datetime.fromisoformat(signal["first_observed_at"].replace("Z", "+00:00"))
+                age_minutes = (current_utc - first).total_seconds() / 60
+                if 0 <= age_minutes <= 120:
+                    recently_seen.append((signal, age_minutes))
+            except (TypeError, KeyError, ValueError, AttributeError):
+                continue
+        if recently_seen:
+            with st.expander(
+                f"Recorded cheap Tennis watches in the last 2 hours ({len(recently_seen)})",
+                expanded=True,
+            ):
+                st.caption(
+                    "Immutable first-observed signals, NOT live recommendations. "
+                    "Prices/score states shown are historical at detection time, "
+                    "and some matches may already have ended."
+                )
+                st.dataframe(pd.DataFrame([
+                    {
+                        "Seen UTC": s["first_observed_at"][11:16],
+                        "Player": s.get("selection", "unknown"),
+                        "First ask": f"{s['entry_ask']:.0%}",
+                        "Model live fair": f"{s['model_fair']:.1%}",
+                        "Lane": s.get("lane", ""),
+                        "Score at detection": s.get("score_state", ""),
+                    }
+                    for s, age in recently_seen[:30]
+                ]), use_container_width=True, hide_index=True)
+        elif recent_error:
+            st.caption("Recent first-trigger history is currently unavailable.")
+
         st.markdown("### 🔬 Early Tennis Reversal Watch · Research")
         st.caption(
             "Experimental, uncalibrated pre-confirmation signals; not DEEP REVERSAL "
@@ -2586,7 +2677,8 @@ elif view == "Live Feed":
                     f"Persistent samples: {cloud_report.get('total_observations', 0)} · "
                     f"Officially graded: {cloud_report.get('total_settled', 0)} · "
                     f"Pending: {cloud_report.get('total_pending', 0)} · "
-                    f"Price/score snapshots: {cloud_report.get('recorded_snapshots', 0)}"
+                    f"Price/score snapshots: {cloud_report.get('recorded_snapshots', 0)} · "
+                    f"Extreme-dip snapshots: {cloud_report.get('extreme_dip_quote_snapshots', 0)}"
                 )
                 run_status = cloud_report.get("last_worker_run")
                 if isinstance(run_status, dict):
