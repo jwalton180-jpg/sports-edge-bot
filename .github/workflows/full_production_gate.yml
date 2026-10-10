@@ -20,7 +20,9 @@ jobs:
       - name: Full tests
         run: pytest -q
       - name: Compile
-        run: python -m compileall -q sports_edge app.py launch_on_demand.py
+        run: |
+          python -m compileall -q sports_edge app.py launch_on_demand.py
+          python -m py_compile scripts/tennis_reversal_worker.py
       - name: Critical imports
         run: |
           python - <<'PY'

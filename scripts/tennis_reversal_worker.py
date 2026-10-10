@@ -22,7 +22,9 @@ from sports_edge.models.event_identity import canonical_participant
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi
 from sports_edge.models.kalshi_sports import group_kalshi_sports
 from sports_edge.models.tennis_early_research import (
-    build_early_reversal_watches, build_extreme_cheap_observations,\n)
+    build_early_reversal_watches,
+    build_extreme_cheap_observations,
+)
 from sports_edge.models.tennis_live_probability import estimate_live_match_probability
 from sports_edge.models.tennis_live_reversal import (
     build_tennis_reversal_radar,
