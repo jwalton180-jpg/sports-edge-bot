@@ -248,7 +248,7 @@ def build_extreme_cheap_observations(
         state = _resolve_live_state(leg, live_states)
         if state is None or not state.score_sources or state.score_conflict:
             continue
-        if abs((now - state.fetched_at).total_seconds()) > 150 or state.at_tiebreak:
+        if abs((now - state.fetched_at).total_seconds()) > 150:
             continue
         path = executable_path(candles.get(str(leg.kalshi_ticker), ()), leg.kalshi_side)
         if not path:
@@ -275,6 +275,7 @@ def build_extreme_cheap_observations(
                 and fair is not None and fair - latest.close >= .04
                 and (leg.model_confidence or 0) >= .45
                 and (leg.model_sample_size or 0) >= 6
+                and not state.at_tiebreak
                 and state.net_break_advantage is not None
                 and state.net_break_advantage >= 0):
             phase = "RECOVERY BUILDING — RESEARCH"
@@ -291,5 +292,5 @@ def build_extreme_cheap_observations(
             score_sources=tuple(state.score_sources),
             latest_age_s=age,
         ))
-    out.sort(key=lambda r:(r.lane.startswith("RECOVERY"), -r.rebound_pp, -r.current_ask),reverse=True)
+    out.sort(key=lambda r:(r.lane.startswith("RECOVERY"), r.rebound_pp, r.current_ask),reverse=True)
     return tuple(out)
