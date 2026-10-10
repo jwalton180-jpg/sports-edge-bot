@@ -110,7 +110,7 @@ def test_ledger_freezes_first_trigger_and_grades_once(tmp_path):
 
 
 def _shi_scenario(price: float = .03):
-    """Synthetic fixture reconstructed from user's Stearns–Shi 2–6, 3–5 screenshot."""
+    """Synthetic stress case; screenshot's selected 3c chart time and live 2–6, 3–5 score are not proven simultaneous."""
     state = _state()
     state = replace(
         state,
