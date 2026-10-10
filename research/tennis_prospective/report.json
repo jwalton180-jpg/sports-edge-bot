@@ -187,7 +187,7 @@
         "wins": 1
       },
       "20-25c": {
-        "settled": 5,
+        "settled": 6,
         "wins": 1
       },
       "4-10c": {
@@ -195,31 +195,31 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 10,
+        "evaluated": 11,
         "minimum_prior_verified": 30,
-        "model_brier": 0.205068,
-        "quote_brier": 0.16431,
+        "model_brier": 0.188011,
+        "quote_brier": 0.154609,
         "sufficient_for_exploration": false,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.44,
-      "hypothetical_gross_dollars_per_contract": 2.87,
-      "losses": 33,
-      "model_brier": 0.2108138371802353,
+      "first_half_win_rate": 0.4230769230769231,
+      "hypothetical_gross_dollars_per_contract": 2.63,
+      "losses": 34,
+      "model_brier": 0.20709500495753846,
       "observations": 52,
-      "pending": 1,
-      "quote_brier": 0.21323333333333333,
+      "pending": 0,
+      "quote_brier": 0.2102403846153846,
       "second_half_win_rate": 0.2692307692307692,
-      "settled": 51,
-      "win_rate": 0.35294117647058826,
+      "settled": 52,
+      "win_rate": 0.34615384615384615,
       "wins": 18
     }
   },
   "extreme_dip_quote_snapshots": 136,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 0,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,9 +227,9 @@
     "model_sides": 80,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-10T14:48:43.683109+00:00",
+    "observed_at": "2026-10-10T14:56:01.499974+00:00",
     "open_contracts": 102,
-    "pending_settlements": 1,
+    "pending_settlements": 0,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
@@ -242,6 +242,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 102,
-  "total_pending": 1,
-  "total_settled": 101
+  "total_pending": 0,
+  "total_settled": 102
 }
