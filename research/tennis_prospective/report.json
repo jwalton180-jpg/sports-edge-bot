@@ -195,26 +195,26 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 49,
+        "evaluated": 50,
         "minimum_prior_verified": 30,
-        "model_brier": 0.163437,
-        "quote_brier": 0.173396,
+        "model_brier": 0.168218,
+        "quote_brier": 0.17945,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.35555555555555557,
-      "hypothetical_gross_dollars_per_contract": 3.34,
+      "hypothetical_gross_dollars_per_contract": 4.03,
       "losses": 61,
-      "model_brier": 0.18565818984411112,
+      "model_brier": 0.18804087338675823,
       "observations": 92,
-      "pending": 2,
-      "quote_brier": 0.19698000000000002,
-      "second_half_win_rate": 0.28888888888888886,
-      "settled": 90,
-      "win_rate": 0.32222222222222224,
-      "wins": 29
+      "pending": 1,
+      "quote_brier": 0.20004725274725274,
+      "second_half_win_rate": 0.30434782608695654,
+      "settled": 91,
+      "win_rate": 0.32967032967032966,
+      "wins": 30
     }
   },
   "extreme_dip_quote_snapshots": 401,
@@ -227,13 +227,13 @@
     "model_sides": 130,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-11T16:04:48.279943+00:00",
+    "observed_at": "2026-10-11T16:09:47.963814+00:00",
     "open_contracts": 224,
-    "pending_settlements": 4,
+    "pending_settlements": 3,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
-    "score_states": 4,
+    "score_states": 2,
     "settlement_checks_due": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
@@ -242,6 +242,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 196,
-  "total_pending": 4,
-  "total_settled": 192
+  "total_pending": 3,
+  "total_settled": 193
 }
