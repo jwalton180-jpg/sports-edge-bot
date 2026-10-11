@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 146,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 0,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,7 +227,7 @@
     "model_sides": 268,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-11T02:29:55.835643+00:00",
+    "observed_at": "2026-10-11T02:34:16.437652+00:00",
     "open_contracts": 472,
     "pending_settlements": 0,
     "post_surge_audits": 0,
