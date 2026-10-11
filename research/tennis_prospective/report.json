@@ -62,7 +62,7 @@
         "wins": 2
       },
       "4-10c": {
-        "settled": 4,
+        "settled": 5,
         "wins": 0
       },
       "causal_forward": {
@@ -76,15 +76,15 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.2,
-      "hypothetical_gross_dollars_per_contract": 0.37,
-      "losses": 25,
-      "model_brier": 0.132970698661,
+      "hypothetical_gross_dollars_per_contract": 0.31,
+      "losses": 26,
+      "model_brier": 0.13086784136548388,
       "observations": 32,
-      "pending": 2,
-      "quote_brier": 0.13144333333333333,
-      "second_half_win_rate": 0.13333333333333333,
-      "settled": 30,
-      "win_rate": 0.16666666666666666,
+      "pending": 1,
+      "quote_brier": 0.12731935483870968,
+      "second_half_win_rate": 0.125,
+      "settled": 31,
+      "win_rate": 0.16129032258064516,
       "wins": 5
     },
     "RECOVERY BUILDING \u2014 RESEARCH": {
@@ -105,7 +105,7 @@
         "wins": 0
       },
       "4-10c": {
-        "settled": 3,
+        "settled": 4,
         "wins": 0
       },
       "causal_forward": {
@@ -119,14 +119,14 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.0,
-      "hypothetical_gross_dollars_per_contract": -0.71,
-      "losses": 6,
-      "model_brier": 0.0461695687975,
+      "hypothetical_gross_dollars_per_contract": -0.77,
+      "losses": 7,
+      "model_brier": 0.04694149431342857,
       "observations": 7,
-      "pending": 1,
-      "quote_brier": 0.017283333333333335,
+      "pending": 0,
+      "quote_brier": 0.01532857142857143,
       "second_half_win_rate": 0.0,
-      "settled": 6,
+      "settled": 7,
       "win_rate": 0.0,
       "wins": 0
     },
@@ -148,7 +148,7 @@
         "wins": 2
       },
       "4-10c": {
-        "settled": 0,
+        "settled": 1,
         "wins": 0
       },
       "causal_forward": {
@@ -161,16 +161,16 @@
       },
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.46153846153846156,
-      "hypothetical_gross_dollars_per_contract": 2.16,
-      "losses": 17,
-      "model_brier": 0.21368687097603703,
+      "first_half_win_rate": 0.42857142857142855,
+      "hypothetical_gross_dollars_per_contract": 2.09,
+      "losses": 18,
+      "model_brier": 0.20739571174989285,
       "observations": 29,
-      "pending": 2,
-      "quote_brier": 0.22974814814814815,
+      "pending": 1,
+      "quote_brier": 0.22171785714285716,
       "second_half_win_rate": 0.2857142857142857,
-      "settled": 27,
-      "win_rate": 0.37037037037037035,
+      "settled": 28,
+      "win_rate": 0.35714285714285715,
       "wins": 10
     },
     "WATCH": {
@@ -195,25 +195,25 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 25,
+        "evaluated": 26,
         "minimum_prior_verified": 30,
-        "model_brier": 0.179906,
-        "quote_brier": 0.19764,
+        "model_brier": 0.17658,
+        "quote_brier": 0.192638,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.45454545454545453,
-      "hypothetical_gross_dollars_per_contract": 3.56,
-      "losses": 43,
-      "model_brier": 0.1999769064601515,
+      "hypothetical_gross_dollars_per_contract": 3.3,
+      "losses": 44,
+      "model_brier": 0.19838676167156716,
       "observations": 69,
-      "pending": 3,
-      "quote_brier": 0.21473939393939395,
-      "second_half_win_rate": 0.24242424242424243,
-      "settled": 66,
-      "win_rate": 0.3484848484848485,
+      "pending": 2,
+      "quote_brier": 0.21254328358208954,
+      "second_half_win_rate": 0.23529411764705882,
+      "settled": 67,
+      "win_rate": 0.34328358208955223,
       "wins": 23
     }
   },
@@ -224,24 +224,24 @@
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 256,
+    "model_sides": 250,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-11T08:24:14.714174+00:00",
-    "open_contracts": 444,
-    "pending_settlements": 8,
+    "observed_at": "2026-10-11T08:28:46.600529+00:00",
+    "open_contracts": 438,
+    "pending_settlements": 4,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 2,
     "recovery_building": 0,
     "score_states": 8,
-    "settlement_checks_due": 0
+    "settlement_checks_due": 1
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 1328,
+  "recorded_snapshots": 1336,
   "recovery_building_quote_snapshots": 25,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 138,
-  "total_pending": 8,
-  "total_settled": 130
+  "total_pending": 4,
+  "total_settled": 134
 }
