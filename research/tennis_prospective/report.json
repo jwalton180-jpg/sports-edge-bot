@@ -217,27 +217,27 @@
       "wins": 18
     }
   },
-  "extreme_dip_quote_snapshots": 188,
+  "extreme_dip_quote_snapshots": 192,
   "last_worker_run": {
     "confirmed_radar_signals": 2,
-    "early_watches": 0,
+    "early_watches": 1,
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
     "model_sides": 276,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-11T05:21:56.255162+00:00",
+    "observed_at": "2026-10-11T05:26:26.556180+00:00",
     "open_contracts": 484,
     "pending_settlements": 14,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 3,
     "recovery_building": 0,
     "score_states": 10,
-    "settlement_checks_due": 0
+    "settlement_checks_due": 7
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 1145,
+  "recorded_snapshots": 1157,
   "recovery_building_quote_snapshots": 16,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
