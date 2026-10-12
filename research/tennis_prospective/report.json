@@ -152,25 +152,25 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 36,
+        "evaluated": 37,
         "minimum_prior_verified": 30,
-        "model_brier": 0.245886,
-        "quote_brier": 0.26165,
+        "model_brier": 0.245433,
+        "quote_brier": 0.257703,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.3333333333333333,
-      "hypothetical_gross_dollars_per_contract": 9.76,
-      "losses": 39,
-      "model_brier": 0.22329332211386568,
+      "first_half_win_rate": 0.3235294117647059,
+      "hypothetical_gross_dollars_per_contract": 9.42,
+      "losses": 40,
+      "model_brier": 0.22337930688566177,
       "observations": 69,
-      "pending": 2,
-      "quote_brier": 0.23867164179104478,
+      "pending": 1,
+      "quote_brier": 0.23686176470588235,
       "second_half_win_rate": 0.5,
-      "settled": 67,
-      "win_rate": 0.417910447761194,
+      "settled": 68,
+      "win_rate": 0.4117647058823529,
       "wins": 28
     },
     "WATCH": {
@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 587,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 0,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,9 +227,9 @@
     "model_sides": 308,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-12T19:49:57.629386+00:00",
+    "observed_at": "2026-10-12T19:54:25.700017+00:00",
     "open_contracts": 516,
-    "pending_settlements": 3,
+    "pending_settlements": 2,
     "post_surge_audits": 0,
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
@@ -242,6 +242,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 304,
-  "total_pending": 3,
-  "total_settled": 301
+  "total_pending": 2,
+  "total_settled": 302
 }
