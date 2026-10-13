@@ -112,6 +112,11 @@ build_intelligent_parlay = _pi.build_intelligent_parlay
 
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context, _market_local_date
 
+_tennis_watch_timeline = import_module_fresh("sports_edge.models.tennis_watch_timeline")
+build_tennis_watch_timelines = getattr(
+    _tennis_watch_timeline, "build_tennis_watch_timelines", lambda *args, **kwargs: ()
+)
+
 _tennis_early = import_module_fresh("sports_edge.models.tennis_early_research")
 build_early_reversal_watches = getattr(
     _tennis_early, "build_early_reversal_watches", lambda *args, **kwargs: ()
@@ -509,6 +514,21 @@ def get_tennis_recent_prospective_signals():
         rows = [row for row in rows if isinstance(row, dict)]
         rows.sort(key=lambda row: row.get("first_observed_at", ""), reverse=True)
         return tuple(rows[:100]), None
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        return (), _safe_error(exc)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_tennis_recent_prospective_grades():
+    url = (
+        "https://raw.githubusercontent.com/jwalton180-jpg/sports-edge-bot/"
+        "tennis-prospective-data/research/tennis_prospective/settlements.jsonl"
+    )
+    try:
+        response = requests.get(url, timeout=8)
+        response.raise_for_status()
+        rows = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        return tuple(row for row in rows if isinstance(row, dict)), None
     except (requests.RequestException, ValueError, TypeError) as exc:
         return (), _safe_error(exc)
 
@@ -2582,6 +2602,52 @@ elif view == "Live Feed":
                 ledger_metrics = ledger.metrics()
             except Exception as exc:
                 ledger_error = str(exc)
+        recent_signals, recent_error = get_tennis_recent_prospective_signals()
+        recent_grades, grades_error = get_tennis_recent_prospective_grades()
+        timelines = build_tennis_watch_timelines(
+            recent_signals,
+            now=datetime.now(timezone.utc),
+            live_event_ids=set(confirmed_live_ids),
+            grades=recent_grades,
+            lookback_minutes=180,
+            max_rows=30,
+        )
+        st.markdown("### ⏱ Tennis Reversal Timeline · First Alert → Recovery")
+        st.caption(
+            "First observed quoted ask and research-stage transitions are shown "
+            "together, including 2–20¢ recoveries. Only score-confirmed, "
+            "recent positive-edge observations are highlighted as RESEARCH. "
+            "Historical quotes are not available entries and are not fills."
+        )
+        if timelines:
+            st.dataframe(pd.DataFrame([
+                {
+                    "Player": row.selection,
+                    "First seen (UTC)": row.first_seen.strftime("%H:%M"),
+                    "First ask": f"{row.first_price:.0%}",
+                    "Early positive-edge ask": (
+                        f"{row.earliest_positive_edge_price:.0%}"
+                        if row.earliest_positive_edge_price is not None
+                        else "none"
+                    ),
+                    "Latest stage ask": f"{row.latest_price:.0%}",
+                    "Latest estimated fair": f"{row.latest_model_fair:.1%}",
+                    "Stages recorded": " → ".join(row.sequence),
+                    "Status": row.status,
+                    "Latest observed score": row.latest_score,
+                }
+                for row in timelines
+            ]), use_container_width=True, hide_index=True)
+        else:
+            st.caption(
+                "No recent recorded Tennis reversal signals. This does not "
+                "guarantee the absence of cheap prices or opportunities."
+            )
+        if recent_error:
+            st.caption(f"Signal ledger delayed/unavailable: {recent_error}")
+        if grades_error:
+            st.caption(f"Settlement grading status unavailable: {grades_error}")
+
         st.markdown("### 🎯 Extreme Dip Tracker & Already-Moved Surges")
         st.caption(
             "Tracks verified quoted asks as low as 1–4¢ even when a match "
@@ -2610,7 +2676,6 @@ elif view == "Live Feed":
                 "This is not proof that no cheap prices exist in markets without live score/model coverage."
             )
 
-        recent_signals, recent_error = get_tennis_recent_prospective_signals()
         current_utc = datetime.now(timezone.utc)
         recently_seen = []
         for signal in recent_signals:
