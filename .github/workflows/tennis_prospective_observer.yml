@@ -11,6 +11,8 @@ on:
       - .github/workflows/tennis_prospective_observer.yml
       - scripts/tennis_reversal_worker.py
       - sports_edge/models/tennis_prospective_store.py
+      - sports_edge/models/tennis_push_dispatch.py
+      - sports_edge/data/tennis_push.py
 
 permissions:
   contents: write
@@ -28,6 +30,10 @@ jobs:
       LIVE_TRADING: "false"
       ORDER_SUBMISSION_ENABLED: "false"
       READ_ONLY_KALSHI: "true"
+      # Add SPORTSEDGE_NTFY_TOPIC as an Actions repository secret.
+      # No topic is checked into Git, printed in logs, or generated publicly.
+      SPORTSEDGE_NTFY_TOPIC: ${{ secrets.SPORTSEDGE_NTFY_TOPIC }}
+      SPORTSEDGE_NTFY_TOKEN: ${{ secrets.SPORTSEDGE_NTFY_TOKEN }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -74,7 +80,9 @@ jobs:
               failures=$((failures+1))
               echo "::warning::Tennis poll $n degraded (exit $rc)"
             fi
-            if [ "$((n % 4))" -eq 0 ]; then
+            # Persist promptly after a push acceptance receipt (rather than
+            # waiting for the fourth poll) to reduce duplicate risk.
+            if [ "$((n % 4))" -eq 0 ] || grep -Eq '"push_accepted": [1-9]' "/tmp/tennis_observer_$n.json"; then
               (
                 set -e
                 cd ledger

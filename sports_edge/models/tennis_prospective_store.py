@@ -114,6 +114,10 @@ class ProspectiveResearchStore:
         self.settlements = read_jsonl(self.root / DATA_FILES[1])
         self.snapshots = read_jsonl(self.root / DATA_FILES[2])
         self.runs = read_jsonl(self.root / DATA_FILES[3])
+        self.notifications = read_jsonl(self.root / "notifications.jsonl")
+        self._notification_ids = {row["alert_id"] for row in self.notifications}
+        if len(self._notification_ids) != len(self.notifications):
+            raise ValueError("duplicate push acceptance receipt")
         self._signal_ids = {r["signal_id"] for r in self.signals}
         self._grade_ids = {r["signal_id"] for r in self.settlements}
         if len(self._signal_ids) != len(self.signals) or len(self._grade_ids) != len(self.settlements):
@@ -142,6 +146,48 @@ class ProspectiveResearchStore:
         append_jsonl(self.root / DATA_FILES[1], [row])
         self.settlements.append(row)
         self._grade_ids.add(sid)
+        return True
+
+    def has_accepted_push(self, alert_id: str) -> bool:
+        return alert_id in self._notification_ids
+
+    def highest_accepted_push_rank(self, ticker: str) -> int:
+        from sports_edge.data.tennis_push import SUPPORTED
+        ranks = {
+            "EXTREME DIP — TRACKING ONLY": 1,
+            "EARLY WATCH — RESEARCH": 2,
+            "WATCH": 2,
+            "RECOVERY BUILDING — RESEARCH": 3,
+            "REVERSAL SIGNAL": 4,
+            "DEEP REVERSAL": 5,
+        }
+        return max(
+            (ranks.get(row.get("lane", ""), 0)
+             for row in self.notifications if row.get("ticker") == ticker),
+            default=0,
+        )
+
+    def record_push_acceptance(self, *, alert_id: str, ticker: str,
+                               lane: str, accepted_at: datetime,
+                               provider_id: str) -> bool:
+        """Durable at-most-once acceptance receipt; no topic or token stored.
+
+        A crash after remote acceptance and before checkpoint may still
+        cause delivery retry. Phone delivery cannot be guaranteed by HTTP.
+        """
+        if alert_id in self._notification_ids:
+            return False
+        if not alert_id or not ticker or not lane:
+            raise ValueError("invalid push acknowledgement")
+        row = {
+            "alert_id": alert_id, "ticker": ticker, "lane": lane,
+            "accepted_at": utc_iso(accepted_at),
+            "provider_message_id": provider_id,
+            "provider": "ntfy", "status": "accepted",
+        }
+        append_jsonl(self.root / "notifications.jsonl", [row])
+        self.notifications.append(row)
+        self._notification_ids.add(alert_id)
         return True
 
     def add_snapshots(self, rows: list[dict]) -> int:
@@ -271,6 +317,7 @@ class ProspectiveResearchStore:
             "total_observations":len(self.signals),
             "total_settled":len(self.settlements),
             "total_pending":len(self.pending()),
+            "push_accepted_notifications":len(self.notifications),
             "recorded_snapshots":len(self.snapshots),
             "last_worker_run":latest_poll,
             "by_lane":by_lane,

@@ -2752,6 +2752,18 @@ elif view == "Live Feed":
                         f"Last recorded worker heartbeat: {run_status.get('observed_at', 'unknown')} · "
                         f"Healthy: {run_status.get('healthy', False)}"
                     )
+                    push_on = bool(run_status.get("push_configured", False))
+                    accepted = int(cloud_report.get("push_accepted_notifications", 0) or 0)
+                    if push_on:
+                        st.caption(
+                            f"Phone push bridge: configured · {accepted} provider acceptance(s) recorded. "
+                            "Device receipt is not guaranteed by provider acceptance."
+                        )
+                    else:
+                        st.caption(
+                            "Phone push bridge: waiting for the GitHub Actions topic secret "
+                            "and an iPhone ntfy subscription."
+                        )
                 summary_rows = []
                 for lane, metrics in (cloud_report.get("by_lane") or {}).items():
                     causal = metrics.get("causal_forward") or {}
@@ -2788,6 +2800,10 @@ elif view == "Live Feed":
             st.markdown(
                 "[Open Git-backed Tennis research ledger](https://github.com/"
                 "jwalton180-jpg/sports-edge-bot/tree/tennis-prospective-data/research/tennis_prospective)"
+            )
+            st.markdown(
+                "[Set up iPhone Tennis push alerts](https://github.com/"
+                "jwalton180-jpg/sports-edge-bot/blob/main/docs/tennis_iphone_push.md)"
             )
 
         if ledger_metrics:
