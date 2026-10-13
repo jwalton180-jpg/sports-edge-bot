@@ -36,6 +36,7 @@ from sports_edge.models.tennis_prospective_store import (
     SIGNAL_VERSION, first_signal_record, stable_id, utc_iso,
     verified_kalshi_settlement,
 )
+from sports_edge.models.tennis_push_dispatch import send_tennis_pushes
 
 
 def _unwrap(payload):
@@ -85,7 +86,10 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         "quoted_snapshots_added": 0, "extreme_dip_observations": 0, "recovery_building": 0, "post_surge_audits": 0, "early_watches": 0,
         "confirmed_radar_signals": 0, "new_signals": 0, "new_settlements": 0,
         "pending_settlements": 0,
+        "push_configured": False, "push_accepted": 0, "push_failed": 0,
     }
+    extreme_for_push = ()
+    candidates_for_push = ()
     try:
         # Strict public market enumeration: do not misrepresent a partial
         # 6-series API outage as zero opportunities. No user credentials.
@@ -121,6 +125,8 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         extreme = build_extreme_cheap_observations(
             candidates, candles, state_index, now=now,
         )
+        extreme_for_push = tuple(extreme)
+        candidates_for_push = tuple(candidates)
         diagnostics["extreme_dip_observations"] = sum(
             row.current_ask <= .04 for row in extreme
         )
@@ -271,6 +277,20 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         diagnostics["healthy"] = True
     except Exception as exc:
         diagnostics["errors"].append(f"{type(exc).__name__}: {exc}")
+
+    # Outbound ntfy is opt-in. Never backfill stale historic signals and
+    # never treat an accepted HTTP request as proof of phone delivery.
+    if diagnostics["healthy"]:
+        push = send_tennis_pushes(
+            store, now=now, extreme_observations=extreme_for_push,
+            model_candidates=candidates_for_push,
+        )
+        diagnostics["push_configured"] = push["configured"]
+        diagnostics["push_accepted"] = push["accepted"]
+        diagnostics["push_failed"] = push["failed"]
+        if push["failed"]:
+            diagnostics["errors"].extend(push["errors"])
+            diagnostics["healthy"] = False
 
     # Settlement grading is independent of fresh Tennis feeds; even when
     # markets are degraded, earlier observations can finish grading.
