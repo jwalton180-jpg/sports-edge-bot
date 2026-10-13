@@ -1,5 +1,5 @@
 {
-  "already_moved_postmortems": 67,
+  "already_moved_postmortems": 71,
   "by_lane": {
     "DEEP REVERSAL": {
       "1-4c": {
@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 590,
   "last_worker_run": {
-    "confirmed_radar_signals": 3,
+    "confirmed_radar_signals": 1,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,17 +227,17 @@
     "model_sides": 512,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-13T04:39:34.257018+00:00",
-    "open_contracts": 782,
+    "observed_at": "2026-10-13T04:44:00.915590+00:00",
+    "open_contracts": 784,
     "pending_settlements": 4,
     "post_surge_audits": 1,
     "quoted_snapshots_added": 1,
     "recovery_building": 0,
     "score_states": 12,
-    "settlement_checks_due": 2
+    "settlement_checks_due": 1
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 3356,
+  "recorded_snapshots": 3360,
   "recovery_building_quote_snapshots": 47,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
