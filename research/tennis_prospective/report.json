@@ -1,5 +1,5 @@
 {
-  "already_moved_postmortems": 78,
+  "already_moved_postmortems": 82,
   "by_lane": {
     "DEEP REVERSAL": {
       "1-4c": {
@@ -217,27 +217,27 @@
       "wins": 50
     }
   },
-  "extreme_dip_quote_snapshots": 608,
+  "extreme_dip_quote_snapshots": 612,
   "last_worker_run": {
-    "confirmed_radar_signals": 3,
+    "confirmed_radar_signals": 1,
     "early_watches": 0,
     "errors": [],
-    "extreme_dip_observations": 1,
+    "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 508,
+    "model_sides": 504,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-13T05:10:21.980929+00:00",
-    "open_contracts": 776,
+    "observed_at": "2026-10-13T05:24:29.742521+00:00",
+    "open_contracts": 770,
     "pending_settlements": 4,
     "post_surge_audits": 1,
-    "quoted_snapshots_added": 4,
+    "quoted_snapshots_added": 2,
     "recovery_building": 0,
-    "score_states": 12,
+    "score_states": 10,
     "settlement_checks_due": 1
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
-  "recorded_snapshots": 3411,
+  "recorded_snapshots": 3419,
   "recovery_building_quote_snapshots": 47,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
