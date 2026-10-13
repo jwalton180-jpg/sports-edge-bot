@@ -1,0 +1,66 @@
+name: SportsEdge iPhone ntfy delivery test
+
+on:
+  push:
+    branches:
+      - ntfy-secret-delivery-test-20261013
+
+permissions:
+  contents: read
+
+jobs:
+  send-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SPORTSEDGE_NTFY_TOPIC: ${{ secrets.SPORTSEDGE_NTFY_TOPIC }}
+      SPORTSEDGE_NTFY_TOKEN: ${{ secrets.SPORTSEDGE_NTFY_TOKEN }}
+    steps:
+      - name: Send safe one-time test to configured SportsEdge topic
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+          import urllib.error
+          from datetime import datetime, timezone
+
+          topic = os.getenv("SPORTSEDGE_NTFY_TOPIC", "").strip()
+          if not re.fullmatch(r"[A-Za-z0-9_-]{24,64}", topic):
+              raise SystemExit("ERROR: SPORTSEDGE_NTFY_TOPIC is unset or fails topic format validation; value not shown.")
+          payload = {
+              "topic": topic,
+              "title": "SportsEdge Tennis • Notification TEST",
+              "message": (
+                  "SportsEdge GitHub -> ntfy test. Your updated topic secret was accepted "
+                  "by the sender. This is a TEST, not a Tennis reversal or betting signal. "
+                  "UTC: " + datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+              ),
+              "priority": 4,
+              "tags": ["tennis", "white_check_mark"],
+          }
+          headers = {"Content-Type": "application/json"}
+          token = os.getenv("SPORTSEDGE_NTFY_TOKEN", "").strip()
+          if token:
+              headers["Authorization"] = "Bearer " + token
+          req = urllib.request.Request(
+              "https://ntfy.sh/",
+              data=json.dumps(payload).encode("utf-8"),
+              headers=headers,
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=15) as resp:
+                  status = resp.status
+                  receipt = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as exc:
+              raise SystemExit(f"ERROR: ntfy provider rejected test with HTTP {exc.code}; no secret or topic exposed.") from None
+          except Exception as exc:
+              raise SystemExit(f"ERROR: ntfy transport failed ({type(exc).__name__}); no secret or topic exposed.") from None
+          if status not in (200, 201, 202) or not isinstance(receipt, dict) or not receipt.get("id"):
+              raise SystemExit("ERROR: ntfy test did not produce a valid acceptance receipt.")
+          print(f"SUCCESS: ntfy accepted test notification (HTTP {status}); secret/topic not logged.")
+          print("Device delivery still requires checking ntfy on the iPhone.")
+          PY
