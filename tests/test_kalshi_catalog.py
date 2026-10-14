@@ -96,6 +96,19 @@ def test_catalog_series_page_limit_is_not_reported_as_complete():
     assert "KXWNBAGAME" in result.incomplete_series
 
 
+def test_catalog_scoped_allowlist_excludes_unsupported_series_without_truncating():
+    series=[{"ticker":"KXNCAAFGAME","title":"College football game"},
+            {"ticker":"KXNCAAFSPREAD","title":"College football spreads"},
+            {"ticker":"KXEPLTOTAL","title":"Premier League soccer total goals"}]
+    pages={("KXNCAAFGAME",None):{"markets":[{"ticker":"KXNCAAFGAME-G"}],"cursor":""},
+           ("KXEPLTOTAL",None):{"markets":[{"ticker":"KXEPLTOTAL-G"}],"cursor":""}}
+    client=FakeClient(series,pages)
+    result=fetch_supported_sport_catalog(client,
+        series_allowlist={"NCAAF":("KXNCAAFGAME",),"Soccer":("KXEPLTOTAL",)})
+    assert result.cursor_exhausted and result.relevant_series==2
+    assert {m["ticker"] for m in result.markets}=={"KXNCAAFGAME-G","KXEPLTOTAL-G"}
+    assert {c["series_ticker"] for c in client.calls}=={"KXNCAAFGAME","KXEPLTOTAL"}
+
 
 class WindowFakeClient:
     def __init__(self, pages):
