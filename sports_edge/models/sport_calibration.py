@@ -54,15 +54,35 @@ def chronological_calibration(rows: list[dict], *, min_train: int = 100,
     train, test = ordered[:split], ordered[split:]
     if len({r["sport"] for r in rows}) != 1:
         raise ValueError("calibration must be sport-specific")
-    a,b = fit_platt(train)
+    # Choose whether to calibrate using ONLY an earlier inner-validation slice.
+    inner = int(len(train)*.8)
+    while inner > 0 and _date(train[inner-1]["event_time"]) == _date(train[inner]["event_time"]):
+        inner -= 1
+    if inner < 100 or len(train)-inner < 30:
+        selected = "raw"
+        inner_metrics = {"status":"insufficient_inner_validation"}
+    else:
+        va, vb = fit_platt(train[:inner])
+        val = train[inner:]
+        val_calibrated = [dict(r,probability=_sigmoid(va+vb*_logit(r["probability"]))) for r in val]
+        before = calibration_report(val)[val[0]["sport"]]
+        after = calibration_report(val_calibrated)[val[0]["sport"]]
+        selected = "platt" if (after["brier"] < before["brier"] and after["ece"] < before["ece"]) else "raw"
+        inner_metrics = {"raw_brier":before["brier"],"raw_ece":before["ece"],
+                         "platt_brier":after["brier"],"platt_ece":after["ece"]}
+    a,b = fit_platt(train) if selected == "platt" else (0.,1.)
     scored = [dict(r,probability=_sigmoid(a+b*_logit(r["probability"]))) for r in test]
     raw = calibration_report(test)
     calibrated = calibration_report(scored)
     sport = test[0]["sport"]
+    train_prevalence = sum(r["won"] for r in train)/len(train)
+    honest_baseline = sum((train_prevalence-int(r["won"]))**2 for r in test)/len(test)
     return {"status":"HISTORICAL_HOLDOUT_ONLY","qualified_for_live":False,
             "train_n":len(train),"test_n":len(test),
             "train_cutoff":train[-1]["event_time"],
             "test_start":test[0]["event_time"],
+            "selection":selected,"inner_validation":inner_metrics,
+            "train_prevalence_baseline_brier":honest_baseline,
             "coefficients":{"intercept":a,"slope":b},
             "raw":raw[sport],"calibrated":calibrated[sport],
             "reason":"requires_future_immutable_prospective_predictions"}
