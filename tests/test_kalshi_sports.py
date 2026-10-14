@@ -103,31 +103,14 @@ def test_grouping_keeps_sports_separate_and_props_visible():
     assert grouped["Tennis"][0].family == "Set Winner"
 
 
-def test_longshot_and_best_use_distinct_price_profiles():
-    rows = []
-    for i, price in enumerate((0.12, 0.18, 0.28, 0.52, 0.61, 0.72), 1):
-        rows.append(
-            market(
-                f"KXMLBGAME-26SEP{i:02d}-A{i}",
-                f"Game {i}",
-                yes=price,
-                no=1 - price,
-                event=f"E{i}",
-                volume=1000 + i,
-            )
-        )
-    grouped = group_kalshi_sports(rows)
-    candidates = side_candidates(grouped["MLB"])
-
-    longshot = choose_kalshi_ticket(candidates, mode="longshot", target_legs=3)
-    best = choose_kalshi_ticket(candidates, mode="best", target_legs=3)
-
-    assert longshot
-    assert best
-    assert all(0.05 <= leg.price <= 0.35 for leg in longshot)
-    assert all(0.40 <= leg.price <= 0.82 for leg in best)
-    assert {leg.ticker for leg in longshot} != {leg.ticker for leg in best}
-
+def test_price_only_profiles_are_not_recommendations():
+    rows = [market(f"KXMLBGAME-26SEP{i:02d}-A{i}", f"Game {i}",
+                   yes=price, no=1-price, event=f"E{i}", volume=1000+i)
+            for i, price in enumerate((0.12, 0.18, 0.28, 0.52, 0.61, 0.72), 1)]
+    candidates = side_candidates(group_kalshi_sports(rows)["MLB"])
+    assert candidates
+    assert choose_kalshi_ticket(candidates, mode="longshot", target_legs=3) == []
+    assert choose_kalshi_ticket(candidates, mode="best", target_legs=3) == []
 
 
 def test_all_current_direct_tennis_series_classify_as_tennis():
