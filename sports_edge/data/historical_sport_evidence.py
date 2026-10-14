@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from math import isfinite
 import requests
+import time
 
 ESPN_ENDPOINTS = {
     "NCAAF": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard",
@@ -22,10 +23,22 @@ def _datetime(value: str) -> datetime:
     return result.astimezone(timezone.utc)
 
 def _get_json(url: str, params: dict | None = None) -> dict:
-    response = requests.get(url, params=params, timeout=12,
-                            headers={"User-Agent": "SportEdge-Research/1.0",
-                                     "Accept": "application/json"})
-    response.raise_for_status()
+    response = None
+    for attempt in range(5):
+        try:
+            response = requests.get(url, params=params, timeout=25,
+                                    headers={"User-Agent": "SportEdge-Research/1.0",
+                                             "Accept": "application/json"})
+            response.raise_for_status()
+            break
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt == 4:
+                raise
+            time.sleep(min(8, 2 ** attempt))
+        except requests.HTTPError as exc:
+            if response is None or response.status_code not in (429, 500, 502, 503, 504) or attempt == 4:
+                raise
+            time.sleep(min(8, 2 ** attempt))
     data = response.json()
     if not isinstance(data, dict):
         raise ValueError("invalid source response")

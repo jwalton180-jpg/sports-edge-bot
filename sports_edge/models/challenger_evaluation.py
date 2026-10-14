@@ -60,8 +60,18 @@ def matched_holdout(legacy,challenger,*,fraction=.25):
     sport=old[0]["sport"]
     old_metrics=calibration_report(old)[sport]
     new_metrics=calibration_report(new)[sport]
+    def top_decile(rows):
+        ordered=sorted(rows,key=lambda r:(-r["probability"],r["event_id"]))
+        top=ordered[:max(1,len(ordered)//10)]
+        prevalence=sum(r["won"] for r in rows)/len(rows)
+        precision=sum(r["won"] for r in top)/len(top)
+        return {"top_n":len(top),"precision":precision,
+                "base_rate":prevalence,
+                "lift":precision/prevalence if prevalence>0 else None}
     return {"status":"HISTORICAL_MATCHED_HOLDOUT","qualified_for_live":False,
             "matched_total":len(common),"holdout_n":len(keys),
             "legacy":old_metrics,"challenger":new_metrics,
+            "legacy_top_decile":top_decile(old),
+            "challenger_top_decile":top_decile(new),
             "brier_delta_challenger_minus_legacy":new_metrics["brier"]-old_metrics["brier"],
             "evidence":"retrospective_only_no_prospective_promotion"}
