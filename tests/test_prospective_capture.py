@@ -17,10 +17,17 @@ def test_stable_choice_is_price_and_order_independent():
     assert d["subset_not_full_market_coverage"] and d["protocol"]==PROTOCOL
 def test_excludes_started_and_far_future():
     pool=[market("KXNHLGOAL-early","NHL",-1),market("KXNCAAFGAME-good","NCAAF",4),
-          market("KXEPLTOTAL-late","Soccer",75),market("KXNHLPTS-missing","NHL",2)]
+          market("KXEPLTOTAL-late","Soccer",125),market("KXNHLPTS-missing","NHL",2)]
     del pool[3]["occurrence_datetime"]
     picked,_=select_markets(pool,now=NOW)
     assert [r["ticker"] for r in picked]==["KXNCAAFGAME-good"]
+def test_weekend_sports_capture_uses_extended_but_still_bounded_horizon():
+    pool=[market("KXEPLTOTAL-weekend","Soccer",75),
+          market("KXEPLTOTAL-too_far","Soccer",97)]
+    picked,meta=select_markets(pool,now=NOW)
+    assert [r["ticker"] for r in picked]==["KXEPLTOTAL-weekend"]
+    assert meta["eligible_by_sport"]["Soccer"]==1
+
 def test_canonical_hash_and_expiration():
     assert canonical_bytes({"b":2,"a":1})==canonical_bytes({"a":1,"b":2})
     with pytest.raises(ValueError):canonical_bytes({"p":float("nan")})
