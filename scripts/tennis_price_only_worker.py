@@ -54,7 +54,9 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
         status["push_accepted"]=delivery["accepted"]
         status["push_failed"]=delivery["failed"]
         status["errors"].extend(delivery["errors"])
-        status["healthy"]=delivery["failed"]==0
+        status["healthy"]=delivery["failed"]==0 and delivery["configured"]
+        if not delivery["configured"]:
+            status["errors"].append("ntfy push topic not configured")
     except Exception as exc:
         status["errors"].append(f"{type(exc).__name__}: {exc}")
     store.add_run(status,hourly_only=True)
