@@ -249,11 +249,11 @@ def _private_key_path() -> tuple[str, str | None]:
     return temporary, temporary
 
 
-def main() -> int:
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", default=os.getenv("SPORTSEDGE_SENTINEL_DATA_DIR"))
     parser.add_argument("--cycles", type=int, default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if os.getenv("LIVE_TRADING","false").lower() not in {"false","0"}:
         raise RuntimeError("Trading must remain disabled")
     if os.getenv("ORDER_SUBMISSION_ENABLED","false").lower() not in {"false","0"}:
