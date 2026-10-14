@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS alerts (
   score_reason TEXT NOT NULL,
   score_confidence TEXT NOT NULL,
   push_status TEXT NOT NULL,
+  push_attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at INTEGER,
   provider_id TEXT,
   push_accepted_at INTEGER,
   poll_delay_ms INTEGER, -- scheduled-to-sample, if clock comparable

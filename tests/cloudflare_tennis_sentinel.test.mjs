@@ -89,10 +89,11 @@ function fakeDb(){
   if (sql.startsWith('UPDATE series_state')) return {run:async()=>{series.set(args[2],args[0]);return {meta:{changes:1}}}};
   if (sql.startsWith('INSERT OR IGNORE INTO alerts')) return {run:async()=>{
    if (alerts.has(args[0])) return {meta:{changes:0}};
-   alerts.set(args[0],{id:args[0],ticker:args[1],alert_at:args[3],observed_at:args[4],best_bid:null,final_result:null,push_status:'pending'});
+   alerts.set(args[0],{id:args[0],ticker:args[1],alert_at:args[3],observed_at:args[4],best_bid:null,final_result:null,push_status:'pending',push_attempts:0,last_attempt_at:null});
    return {meta:{changes:1}};
   }};
-  if (sql.startsWith('UPDATE alerts SET push_status')) return {run:async()=>{let a=alerts.get(args.at(-1));a.push_status=args[0];return {meta:{changes:1}}}};
+  if (sql.startsWith('SELECT push_status')) return {first:async()=>alerts.get(args[0])??null};
+  if (sql.startsWith('UPDATE alerts SET push_status')) return {run:async()=>{let a=alerts.get(args.at(-1));a.push_status=args[0];if(sql.includes('push_attempts+1')){a.push_attempts++;a.last_attempt_at=args[1]}return {meta:{changes:1}}}};
   if (sql.startsWith('UPDATE alerts SET last_bid')) return {run:async()=>({meta:{changes:1}})};
   if (sql.startsWith('UPDATE alerts SET final_result')) return {run:async()=>({meta:{changes:1}})};
   if (sql.startsWith('SELECT id,ticker')) return {all:async()=>({results:[...alerts.values()]})};
@@ -142,6 +143,8 @@ test('complete, score-qualified reversal pushes exactly once; settlement and mon
   assert.equal(notifies,1);
   assert.equal(db.alerts.size,1);
   assert.equal([...db.alerts.values()][0].push_status,'accepted');
+  assert.equal([...db.alerts.values()][0].push_attempts,1);
+  assert.ok(JSON.parse(db.series.get(SERIES[0])).ALICE.lastAlertAt>0,'successful alert throttling persisted');
   assert.equal([...db.alerts.values()][0].final_result,null);
   assert.equal(db.runs.length,6);
   scoreOk=false; ask=.12;
@@ -153,6 +156,45 @@ test('complete, score-qualified reversal pushes exactly once; settlement and mon
   assert.equal(bad.status,'degraded');
   assert.equal(notifies,1);
  } finally {globalThis.fetch=oldFetch}
+});
+
+test('failed ntfy delivery retries only after 60s and persists accepted throttle',async()=>{
+ const db=fakeDb(), env={TENNIS_DB:db,LIVE_TRADING:'false',ORDER_SUBMISSION_ENABLED:'false',READ_ONLY_KALSHI:'true',SPORTSEDGE_NTFY_TOPIC:'c'.repeat(32)};
+ let ask=.22, sends=0;
+ const original=globalThis.fetch;
+ globalThis.fetch=async url=>{
+  const u=String(url);
+  const ok=obj=>({ok:true,status:200,json:async()=>obj});
+  if(u.includes('/markets?')){
+   const series=new URL(u).searchParams.get('series_ticker');
+   return ok({markets:series===SERIES[0] ? [
+    {ticker:'ALICE',event_ticker:'E',status:'open',yes_sub_title:'Alice Test',yes_bid_dollars:String(ask-.01),yes_ask_dollars:String(ask)},
+    {ticker:'BEA',event_ticker:'E',status:'open',yes_sub_title:'Bea Sample',yes_bid_dollars:'.40',yes_ask_dollars:'.45'}]:[],cursor:''});
+  }
+  if(u.includes('espn.com'))return ok({events:u.includes('/wta/')?[]:[{groupings:[{grouping:{slug:'mens-singles'},competitions:[{
+   status:{type:{state:'in',completed:false},period:2},competitors:[
+    {athlete:{displayName:'Alice Test'},possession:true,linescores:[{value:3},{value:3}]},
+    {athlete:{displayName:'Bea Sample'},possession:false,linescores:[{value:6},{value:1}]}]
+   }]}]}]});
+  if(u.includes('tennis365')) return {ok:true,status:200,text:async()=>''};
+  if(u==='https://ntfy.sh/'){sends++; return sends===1?{ok:false,status:503,json:async()=>({})}:ok({id:'delivered'});}
+  throw new Error('Unexpected upstream request');
+ };
+ try{
+  for(const [i,p] of [.25,.22,.03,.05,.07].entries()){ask=p;await runCycle(env,t+i*60000)}
+  assert.equal(sends,1);
+  assert.equal(db.alerts.size,1);
+  assert.equal([...db.alerts.values()][0].push_status,'failed');
+  assert.equal([...db.alerts.values()][0].push_attempts,1);
+  assert.equal(JSON.parse(db.series.get(SERIES[0])).ALICE.lastAlertAt,0);
+  ask=.09;await runCycle(env,t+5*60000);
+  assert.equal(sends,2,'one retry on documented provider failure');
+  assert.equal([...db.alerts.values()][0].push_status,'accepted');
+  assert.equal([...db.alerts.values()][0].push_attempts,2);
+  assert.ok(JSON.parse(db.series.get(SERIES[0])).ALICE.lastAlertAt>0);
+  ask=.11;await runCycle(env,t+6*60000);
+  assert.equal(sends,2,'no duplicate accepted push');
+ }finally{globalThis.fetch=original}
 });
 
 test('strict safety flags fail before network reads',async()=>{

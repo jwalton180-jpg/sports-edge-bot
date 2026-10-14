@@ -397,7 +397,18 @@ export async function runCycle(env, now=Date.now()) {
         alert.id,alert.ticker,alert.selection,now,now,alert.ask,alert.bid,alert.trough,alert.peak,
         alert.spread,alert.score.source,alert.score.label,'eligible','source-backed, unique pair','pending',
         Math.abs(Date.now()-now)<86400000 ? Math.max(0,Date.now()-now) : null).run();
-      if (!inserted.meta?.changes) continue;
+      if (!inserted.meta?.changes) {
+        // Only explicit provider failures are safely retryable. A pending request
+        // may already have reached ntfy before a process crash; do not duplicate it.
+        const previousPush=await stmt(env.TENNIS_DB,
+          'SELECT push_status,push_attempts,last_attempt_at FROM alerts WHERE id=?',alert.id).first();
+        if (previousPush?.push_status!=='failed' || previousPush.push_attempts>=3 ||
+            now-(previousPush.last_attempt_at ?? 0)<60000) continue;
+      }
+      // Record attempt BEFORE network publish. If D1 is unavailable, fail closed.
+      await stmt(env.TENNIS_DB,
+        'UPDATE alerts SET push_status=?,push_attempts=push_attempts+1,last_attempt_at=? WHERE id=?',
+        'pending',now,alert.id).run();
       pushed++;
       // Repeated failures do not automatically infer delivery. Keep explicit failed status.
       try {
@@ -406,6 +417,7 @@ export async function runCycle(env, now=Date.now()) {
         await stmt(env.TENNIS_DB,'UPDATE alerts SET push_status=?,provider_id=?,push_accepted_at=?,provider_accept_delay_ms=? WHERE id=?',
           'accepted',receipt,acceptedAt,Math.abs(acceptedAt-now)<86400000 ? Math.max(0,acceptedAt-now) : null,alert.id).run();
         alert.record.lastAlertAt=now; alert.record.lastAlertAsk=alert.ask;
+        newSuccessfulPush=true;
         stats.alerts++;
       } catch (_) {
         stats.errors.push('ntfy_rejected_or_unavailable');
