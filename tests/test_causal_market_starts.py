@@ -7,7 +7,7 @@ def test_kalshi_occurrence_is_not_nhl_game_start():
     def fake(url,params=None):
         calls.append(url)
         assert url.endswith("/schedule/2026-10-14")
-        return {"gameWeek":[{"games":[{
+        return {"gameWeek":[{"date":"2026-10-14","games":[{
             "gameType":2,"gameScheduleState":"OK",
             "gameDate":"2026-10-14","startTimeUTC":"2026-10-14T23:30:00Z",
             "awayTeam":{"abbrev":"MTL"},"homeTeam":{"abbrev":"WSH"}
@@ -21,7 +21,7 @@ def test_kalshi_occurrence_is_not_nhl_game_start():
 
 def test_bad_event_day_or_game_pair_refused():
     source=SleeperSources()
-    source.get=lambda *a,**k:{"gameWeek":[{"games":[{
+    source.get=lambda *a,**k:{"gameWeek":[{"date":"2026-10-14","games":[{
          "gameType":2,"gameScheduleState":"OK",
          "gameDate":"2026-10-14","startTimeUTC":"2026-10-14T23:30:00Z",
          "awayTeam":{"abbrev":"TOR"},"homeTeam":{"abbrev":"WSH"}
@@ -53,6 +53,8 @@ def test_espn_uses_original_event_day_and_validates_end_window():
         "rules_primary":"If Kennesaw State defeats Missouri State the market resolves to Yes."
     },"NCAAF")
     assert context["start"]=="2026-10-14T23:30:00Z"
+    assert "Missouri State" in context["home_aliases"]
+    assert "Kennesaw State" in context["away_aliases"]
     assert calls[0][1]["dates"]=="20261014"
 
 def test_sampling_excludes_unmodeled_mls_and_college_team_totals():
