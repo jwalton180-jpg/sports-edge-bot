@@ -412,6 +412,7 @@ def fetch_supported_sport_catalog(
     sports: tuple[str, ...] | list[str] | None = None,
     overview_only: bool = False,
     discover_all_series: bool = False,
+    series_allowlist: dict[str, tuple[str, ...]] | None = None,
 ) -> KalshiCatalogResult:
     """Discover supported sports from Kalshi /series, then fetch open markets.
 
@@ -474,6 +475,15 @@ def fetch_supported_sport_catalog(
                 and _series_is_actionable(row, sport)
             ):
                 relevant.append((row, sport))
+
+    # Optional caller-scoped series restriction for bounded validation studies.
+    # Normal production discovery is unchanged when no allowlist is passed.
+    # Apply after either production enumeration or metadata discovery so both
+    # paths have identical, fail-closed series eligibility semantics.
+    if series_allowlist is not None:
+        allowed = {sport: frozenset(tickers) for sport, tickers in series_allowlist.items()}
+        relevant = [(row, sport) for row, sport in relevant
+                    if str(row.get("ticker") or "") in allowed.get(sport, frozenset())]
 
     # A supplied client may be a deterministic fake or a caller-owned session;
     # keep that path sequential. Production creates one client per worker task.
