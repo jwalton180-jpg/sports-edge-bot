@@ -61,7 +61,7 @@ def test_final_set_behind_even_after_previous_recovery_is_rejected():
     behind=state(player_sets=1,opponent_sets=1,player_games=2,opponent_games=5,break_adv=-1)
     assert survivability_reason(behind,now=NOW)=="near_game_or_match_loss"
     tied=state(player_sets=1,opponent_sets=1,player_games=1,opponent_games=1,break_adv=0)
-    assert survivability_reason(tied,now=NOW)=="no_deciding_set_control"
+    assert survivability_reason(tied,now=NOW)=="elimination_set_without_control"
 
 
 def test_missing_stale_conflicting_ambiguous_and_completed_scores_fail_closed():
