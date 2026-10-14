@@ -1,13 +1,13 @@
 {
-  "cheap_contracts": 132,
+  "cheap_contracts": 131,
   "errors": [],
   "healthy": true,
-  "history_contracts": 132,
-  "observed_at": "2026-10-14T04:16:30.018165+00:00",
-  "open_contracts": 706,
-  "push_accepted": 2,
+  "history_contracts": 131,
+  "observed_at": "2026-10-14T04:52:33.414632+00:00",
+  "open_contracts": 702,
+  "push_accepted": 3,
   "push_configured": true,
   "push_failed": 0,
   "score_verified": false,
-  "tracking_observations": 2
+  "tracking_observations": 3
 }
