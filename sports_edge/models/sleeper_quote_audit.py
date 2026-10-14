@@ -53,7 +53,7 @@ def screen_sleeper_quote(market:dict,*,outcome:str,model_version:str,
 
 def screen_sleeper_board(candidates:list[dict],*,now:datetime|None=None)->list[SleeperQuote]:
     """Sort only by verified indicative edges, with unpriced research last."""
-    results=[screen_sleeper_quote(now=now,**candidate) for candidate in candidates]
+    results=[screen_sleeper_quote(**({**candidate, "now": now if now is not None else candidate.get("now")})) for candidate in candidates]
     return sorted(results,key=lambda r:(r.indicative_net_edge is None,
                                         -(r.indicative_net_edge or 0),
                                         r.audit.ticker,r.outcome))
