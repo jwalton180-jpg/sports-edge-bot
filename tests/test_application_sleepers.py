@@ -141,7 +141,7 @@ def test_scan_capacity_keeps_unprocessed_inventory_and_marks_incomplete():
     report=scan_sleeper_markets([market(),dict(market(),ticker="KXNHLPTS-X")],coverage_complete=False,limit=1,client=FakeClient(),sources=FakeSources(),now=NOW)
     assert len(report["records"]) == 4
     assert not report["coverage"]["scan_complete"]
-    assert "scan_limit_not_analyzed" in report["records"][2]["reasons"]
+    assert any("scan_limit_not_analyzed" in r["reasons"] for r in report["records"])
 
 
 def test_audited_candidates_cannot_bypass_missing_validation():
@@ -241,3 +241,13 @@ def test_bounded_grading_rotates_past_open_markets(tmp_path):
     ledger.grade_official(client,limit=1)
     assert client.calls==["A","B"]
     ledger.close()
+
+
+def test_value_mode_separates_return_from_highest_probability():
+    from sports_edge.models.parlay_intelligence import build_intelligent_parlay
+    sleeper=replace(leg(selection="Overlooked",fair=.4,price=.2),execution_audit_status="QUALIFIED_VALUE",entry_fee_per_contract=.01)
+    favorite=replace(leg(event_id="E2",selection="Favorite",fair=.8,price=.77),execution_audit_status="QUALIFIED_VALUE",entry_fee_per_contract=.01)
+    assert assess_leg(sleeper,"value").qualified
+    assert not assess_leg(sleeper,"best").qualified
+    result=build_intelligent_parlay([favorite,sleeper],mode="value",target_legs=1)
+    assert result.legs[0].leg.selection=="Overlooked"

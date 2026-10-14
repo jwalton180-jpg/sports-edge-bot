@@ -314,6 +314,7 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
                             "model_reasons":list(getattr(projection,"reasons",())),
                             "context":{k:v for k,v in context.items() if k != "rows"},
                             "observed_at":observed.isoformat()})
+    records.sort(key=lambda r:(r["net_edge"] is None,-(r["net_edge"] or 0.),r["ticker"],r["side"]))
     return {"schema_version":VERSION, "production_commit":production_commit(), "generated_at":current.isoformat(),
             "coverage":{"catalog_complete":coverage_complete, "listed_markets":len(rows),
                         "analyzed_markets":analyzed, "limit":limit, "scan_complete":analyzed == len(rows)},

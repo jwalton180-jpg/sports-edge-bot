@@ -174,7 +174,13 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
                         "model and fresh sportsbook confirmation conflict by at least 20 pp"
                     )
 
-    if mode == "longshot":
+    if mode in {"value", "sleeper"}:
+        if ev is None or ev <= 0:
+            failures.append("independent probability does not clear executable cost")
+        # Value is not a favorite/cheap-price filter. Evidence and execution
+        # must clear before return on cost influences ranking.
+        score = 100.0 * (0.50*clamp((roi or 0.)/0.5)+0.30*quality+0.20*clamp((edge or 0.)/10.))
+    elif mode == "longshot":
         if price is not None and not (0.05 <= price <= 0.35):
             failures.append("Kalshi price is outside the 5–35¢ longshot band")
         if edge is None or edge < 4.0:
@@ -267,7 +273,9 @@ def build_intelligent_parlay(
 ) -> IntelligentParlay:
     assessments = [assess_leg(row, mode) for row in candidates]
     pool = [row for row in assessments if row.qualified]
-    if prioritize_payout_multiplier:
+    if mode in {"value", "sleeper"}:
+        pool.sort(key=lambda row:(row.expected_roi_on_cost or 0.,row.edge_points or 0.,row.evidence_quality),reverse=True)
+    elif prioritize_payout_multiplier:
         # Build the strongest survivable core first. Payout is only a tiebreaker
         # after involvement, role stability, variance, model score and value.
         pool.sort(

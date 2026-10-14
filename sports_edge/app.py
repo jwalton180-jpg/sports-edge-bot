@@ -1838,11 +1838,11 @@ elif view == "Parlay Generator":
     )
     builder_label = st.segmented_control(
         "Build style",
-        ["Best Available", "Priced Longshot (5+ legs)"],
+        ["Best Available", "Qualified Value", "Sleeper Value", "Priced Longshot (5+ legs)"],
         default="Best Available",
         key="intel_builder_v4",
     ) or "Best Available"
-    mode = "longshot" if builder_label.startswith("Priced Longshot") else "best"
+    mode = {"Qualified Value":"value", "Sleeper Value":"sleeper"}.get(builder_label, "longshot" if builder_label.startswith("Priced Longshot") else "best")
     preset_options = parlay_presets_for_sport(sport_filter)
     preset = st.selectbox("Market focus", preset_options, key=f"intel_preset_v4_{sport_filter}")
     ticket_timezone = "Pacific/Honolulu"
@@ -1953,7 +1953,9 @@ elif view == "Parlay Generator":
         key=f"intel_games_v3_{sport_filter}",
     )
 
-    if mode == "longshot":
+    if mode in {"value", "sleeper"}:
+        st.info("Value uses independent probability against executable cost. It has no favorite-probability floor or cheap-price band; missing evidence and unvalidated models cannot fill the ticket.")
+    elif mode == "longshot":
         st.info(
             "Priced Longshot: Kalshi 5–35¢, model-first edge at least +4pp, expected ROI on cost at least +15%, "
             "value multiple at least 1.15x, exact Kalshi contract, and adequate sport-model confidence. "
