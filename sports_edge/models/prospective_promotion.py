@@ -4,7 +4,7 @@ No retrospective replay or unlabeled/unaudited predictions may authorize a
 recommended Kalshi leg. Promotion is advisory; no trading side effects.
 """
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from math import isfinite, sqrt
 
 def _time(value: str) -> datetime:
@@ -45,7 +45,7 @@ def assess_prospective_promotion(rows: list[dict], *, min_predictions: int = 300
             seen.add(key)
             locked, event, settled = (_time(r[k]) for k in ("locked_at","event_time","settled_at"))
             source_as_of = _time(r["source_as_of"])
-            if not source_as_of <= locked < event <= settled:
+            if not source_as_of <= locked < event <= settled <= datetime.now(timezone.utc):
                 raise ValueError("future leakage or noncausal settlement")
             p, baseline = float(r["model_probability"]),float(r["baseline_probability"])
             if not all(isfinite(v) and 0 <= v <= 1 for v in (p,baseline)) or type(r.get("won")) is not bool:
@@ -76,7 +76,8 @@ def assess_prospective_promotion(rows: list[dict], *, min_predictions: int = 300
     ece = sum(len(b)/n*abs(sum(p for p,_ in b)/len(b)-sum(y for _,y in b)/len(b))
               for b in buckets if b)
     qualified = improvement_lower95 > 0 and ece <= max_ece
-    return {"qualified":qualified,"reason":"statistical_gate_passed_requires_authenticated_source_review"
+    return {"qualified":False,"statistical_gate_passed":qualified,
+            "reason":"statistical_gate_passed_requires_authenticated_source_review"
             if qualified else "calibration_or_baseline_improvement_failed",
             "sport":next(iter(sports)),"model_version":next(iter(versions)),
             "graded":n,"brier":brier,"baseline_brier":baseline_brier,

@@ -2,7 +2,7 @@ from datetime import date,timedelta
 from sports_edge.models.prospective_promotion import assess_prospective_promotion
 
 def rows(n=320):
-    d=date(2026,1,1)
+    d=date(2024,1,1)
     out=[]
     for i in range(n):
         day=d+timedelta(days=i)
