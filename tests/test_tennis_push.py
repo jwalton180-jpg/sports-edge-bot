@@ -95,6 +95,8 @@ def test_three_cent_push_is_tracking_only_never_a_suggested_entry(tmp_path):
     assert not store.signals
     assert len(store.notifications) == 1
     assert store.notifications[0]["lane"] == "EXTREME DIP — TRACKING ONLY"
+    assert store.notifications[0]["entry_ask"] == .03
+    assert store.notifications[0]["model_fair"] == .05
     assert TOPIC not in str(store.notifications)
 
 
