@@ -155,11 +155,12 @@ class ProspectiveResearchStore:
         from sports_edge.data.tennis_push import SUPPORTED
         ranks = {
             "EXTREME DIP — TRACKING ONLY": 1,
-            "EARLY WATCH — RESEARCH": 2,
-            "WATCH": 2,
-            "RECOVERY BUILDING — RESEARCH": 3,
-            "REVERSAL SIGNAL": 4,
-            "DEEP REVERSAL": 5,
+            "PRICE RECOVERY — TRACKING ONLY": 2,
+            "EARLY WATCH — RESEARCH": 3,
+            "WATCH": 3,
+            "RECOVERY BUILDING — RESEARCH": 4,
+            "REVERSAL SIGNAL": 5,
+            "DEEP REVERSAL": 6,
         }
         return max(
             (ranks.get(row.get("lane", ""), 0)
