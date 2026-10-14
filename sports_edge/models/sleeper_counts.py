@@ -141,3 +141,10 @@ def nhl_count(rows, *, market, threshold, before_time):
                                model=f"nhl_{market}_dispersion_v2", prior_mean=priors[market],
                                exposure_field=exposure)
     return estimate
+
+
+def nfl_all_scored_touchdowns(rows, *, threshold=2, before_time):
+    """All credited scorer outcomes, not the offensive-only v2 benchmark."""
+    return estimate_counts(rows,field="all_scored_tds",threshold=threshold,
+                           before_time=before_time,source="nflverse",
+                           model="nfl_all_credited_td_dispersion_v3",minimum=12,prior_mean=.25)

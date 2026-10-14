@@ -6,22 +6,27 @@ An unresolvable participant or schedule discrepancy is a rejected join.
 from datetime import timedelta
 from datetime import datetime, timezone
 import unicodedata
-import re
 import requests
-
-
-def kalshi_event_day(ticker):
-    """Extract the event date printed in the Kalshi event ticker, not its expiry."""
-    match = re.search(r"-(\d{2}[A-Z]{3}\d{2})(?:[A-Z]|-|$)", str(ticker))
-    if not match:
-        raise ValueError("kalshi_event_date_missing")
-    return datetime.strptime(match.group(1), "%y%b%d").date()
-
 from sports_edge.models.sleeper_counts import utc
 from sports_edge.models.game_scope import normalize
 
 NHL = "https://api-web.nhle.com/v1"
 ESPN = "https://site.api.espn.com/apis/site/v2/sports"
+
+
+def nominal_day(market):
+    import re
+    from datetime import date
+    months={m:i for i,m in enumerate(("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"),1)}
+    match=re.search(r"-(\d{2})([A-Z]{3})(\d{2})", str(market.get("event_ticker", "")).upper())
+    if not match or match[2] not in months:
+        raise ValueError("verified_nominal_event_date_missing")
+    return date(2000+int(match[1]),months[match[2]],int(match[3]))
+
+
+def kalshi_event_day(ticker):
+    """Compatibility helper for independent prospective capture."""
+    return nominal_day({"event_ticker": ticker})
 
 
 def name(value):
@@ -51,27 +56,21 @@ class SleeperSources:
         return self.cache[key]
 
     def nhl_match(self, market):
-        expiry = utc(market["occurrence_datetime"])
-        ticker = str(market.get("event_ticker", ""))
-        game_day = kalshi_event_day(ticker)
-        # occurrence_datetime is commonly the expected game-end/expiry, NOT puck drop.
-        data = self.get(f"{NHL}/schedule/{game_day.isoformat()}")
+        start = utc(market["occurrence_datetime"])
+        ticker = market.get("event_ticker", "")
+        day = nominal_day(market).isoformat()
+        # Schedule UTC date may differ from the nominal North American date.
+        data = self.get(f"{NHL}/schedule/{day}")
         matches = []
         for week in data.get("gameWeek", []):
             for g in week.get("games", []):
-                if g.get("gameType") != 2 or g.get("gameScheduleState") != "OK":
+                if week.get("date") != day or g.get("gameType") != 2 or g.get("gameScheduleState") != "OK":
                     continue
                 codes = [g[k]["abbrev"] for k in ("awayTeam", "homeTeam")]
                 pairs = ["".join(codes), "".join(reversed(codes))]
                 # Kalshi's TB code differs from NHL's TBL.
                 pairs += [p.replace("TBL", "TB") for p in pairs]
-                game_start = utc(g["startTimeUTC"])
-                # Require exact NHL schedule date and plausible post-start market
-                # occurrence. Never treat the latter as the pregame cutoff.
-                delay = (expiry-game_start).total_seconds()
-                if (any(p in ticker for p in pairs)
-                    and week.get("date") == game_day.isoformat()
-                    and 0 <= delay <= 8*3600):
+                if any(p in ticker for p in pairs) and 0 <= (start-utc(g["startTimeUTC"])).total_seconds() <= 8*3600:
                     matches.append(g)
         if len(matches) != 1:
             raise ValueError("nhl_schedule_identity_or_start_conflict")
@@ -172,16 +171,16 @@ class SleeperSources:
 
     def espn_match_history(self, market, sport):
         path = {"Soccer": "soccer/eng.1", "NCAAF": "football/college-football"}[sport]
-        expiry = utc(market["occurrence_datetime"])
-        game_day = kalshi_event_day(market.get("event_ticker", ""))
-        # ESPN scoreboard dates use the original listed event day, not the
-        # exchange's later settlement/occurrence clock.
-        data = self.get(f"{ESPN}/{path}/scoreboard", {"dates": game_day.strftime("%Y%m%d"), "limit": 500})
+        start = utc(market["occurrence_datetime"])
+        day=nominal_day(market)
+        events={}
+        for candidate_day in (day,day+timedelta(days=1)):
+            data=self.get(f"{ESPN}/{path}/scoreboard", {"dates":candidate_day.strftime("%Y%m%d"), "limit":500})
+            events.update({str(e["id"]):e for e in data.get("events", [])})
         rules = str(market.get("rules_primary", ""))
         candidates = []
-        for e in data.get("events", []):
-            delay=(expiry-utc(e["date"])).total_seconds()
-            if not 0 <= delay <= 8*3600:
+        for e in events.values():
+            if not 0 <= (start-utc(e["date"])).total_seconds() <= 8*3600:
                 continue
             teams = e["competitions"][0]["competitors"]
             # Exact names/abbreviations bounded by words, not fuzzy guesses.
@@ -219,14 +218,18 @@ class SleeperSources:
     def basketball_context(self, market, sport, player):
         start = utc(market["occurrence_datetime"])
         league = sport.lower()
-        data = self.get(f"{ESPN}/basketball/{league}/scoreboard", {"dates":start.strftime("%Y%m%d"), "limit":500})
+        day=nominal_day(market)
+        events={}
+        for candidate_day in (day,day+timedelta(days=1)):
+            data=self.get(f"{ESPN}/basketball/{league}/scoreboard", {"dates":candidate_day.strftime("%Y%m%d"), "limit":500})
+            events.update({str(e["id"]):e for e in data.get("events", [])})
         matches = []
-        for e in data.get("events", []):
+        for e in events.values():
             teams = e["competitions"][0]["competitors"]
             codes = [t["team"]["abbreviation"] for t in teams]
             if len(codes) != 2:
                 continue
-            if abs((utc(e["date"])-start).total_seconds()) <= 300 and any("".join(pair) in market.get("event_ticker", "") for pair in (codes, list(reversed(codes)))):
+            if 0 <= (start-utc(e["date"])).total_seconds() <= 8*3600 and any("".join(pair) in market.get("event_ticker", "") for pair in (codes, list(reversed(codes)))):
                 matches.append(e)
         if len(matches) != 1:
             raise ValueError("basketball_schedule_identity_conflict")
@@ -234,6 +237,6 @@ class SleeperSources:
         kind = e.get("season", {}).get("type")
         if kind is None:
             kind = e.get("seasonType", {}).get("type")
-        return {"event_id":str(e["id"]), "participant":player,
+        return {"event_id":str(e["id"]), "participant":player,"start":e["date"],
                 "season_type":{1:"preseason",2:"regular",3:"playoffs"}.get(kind,"unknown"),
                 "missing":["confirmed_minutes", "active_roster", "opponent_personnel"]}

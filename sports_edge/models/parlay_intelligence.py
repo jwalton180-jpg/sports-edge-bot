@@ -69,6 +69,7 @@ def _model_evidence(leg: ParlayCandidateLeg) -> ModelEvidence | None:
         sample_size=int(leg.model_sample_size),
         factors=tuple(leg.model_reasons),
         warnings=tuple(leg.model_warnings),
+        validation_reviewed=leg.validation_reviewed,
     )
 
 
@@ -153,7 +154,7 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
 
     if model is not None:
         min_model_conf = 0.40 if mode == "longshot" else 0.45
-        if model.confidence < min_model_conf:
+        if not model.validation_reviewed and model.confidence < min_model_conf:
             failures.append(f"model confidence below {min_model_conf:.0%}")
 
         # Extreme model-vs-market gaps are exactly where data identity,

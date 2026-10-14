@@ -12,7 +12,7 @@ import json
 import re
 
 from sports_edge.data.kalshi import KalshiPublicClient
-from sports_edge.data.sleeper_sources import SleeperSources, name
+from sports_edge.data.sleeper_sources import SleeperSources, name, nominal_day
 from sports_edge.models.kalshi_sports import group_kalshi_sports
 from sports_edge.models.sleeper_counts import nhl_count, nfl_scored_touchdowns, utc
 from sports_edge.models.ncaaf_vulnerability import review_upset
@@ -177,7 +177,7 @@ def research_projection(row, spec, sources):
         context["source_retrieved_at"]=None
         context["freshness_limitations"]=["existing_cached_player_loader_retrieval_time_not_recorded"]
         return basketball_sleeper(sport=row.sport, player=spec.participant, family=row.family,
-            threshold=spec.threshold, before_time=spec.event_time, season_type=context["season_type"]), context
+            threshold=spec.threshold, before_time=context["start"], season_type=context["season_type"]), context
     if row.sport == "NHL":
         fields = {"Player Goals":"goals", "Shots on Goal":"shots", "Player Assists":"assists",
                   "Player Points":"points", "Goalie Saves":"saves", "Team Total":"team_goals"}
@@ -185,16 +185,23 @@ def research_projection(row, spec, sources):
         if not field or spec.threshold is None:
             return None, {}
         context = sources.nhl_team(m, spec.participant) if field == "team_goals" else sources.nhl_player(m, spec.participant)
-        return nhl_count(context["rows"], market=field, threshold=spec.threshold, before_time=context["start"]), context
+        return nhl_count(context["rows"], market=field, threshold=spec.threshold, before_time=context.get("start",spec.event_time)), context
     if row.sport == "NFL" and row.family == "Player Touchdowns" and spec.threshold in {1,2,3,4}:
         from sports_edge.data.nfl_prop_data import player_context
-        ctx = player_context(spec.participant, utc(spec.event_time).date(), m.get("event_ticker"))
+        from sports_edge.data.nfl_scoring_credits import attach_scored_totals
+        from sports_edge.models.sleeper_counts import nfl_all_scored_touchdowns
+        ctx = player_context(spec.participant, nominal_day(m), m.get("event_ticker"))
         if ctx is None:
             raise ValueError("nfl_player_history_or_schedule_unresolved")
         rows = [dict(r, source="nflverse", player_id=ctx.player_id) for r in (*ctx.prior_rows, *ctx.current_rows)]
         if any(not r.get("date") for r in rows):
             raise ValueError("nfl_history_causal_dates_missing")
-        return nfl_scored_touchdowns(rows, threshold=spec.threshold, before_time=spec.event_time), {
+        if not ctx.scheduled_start:
+            raise ValueError("independent_nfl_kickoff_missing")
+        rows,credit_sources=attach_scored_totals(rows)
+        return nfl_all_scored_touchdowns(rows, threshold=spec.threshold, before_time=ctx.scheduled_start), {
+            "scoring_scope":"all_credited_touchdown_scorers", "scoring_sources":credit_sources,
+            "start":ctx.scheduled_start,
             "event_id": m["event_ticker"], "participant": ctx.player_name, "opponent":ctx.opponent,
             "missing":["red_zone_role", "active_status", "offensive_line", "opponent_personnel"],
             "source_urls":["https://github.com/nflverse/nflverse-data/releases/tag/stats_player"]}
@@ -274,7 +281,7 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
         # Kalshi occurrence_datetime (often the expected postgame close).
         # Neither a missed matchup nor an already-live game may inherit an
         # outdated pregame projection or legacy price-following fallback.
-        if row.sport in {"NHL", "NCAAF", "Soccer"}:
+        if row.sport in {"NHL", "NCAAF", "Soccer", "NBA", "WNBA"} or (row.sport == "NFL" and row.family == "Player Touchdowns"):
             verified_start = context.get("start")
             if verified_start:
                 try:
@@ -285,6 +292,7 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
                         pregame = False
                     elif true_start <= current:
                         issues.append("official_game_already_started")
+                        issues.append("independent_start_passed_requires_live_model")
                         projection = None
                         pregame = False
                     spec = replace(spec, event_time=true_start.isoformat())
@@ -343,6 +351,8 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
                             "source_as_of":getattr(projection,"source_as_of",None) or (max(source_dates, key=utc) if source_dates else None),
                             "model_reasons":list(getattr(projection,"reasons",())),
                             "context":{k:v for k,v in context.items() if k != "rows"},
+                            "market_occurrence_time":row.market.get("occurrence_datetime"),
+                            "start_verified":bool(context.get("start")),
                             "observed_at":observed.isoformat()})
     records.sort(key=lambda r:(r["net_edge"] is None,-(r["net_edge"] or 0.),r["ticker"],r["side"]))
     return {"schema_version":VERSION, "production_commit":production_commit(), "generated_at":current.isoformat(),
@@ -390,6 +400,7 @@ def report_candidates(report, original_markets):
             model_confidence=0., model_name=r["model"], model_sample_size=r["sample"],
             model_reasons=tuple(r["model_reasons"]), model_warnings=tuple(r["reasons"]),
             execution_audit_status=r["status"], execution_audit_reasons=tuple(r["reasons"]),
+            verified_start=r["event_time"] if r.get("start_verified") else None,
             entry_fee_per_contract=r["quote"]["entry_fee_per_contract"]))
     return candidates
 
@@ -434,7 +445,9 @@ def audit_app_candidates(candidates, markets, *, coverage_complete, now=None, pr
             if c.model_probability is None:
                 issues.append("independent_model_probability_missing")
             try:
-                if utc(spec.event_time) <= utc(current):
+                if not c.verified_start:
+                    issues.append("independent_scheduled_start_unverified")
+                if utc(c.verified_start or spec.event_time) <= utc(current):
                     issues.append("pregame_projection_after_start")
             except (ValueError, TypeError):
                 pass
@@ -448,5 +461,6 @@ def audit_app_candidates(candidates, markets, *, coverage_complete, now=None, pr
             issues.append("fresh_complete_upset_vulnerability_review_required")
         if c.model_probability is not None and c.kalshi_price is not None and fee is not None and c.model_probability <= c.kalshi_price+fee:
             issues.append("no_positive_net_edge")
-        result.append(replace(c, execution_audit_status="RESEARCH_ONLY" if issues else "QUALIFIED_VALUE", execution_audit_reasons=tuple(dict.fromkeys(issues)), entry_fee_per_contract=fee))
+        result.append(replace(c, execution_audit_status="RESEARCH_ONLY" if issues else "QUALIFIED_VALUE", execution_audit_reasons=tuple(dict.fromkeys(issues)), entry_fee_per_contract=fee,
+                              validation_reviewed=scope_key in (promotions or {})))
     return result

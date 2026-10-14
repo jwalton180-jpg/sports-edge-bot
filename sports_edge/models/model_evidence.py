@@ -16,12 +16,13 @@ class ModelEvidence:
     sample_size: int
     factors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    validation_reviewed: bool = False
 
     @property
     def usable(self) -> bool:
         return (
             0.01 <= self.fair_probability <= 0.99
-            and self.confidence >= 0.35
+            and (self.confidence >= 0.35 or self.validation_reviewed)
             and self.sample_size >= 1
         )
 

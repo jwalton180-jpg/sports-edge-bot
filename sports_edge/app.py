@@ -123,9 +123,11 @@ def model_candidates_from_kalshi(grouped, **kwargs):
     inventory = [r.market for rows in grouped.values() for r in rows]
     chosen = kwargs.get("sport_filter", "All")
     research_markets = [m for m in inventory if m.get("sports_edge_sport") in {"NHL", "NCAAF", "Soccer", "NBA"} and chosen in {"All", m.get("sports_edge_sport")}
-                        and (kwargs.get("target_local_date") is None or _market_local_date(m, kwargs.get("ticket_timezone", "Pacific/Honolulu")) == kwargs["target_local_date"])]
+                        and (kwargs.get("target_local_date") is None or abs(_market_local_date(m, kwargs.get("ticket_timezone", "Pacific/Honolulu"))-kwargs["target_local_date"]) <= timedelta(days=1))]
     if research_markets:
         report = scan_sleeper_markets(research_markets, coverage_complete=bool(globals().get("parlay_catalog_complete", False)), limit=40)
+        if kwargs.get("target_local_date") is not None:
+            report["records"] = [r for r in report["records"] if not r.get("start_verified") or datetime.fromisoformat(r["event_time"].replace("Z", "+00:00")).astimezone(ZoneInfo(kwargs.get("ticket_timezone", "Pacific/Honolulu"))).date() == kwargs["target_local_date"]]
         candidates.extend(report_candidates(report, research_markets))
         st.session_state["last_ticket_research_report"] = report
     from sports_edge.models.sleeper_promotion import load_reviewed_promotions
