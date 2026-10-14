@@ -44,6 +44,9 @@ class ParlayCandidateLeg:
     model_sample_size: int = 0
     model_reasons: tuple[str, ...] = ()
     model_warnings: tuple[str, ...] = ()
+    execution_audit_status: str | None = None
+    execution_audit_reasons: tuple[str, ...] = ()
+    entry_fee_per_contract: float | None = None
 
 
 @dataclass(frozen=True)

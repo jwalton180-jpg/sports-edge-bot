@@ -115,8 +115,9 @@ def _matchup_factor(ctx: NFLPlayerContext, stat_key: str) -> tuple[float, int, f
         season=season,
         opponent_team=ctx.opponent,
         stat_key=stat_key,
+        before_date=ctx.event_date,
     )
-    league = league_defensive_week_values(season=season, stat_key=stat_key)
+    league = league_defensive_week_values(season=season, stat_key=stat_key, before_date=ctx.event_date)
     if not opp or not league:
         return 1.0, 0, None
 
@@ -970,7 +971,7 @@ def project_nfl_touchdowns(
     event_date,
     event_ticker: str | None = None,
 ) -> NFLPropProjection | None:
-    if milestone_tds not in {1, 2, 3}:
+    if milestone_tds not in {1, 2, 3, 4}:
         return None
     ctx = _context(player_name, event_date, event_ticker)
     if ctx is None or ctx.position.upper() not in {"QB", "RB", "WR", "TE", "FB"}:
@@ -999,12 +1000,27 @@ def project_nfl_touchdowns(
     lam = clamp(td_rate * role_factor, 0.03, 2.2)
     probability = _poisson_at_least(lam, milestone_tds)
 
+    # Use the separately auditable dispersed tail for real timestamped history.
+    # Passing scores never enter the scorer count, including quarterback legs.
+    tail = None
+    if all(r.get("date") for r in (*ctx.prior_rows, *ctx.current_rows)):
+        from sports_edge.models.sleeper_counts import nfl_scored_touchdowns
+        rows = [dict(r, source="nflverse", player_id=ctx.player_id) for r in (*ctx.prior_rows, *ctx.current_rows)]
+        tail = nfl_scored_touchdowns(rows, threshold=milestone_tds,
+                                     before_time=ctx.event_date.isoformat()+"T00:00:00Z")
+        if tail.probability is None:
+            return None
+        probability, lam = tail.probability, tail.mean
+
+
     factors = [
         f"Current scored-TD rate {mean(cur_td):.2f}/game over {len(cur_td)} game(s)",
         f"Expected carries + targets {expected_opp:.1f}",
-        f"Poisson scoring mean {lam:.2f} TDs",
+        f"Scored touchdown mean {lam:.2f}; tail distribution includes empirical dispersion",
         "Passing TDs are excluded from this scorer market model",
     ]
+    if tail is not None:
+        factors.extend([f"Dispersed tail sensitivity {tail.lower:.1%}–{tail.upper:.1%}; not a calibrated confidence interval", *tail.reasons])
     if opportunity_role_reason:
         factors.append(opportunity_role_reason)
     if ctx.prior_rows:
@@ -1020,6 +1036,7 @@ def project_nfl_touchdowns(
     warnings = [
         "touchdown scorer outcomes are high-variance",
         "red-zone role and injury/active status are not yet separately modeled",
+        "multi-touchdown tail requires scoped prospective calibration before recommendation",
     ]
     if len(ctx.current_rows) < 4:
         warnings.append("early-season NFL sample; prior-year baseline receives material weight")

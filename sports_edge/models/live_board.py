@@ -36,7 +36,7 @@ class LiveSignal:
 def market_side_probability(market: dict, side: str) -> float | None:
     side = side.upper()
     keys = (
-        ("yes_ask_dollars", "yes_ask", "last_price_dollars", "last_price")
+        ("yes_ask_dollars", "yes_ask")
         if side == "YES"
         else ("no_ask_dollars", "no_ask")
     )

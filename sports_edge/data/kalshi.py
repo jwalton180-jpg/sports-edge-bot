@@ -65,6 +65,12 @@ class KalshiPublicClient:
     def market(self, ticker: str):
         return self.http.get_json(f"{self.base}/markets/{ticker}")
 
+    def series(self, ticker: str):
+        return self.http.get_json(f"{self.base}/series/{ticker}")
+
+    def orderbook(self, ticker: str):
+        return self.http.get_json(f"{self.base}/markets/{ticker}/orderbook")
+
     def market_candlesticks(
         self,
         series_ticker: str,

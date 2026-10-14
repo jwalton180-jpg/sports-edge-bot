@@ -166,7 +166,8 @@ def test_player_context_requires_exact_kalshi_matchup(monkeypatch):
             "gameday": "2026-09-27",
             "home_team": "BUF",
             "away_team": "LAC",
-        },),
+        }, {"season":"2026", "game_type":"REG", "week":"1", "gameday":"2026-09-13", "home_team":"LAC", "away_team":"KC"},
+           {"season":"2025", "game_type":"REG", "week":"1", "gameday":"2025-09-14", "home_team":"LAC", "away_team":"KC"}),
     )
     npd.player_context.cache_clear()
     good = npd.player_context(

@@ -1,0 +1,26 @@
+name: Full sleeper population replay
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  population-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Enumerate complete official NHL and eligible NFL histories
+        run: python -m scripts.run_sleeper_replay --output-dir sleeper-population-evidence --sample-size 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: full-sleeper-population-evidence
+          path: sleeper-population-evidence/
+          if-no-files-found: error
+          retention-days: 30

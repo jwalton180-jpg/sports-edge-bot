@@ -17,6 +17,10 @@ cache/
 runtime/
 session_cache/
 *.log
+research/*.sqlite
+research/*.sqlite-journal
+research-output/
+sleeper-source-smoke/
 
 # OS/editor
 .DS_Store

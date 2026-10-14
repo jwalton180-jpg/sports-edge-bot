@@ -1,0 +1,105 @@
+{
+  "evaluation_kind": "historical_population_replay",
+  "prospective": false,
+  "promoted": false,
+  "predictions": 132117,
+  "source_periods": {
+    "NHL": 20242025,
+    "NFL": 2025
+  },
+  "coverage": {
+    "NHL_skaters": 920,
+    "NHL_goalies": 103,
+    "NHL_teams": 32,
+    "NFL_eligible_player_histories": 835
+  },
+  "collection_failures": [],
+  "precision": "Metrics rounded to six decimal places from completed local replay; raw records will be retained by the full-population CI workflow.",
+  "metrics": [
+    {
+      "sport": "NFL",
+      "outcome": "scored_tds_2_plus",
+      "holdout_n": 1006,
+      "holdout_positives": 15,
+      "raw_brier": 0.013786,
+      "selected_brier": 0.013786,
+      "training_prevalence_baseline_brier": 0.014734,
+      "selected_ece": 0.001779,
+      "selection": "raw"
+    },
+    {
+      "sport": "NHL",
+      "outcome": "assists_1_plus",
+      "holdout_n": 8040,
+      "holdout_positives": 2005,
+      "raw_brier": 0.177818,
+      "selected_brier": 0.177896,
+      "training_prevalence_baseline_brier": 0.187201,
+      "selected_ece": 0.011518,
+      "selection": "platt"
+    },
+    {
+      "sport": "NHL",
+      "outcome": "goals_2_plus",
+      "holdout_n": 8040,
+      "holdout_positives": 143,
+      "raw_brier": 0.017123,
+      "selected_brier": 0.017123,
+      "training_prevalence_baseline_brier": 0.01747,
+      "selected_ece": 0.000895,
+      "selection": "raw"
+    },
+    {
+      "sport": "NHL",
+      "outcome": "points_2_plus",
+      "holdout_n": 8040,
+      "holdout_positives": 769,
+      "raw_brier": 0.080714,
+      "selected_brier": 0.080714,
+      "training_prevalence_baseline_brier": 0.086536,
+      "selected_ece": 0.010178,
+      "selection": "raw"
+    },
+    {
+      "sport": "NHL",
+      "outcome": "saves_25_plus",
+      "holdout_n": 312,
+      "holdout_positives": 148,
+      "raw_brier": 0.255638,
+      "selected_brier": 0.248379,
+      "training_prevalence_baseline_brier": 0.249393,
+      "selected_ece": 0.0552,
+      "selection": "platt"
+    },
+    {
+      "sport": "NHL",
+      "outcome": "shots_3_plus",
+      "holdout_n": 8040,
+      "holdout_positives": 1839,
+      "raw_brier": 0.157448,
+      "selected_brier": 0.155282,
+      "training_prevalence_baseline_brier": 0.176419,
+      "selected_ece": 0.020272,
+      "selection": "platt"
+    },
+    {
+      "sport": "NHL",
+      "outcome": "team_goals_3_plus",
+      "holdout_n": 496,
+      "holdout_positives": 304,
+      "raw_brier": 0.236145,
+      "selected_brier": 0.235778,
+      "training_prevalence_baseline_brier": 0.238075,
+      "selected_ece": 0.034452,
+      "selection": "platt"
+    }
+  ],
+  "limitations": [
+    "Retrospective only; not a prospective betting win rate.",
+    "No historical executable price/fee returns in this replay.",
+    "Only 15 positive NFL 2+ TD holdout cases; insufficient rare-positive evidence for promotion.",
+    "Raw goalie-save model loses to baseline; historical calibration improvement is small.",
+    "Historical averages do not verify current lineups, red-zone deployment, injuries or goalies.",
+    "No newly approved live model scopes are included."
+  ]
+}

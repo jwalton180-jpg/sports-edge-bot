@@ -170,9 +170,11 @@ def _tennis_family(series: str) -> str:
 
 def _hockey_family(series: str) -> str:
     for tokens, family in (
-        (("PLAYERGOALS", "GOALSCORER", "ANYTIMEGOAL"), "Player Goals"),
-        (("PLAYERSHOTS", "SHOTSONGOAL"), "Shots on Goal"),
-        (("PLAYERPOINTS",), "Player Points"),
+        (("SAVES", "KXNHLSAVE"), "Goalie Saves"),
+        (("PLAYERASSISTS", "KXNHLAST"), "Player Assists"),
+        (("PLAYERGOALS", "GOALSCORER", "ANYTIMEGOAL", "KXNHLGOAL", "KXNHLANYGOAL"), "Player Goals"),
+        (("PLAYERSHOTS", "SHOTSONGOAL", "KXNHLSOG"), "Shots on Goal"),
+        (("PLAYERPOINTS", "KXNHLPTS"), "Player Points"),
         (("TEAMTOTAL",), "Team Total"),
         (("SPREAD", "PUCKLINE"), "Puck Line"),
         (("TOTAL",), "Game Total"),
@@ -336,7 +338,7 @@ def prop_families(sport: str) -> set[str]:
             "Double Double", f"Other {sport}",
         }
     if sport == "NHL":
-        return {"Player Goals", "Shots on Goal", "Player Points", "Other NHL"}
+        return {"Player Goals", "Shots on Goal", "Player Points", "Player Assists", "Goalie Saves", "Other NHL"}
     if sport == "NCAAF":
         return {"Passing Yards", "Rushing Yards", "Receiving Yards", "Player Touchdowns", "Other NFL"}
     if sport == "Soccer":

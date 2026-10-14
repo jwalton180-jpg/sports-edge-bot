@@ -28,6 +28,7 @@ def _price(market: dict, side: str) -> float | None:
 def audit_value(market: dict, *, side: str, independent_probability: float | None,
                 model_validated: bool, evidence_fresh: bool, coverage_complete: bool,
                 rules_verified: bool, fee_fraction: float | None = None,
+                entry_fee_per_contract: float | None = None,
                 observed_at: datetime | None = None) -> ValueAudit:
     """Strict qualification: missing fees are not silently assumed zero."""
     side = side.upper()
@@ -65,9 +66,18 @@ def audit_value(market: dict, *, side: str, independent_probability: float | Non
                 fee = None
     except (TypeError, ValueError):
         pass
-    if fee is None:
+    entry_fee = None
+    try:
+        if entry_fee_per_contract is not None:
+            entry_fee = float(entry_fee_per_contract)
+            if not isfinite(entry_fee) or not 0 <= entry_fee < 1:
+                entry_fee = None
+    except (ValueError, TypeError):
+        pass
+    if fee is None and entry_fee is None:
         reasons.append("fees_unverified")
-    break_even = price / (1 - fee) if price is not None and fee is not None else None
+    break_even = (price + entry_fee if price is not None and entry_fee is not None else
+                  price / (1 - fee) if price is not None and fee is not None else None)
     edge = probability - break_even if probability is not None and break_even is not None else None
     if edge is not None and edge <= 0:
         reasons.append("no_positive_net_edge")
