@@ -20,9 +20,9 @@ def record(*, sport: str, ticker: str, side: str, outcome: str,
         raise ValueError("source must be timestamped before the prediction")
     if side not in ("YES", "NO") or not ticker or not source_id:
         raise ValueError("missing immutable evidence identity")
-    if probability is not None and not 0 <= probability <= 1:
+    if probability is not None and (not isinstance(probability, (int, float)) or not __import__("math").isfinite(probability) or not 0 <= probability <= 1):
         raise ValueError("invalid probability")
-    if ask is not None and not 0 < ask < 1:
+    if ask is not None and (not isinstance(ask, (int, float)) or not __import__("math").isfinite(ask) or not 0 < ask < 1):
         raise ValueError("invalid ask")
     key = json.dumps([sport, ticker, side, observed_at, model, source_id], separators=(",", ":"))
     return dict(zip(FIELDS, (hashlib.sha256(key.encode()).hexdigest()[:24],
@@ -32,9 +32,13 @@ def record(*, sport: str, ticker: str, side: str, outcome: str,
 def settle(row: dict, *, settled_at: str, won: bool) -> dict:
     if row.get("settled_at") is not None or row.get("settled_win") is not None:
         raise ValueError("immutable settlement already recorded")
-    if datetime.fromisoformat(settled_at.replace("Z", "+00:00")) <= datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00")):
+    settlement_time = datetime.fromisoformat(settled_at.replace("Z", "+00:00"))
+    observation_time = datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00"))
+    if settlement_time.tzinfo is None or observation_time.tzinfo is None or settlement_time <= observation_time:
         raise ValueError("settlement must follow prediction")
-    return {**row, "settled_at": settled_at, "settled_win": bool(won)}
+    if not isinstance(won, bool):
+        raise ValueError("settlement outcome must be boolean")
+    return {**row, "settled_at": settled_at, "settled_win": won}
 
 def export_jsonl(rows) -> str:
     return "".join(json.dumps({k: row.get(k) for k in FIELDS}, sort_keys=True) + "\n" for row in rows)
@@ -47,7 +51,11 @@ def export_csv(rows) -> str:
     return output.getvalue()
 
 def evaluate(rows: list[dict]) -> dict:
-    graded = [r for r in rows if r.get("settled_win") is not None and r.get("model_probability") is not None]
+    graded = [r for r in rows if isinstance(r.get("settled_win"), bool)
+              and isinstance(r.get("model_probability"), (int, float))
+              and __import__("math").isfinite(r["model_probability"])
+              and 0 <= r["model_probability"] <= 1
+              and r.get("settled_at") is not None]
     if not graded:
         return {"graded": 0, "brier": None, "accuracy": None, "qualified": False}
     brier = sum((float(r["model_probability"]) - int(r["settled_win"])) ** 2 for r in graded) / len(graded)
