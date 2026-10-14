@@ -15,9 +15,24 @@ from pathlib import Path
 
 from sports_edge.models.sleeper_counts import utc
 
-PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V1-20261014"
+PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V2-20261014"
 SPORTS = ("NHL", "NCAAF", "Soccer")
 END_UTC = datetime(2026, 12, 15, tzinfo=timezone.utc)
+
+# Frozen pre-sampling model/league eligibility. Does not inspect prices,
+# ratings, participant identity or results.
+ELIGIBLE_SERIES = {
+    "NHL": ("KXNHLGOAL", "KXNHLPTS", "KXNHLAST", "KXNHLSAVE",
+            "KXNHLSHOTS", "KXNHLTEAMTOTAL"),
+    "NCAAF": ("KXNCAAFGAME",),
+    "Soccer": ("KXEPLTOTAL", "KXEPLBTTS", "KXEPLTEAMTOTAL"),
+}
+
+
+def model_family_supported(market, sport):
+    ticker = str(market.get("ticker") or "")
+    prefix = ticker.split("-", 1)[0]
+    return prefix in ELIGIBLE_SERIES.get(sport, ())
 
 
 def canonical_bytes(value: dict) -> bytes:
@@ -36,6 +51,8 @@ def select_markets(markets, *, now: datetime, per_sport: int = 14,
         if sport not in by_sport:
             continue
         inventory[sport] = inventory.get(sport, 0) + 1
+        if not model_family_supported(m, sport):
+            continue
         try:
             start = utc(m["occurrence_datetime"])
         except (KeyError, TypeError, ValueError):
@@ -57,7 +74,7 @@ def select_markets(markets, *, now: datetime, per_sport: int = 14,
     return picked, {"inventory_by_sport": inventory,
                     "eligible_by_sport": {s:len({m["ticker"] for m in by_sport[s]}) for s in SPORTS},
                     "sample_by_sport": {s:sum(m["sports_edge_sport"] == s for m in picked) for s in SPORTS},
-                    "sampling": "SHA256(protocol|ticker), earliest 14 per sport",
+                    "sampling": "SHA256(protocol|ticker), first 14 per eligible modeled sport; prices not sampled",
                     "subset_not_full_market_coverage": True,
                     "protocol": PROTOCOL}
 

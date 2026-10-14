@@ -7,7 +7,7 @@ executable-ask reference prices. There is no Railway, shared Ubuntu load,
 always-on worker, betting order, or account credential.
 
 Source population: open Kalshi series supported by existing discovery; eligibility
-within 60 hours of game start; 14 markets per sport per scheduled capture,
+within 60 hours of game start; 14 markets per sport per scheduled capture, restricted to independently modelled contract families,
 deterministically selected by SHA256("SPORTSEDGE-PROSPECTIVE-V1-20261014|ticker")
 before viewing outcomes or estimated edge. This is a sample, NOT a complete
 market inventory. Unavailable models stay rejected; repeat scans are deduplicated
@@ -34,3 +34,7 @@ In GitHub Actions open **Bounded prospective sport model validation** and
 download the two artifacts for each run: `sportsedge-live-research-snapshot-...`
 and `sportsedge-prospective-review-...`. Reports intentionally exclude
 credentials, holdings, signing keys and private account data.
+
+## Causal date correction (v2, Oct 14)
+
+Kalshi `occurrence_datetime` can represent expected game expiry rather than kickoff; for example a listed NHL market at 02:30 UTC can concern a game actually starting at 23:30 UTC the previous day. The v2 capture protocol therefore uses the official NHL/ESPN matched event's **actual scheduled start time** for lookback cutoff, pregame admissibility and grading. Contract date encoded in the event ticker selects the official schedule day; team identities and an independently bounded post-start expiry gap must agree. Any unresolved schedule or already-started game fails closed. V1 observations with no model forecasts remain archived and are still digest-verifiable but are not promoted. V2 sampling covers only currently independently modeled NHL player/team families, NCAA game winner and EPL totals/BTTS/team goals. Other families stay explicitly unsupported.

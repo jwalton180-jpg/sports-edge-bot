@@ -8,7 +8,7 @@ def market(ticker,sport,offset):
             "occurrence_datetime":(NOW+timedelta(hours=offset)).isoformat(),
             "status":"active","yes_ask_dollars":".11"}
 def test_stable_choice_is_price_and_order_independent():
-    pool=[market(f"KXNHL-{i}","NHL",4) for i in range(24)]
+    pool=[market(f"KXNHLGOAL-{i}","NHL",4) for i in range(24)]
     other=[dict(m,yes_ask_dollars=".90") for m in reversed(pool)]
     a,d=select_markets(pool,now=NOW)
     b,_=select_markets(other,now=NOW)
@@ -16,11 +16,11 @@ def test_stable_choice_is_price_and_order_independent():
     assert [r["ticker"] for r in a]==[r["ticker"] for r in b]
     assert d["subset_not_full_market_coverage"] and d["protocol"]==PROTOCOL
 def test_excludes_started_and_far_future():
-    pool=[market("early","NHL",-1),market("good","NCAAF",4),
-          market("late","Soccer",75),market("missing","NHL",2)]
+    pool=[market("KXNHLGOAL-early","NHL",-1),market("KXNCAAFGAME-good","NCAAF",4),
+          market("KXEPLTOTAL-late","Soccer",75),market("KXNHLPTS-missing","NHL",2)]
     del pool[3]["occurrence_datetime"]
     picked,_=select_markets(pool,now=NOW)
-    assert [r["ticker"] for r in picked]==["good"]
+    assert [r["ticker"] for r in picked]==["KXNCAAFGAME-good"]
 def test_canonical_hash_and_expiration():
     assert canonical_bytes({"b":2,"a":1})==canonical_bytes({"a":1,"b":2})
     with pytest.raises(ValueError):canonical_bytes({"p":float("nan")})

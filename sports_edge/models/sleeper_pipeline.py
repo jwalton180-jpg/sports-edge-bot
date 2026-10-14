@@ -185,7 +185,7 @@ def research_projection(row, spec, sources):
         if not field or spec.threshold is None:
             return None, {}
         context = sources.nhl_team(m, spec.participant) if field == "team_goals" else sources.nhl_player(m, spec.participant)
-        return nhl_count(context["rows"], market=field, threshold=spec.threshold, before_time=spec.event_time), context
+        return nhl_count(context["rows"], market=field, threshold=spec.threshold, before_time=context["start"]), context
     if row.sport == "NFL" and row.family == "Player Touchdowns" and spec.threshold in {1,2,3,4}:
         from sports_edge.data.nfl_prop_data import player_context
         ctx = player_context(spec.participant, utc(spec.event_time).date(), m.get("event_ticker"))
@@ -209,11 +209,11 @@ def research_projection(row, spec, sources):
                 field = "away_goals"
         if field:
             return soccer_market_projection(context["rows"], home_id=context["home_id"], away_id=context["away_id"],
-                before_time=spec.event_time, market=field, threshold=spec.threshold), context
+                before_time=context["start"], market=field, threshold=spec.threshold), context
     if row.sport == "NCAAF" and row.family == "Moneyline":
         from sports_edge.models.team_challengers import ncaaf_opponent_challenger
         context = sources.espn_match_history(m, "NCAAF")
-        projection = ncaaf_opponent_challenger(context["rows"], home_id=context["home_id"], away_id=context["away_id"], before_time=spec.event_time)
+        projection = ncaaf_opponent_challenger(context["rows"], home_id=context["home_id"], away_id=context["away_id"], before_time=context["start"])
         selected = name(m.get("yes_sub_title", ""))
         if selected == name(context["away_name"]) and projection.probability is not None:
             projection = replace(projection, probability=1-projection.probability)
@@ -266,6 +266,32 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
                 projection, context = research_projection(row, spec, sources)
             except requests_error_types() as exc:
                 issues.append("source_or_quote_unavailable:"+(str(exc)[:100] if isinstance(exc,ValueError) else type(exc).__name__))
+        # Once independently matched, the official game start replaces
+        # Kalshi occurrence_datetime (often the expected postgame close).
+        # Neither a missed matchup nor an already-live game may inherit an
+        # outdated pregame projection or legacy price-following fallback.
+        if row.sport in {"NHL", "NCAAF", "Soccer"}:
+            verified_start = context.get("start")
+            if verified_start:
+                try:
+                    true_start = utc(verified_start)
+                    if true_start > utc(spec.event_time):
+                        issues.append("official_start_after_market_occurrence")
+                        projection = None
+                        pregame = False
+                    elif true_start <= current:
+                        issues.append("official_game_already_started")
+                        projection = None
+                        pregame = False
+                    spec = replace(spec, event_time=true_start.isoformat())
+                except (ValueError, TypeError):
+                    issues.append("official_start_invalid")
+                    projection = None
+                    pregame = False
+            else:
+                issues.append("official_game_start_unverified")
+                projection = None
+                pregame = False
         probability = getattr(projection, "probability", None)
         base = legacy.get((spec.ticker,"YES"))
         if projection is None and base is not None and spec.rules_supported and pregame:
