@@ -99,8 +99,8 @@ def historical_soccer_projection(games: tuple[dict, ...], *, home_id: str,
     cutoff = _datetime(before_time)
     prior = [r for r in games if r.get("sport") == "Soccer"
              and _datetime(r["event_time"]) < cutoff]
-    home = [r for r in prior if r["home_id"] == home_id]
-    away = [r for r in prior if r["away_id"] == away_id]
+    home = [r for r in prior if r["home_id"] == home_id][-20:]
+    away = [r for r in prior if r["away_id"] == away_id][-20:]
     def avg(rows, field):
         return sum(r[field] for r in rows) / len(rows) if rows else None
     return soccer_goals(home_scored=avg(home,"home_score"),home_conceded=avg(home,"away_score"),
@@ -119,7 +119,7 @@ def historical_ncaaf_projection(games: tuple[dict, ...], *, favorite_id: str,
     def margins(team_id):
         return [(r["home_score"] - r["away_score"]) * (1 if r["home_id"] == team_id else -1)
                 for r in prior if team_id in (r["home_id"], r["away_id"])]
-    favorite, underdog = margins(favorite_id), margins(underdog_id)
+    favorite, underdog = margins(favorite_id)[-12:], margins(underdog_id)[-12:]
     return college_football_win(
         favorite_rating=sum(favorite)/len(favorite) if favorite else None,
         underdog_rating=sum(underdog)/len(underdog) if underdog else None,

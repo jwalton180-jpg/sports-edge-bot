@@ -137,7 +137,14 @@ def calibration_report(rows: list[dict], *, bins: int = 10) -> dict:
         z = 1.96
         center = (accuracy + z*z/(2*n))/(1+z*z/n)
         half = z*sqrt(accuracy*(1-accuracy)/n+z*z/(4*n*n))/(1+z*z/n)
-        result[sport] = {"n": n, "brier": brier, "baseline_brier": baseline_brier,
+        positives = sum(r["won"] for r in group)
+        predicted_yes = [r for r in group if r["probability"] >= .5]
+        result[sport] = {"n": n, "positives": positives, "positive_rate": positives/n,
+                         "always_no_accuracy": 1-positives/n,
+                         "predicted_yes": len(predicted_yes),
+                         "predicted_yes_precision": (sum(r["won"] for r in predicted_yes)/len(predicted_yes)
+                                                     if predicted_yes else None),
+                         "brier": brier, "baseline_brier": baseline_brier,
                          "ece": ece, "accuracy": accuracy,
                          "accuracy_wilson95": [max(0,center-half), min(1,center+half)],
                          "beats_prevalence_baseline": brier < baseline_brier,

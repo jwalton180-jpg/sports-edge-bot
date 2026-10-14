@@ -33,8 +33,8 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     data = {}
     predictions = []
     sources = {
-        "NCAAF": (date(2025, 8, 20), date(2025, 12, 20)),
-        "Soccer": (date(2024, 8, 1), date(2025, 5, 31)),
+        "NCAAF": (date(2024, 8, 15), date(2025, 12, 20)),
+        "Soccer": (date(2023, 8, 1), date(2025, 5, 31)),
     }
     for sport, (start, end) in sources.items():
         games = collect_team(sport, start, end)
