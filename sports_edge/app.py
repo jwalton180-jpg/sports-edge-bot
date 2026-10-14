@@ -112,6 +112,7 @@ build_intelligent_parlay = _pi.build_intelligent_parlay
 
 from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi as _independent_model_candidates, attach_sportsbook_context, _market_local_date
 from sports_edge.models.sleeper_pipeline import audit_app_candidates, scan_sleeper_markets, report_candidates
+from sports_edge.models.tennis_radar_candidates import live_tennis_radar_candidates
 from sports_edge.sleeper_panel import render_sleeper_panel
 from dataclasses import replace
 
@@ -2537,15 +2538,10 @@ elif view == "Live Feed":
             return
 
         live_grouped = group_kalshi_sports(live_tennis_markets)
-        tennis_candidates = [
-            row for row in model_candidates_from_kalshi(
-                live_grouped,
-                sport_filter="Tennis",
-            )
-            if row.sport == "Tennis"
-            and row.market_key == "model_h2h"
-            and row.kalshi_ticker
-        ]
+        # Live reversal inputs have dedicated score/price/survivability gates;
+        # the shared pregame ticket auditor is not applicable here and can
+        # crash or suppress otherwise valid live radar observations.
+        tennis_candidates = live_tennis_radar_candidates(live_grouped)
 
         # ESPN remains the preferred ATP/WTA structural feed while Tennis365
         # supplies cloud-reachable Challenger/ITF live state. Cross-feed
