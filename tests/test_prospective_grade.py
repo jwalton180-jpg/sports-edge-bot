@@ -23,6 +23,15 @@ def test_first_outcome_no_side_or_repeat_inflation():
                                      pair(side="NO"),pair()])
     assert len(rows)==1 and rows[0]["reasons"]==[]
     assert not rows[0]["qualified_for_live"]
+def test_prior_protocol_artifact_remains_verifiable():
+    p=pair()
+    old="SPORTSEDGE-PROSPECTIVE-V2-20261014"
+    p[0]["study"]["protocol"]=old
+    p[0]["sampling"]["protocol"]=old
+    p[1]["schema_version"]=old
+    p[1]["capture_sha256"]=hashlib.sha256(canonical_bytes(p[0])).hexdigest()
+    assert verify_snapshot(*p).isoformat().startswith("2026-10-15T12:01:00")
+
 def test_artifact_after_game_or_forgery_rejected():
     late=pair(artifact_time="2026-10-15T20:00:00Z")
     try:first_archived_predictions([late])
