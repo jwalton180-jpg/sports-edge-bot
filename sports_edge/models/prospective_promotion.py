@@ -29,6 +29,7 @@ def assess_prospective_promotion(rows: list[dict], *, min_predictions: int = 300
     prediction_ids = set()
     versions = set()
     sports = set()
+    outcomes = set()
     for idx, r in enumerate(rows):
         try:
             if r.get("evaluation_kind") != "prospective" or r.get("status") != "IMMUTABLE_LOCK":
@@ -55,9 +56,10 @@ def assess_prospective_promotion(rows: list[dict], *, min_predictions: int = 300
             valid.append((p,baseline,int(r["won"]),event.date()))
             sports.add(r["sport"])
             versions.add(r["model_version"])
+            outcomes.add(r["outcome"])
         except (KeyError, ValueError, TypeError, OverflowError) as exc:
             invalid.append((idx,str(exc)))
-    if invalid or len(sports) != 1 or len(versions) != 1:
+    if invalid or len(sports) != 1 or len(versions) != 1 or len(outcomes) != 1:
         return {"qualified":False,"reason":"invalid_or_mixed_prospective_evidence",
                 "graded":len(valid),"rejected":len(invalid)}
     n = len(valid)
@@ -66,8 +68,12 @@ def assess_prospective_promotion(rows: list[dict], *, min_predictions: int = 300
                 "graded":n,"distinct_dates":len({r[3] for r in valid})}
     differences = [(base-y)**2-(p-y)**2 for p,base,y,_ in valid]
     mean = sum(differences)/n
-    variance = sum((x-mean)**2 for x in differences)/(n-1)
-    improvement_lower95 = mean-1.96*sqrt(variance/n)
+    # Cluster by event date; player-game ladders on the same slate are not
+    # independent validation observations.
+    dates = {v[3] for v in valid}
+    cluster_sums = [sum(d-mean for d,v in zip(differences,valid) if v[3] == day) for day in dates]
+    cluster_var = len(dates)/(len(dates)-1)*sum(x*x for x in cluster_sums)/(n*n)
+    improvement_lower95 = mean-1.96*sqrt(cluster_var)
     brier = sum((p-y)**2 for p,_,y,_ in valid)/n
     baseline_brier = sum((base-y)**2 for _,base,y,_ in valid)/n
     buckets = [[] for _ in range(10)]
@@ -75,11 +81,13 @@ def assess_prospective_promotion(rows: list[dict], *, min_predictions: int = 300
         buckets[min(9,int(p*10))].append((p,y))
     ece = sum(len(b)/n*abs(sum(p for p,_ in b)/len(b)-sum(y for _,y in b)/len(b))
               for b in buckets if b)
-    qualified = improvement_lower95 > 0 and ece <= max_ece
+    positive_count = sum(y for _,_,y,_ in valid)
+    qualified = improvement_lower95 > 0 and ece <= max_ece and min(positive_count,n-positive_count) >= 20
     return {"qualified":False,"statistical_gate_passed":qualified,
             "reason":"statistical_gate_passed_requires_authenticated_source_review"
             if qualified else "calibration_or_baseline_improvement_failed",
             "sport":next(iter(sports)),"model_version":next(iter(versions)),
+            "outcome":next(iter(outcomes)),"positive_count":positive_count,
             "graded":n,"brier":brier,"baseline_brier":baseline_brier,
             "paired_brier_improvement_lower95":improvement_lower95,"ece":ece,
             "source_authentication_required":True}

@@ -22,6 +22,7 @@ def screen_sleeper_quote(market:dict,*,outcome:str,model_version:str,
                          expected_ticker:str,expected_outcome:str,
                          market_observed_at:str|None,now:datetime|None=None,
                          verified_fee_fraction:float|None=None,
+                         entry_fee_per_contract:float|None=None,
                          rules_verified:bool=False,
                          market_mapping_verified:bool=False)->SleeperQuote:
     """Explicit exact market/outcome match, no fuzzy ticker/title inference.
@@ -45,7 +46,7 @@ def screen_sleeper_quote(market:dict,*,outcome:str,model_version:str,
     audited=audit_value(market,side=side,independent_probability=independent_probability,
                        model_validated=False,evidence_fresh=fresh,
                        coverage_complete=matched,rules_verified=rules_verified and matched,
-                       fee_fraction=verified_fee_fraction,observed_at=current)
+                       fee_fraction=verified_fee_fraction,entry_fee_per_contract=entry_fee_per_contract,observed_at=current)
     # The base audit does not know if mapping was independently checked.
     indicative=audited.edge if matched and fresh and rules_verified else None
     return SleeperQuote(audit=audited,outcome=outcome,model_version=model_version,

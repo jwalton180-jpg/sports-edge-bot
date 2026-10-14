@@ -81,9 +81,9 @@ PRODUCTION_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
         "KXNFLRECYDSH2H","KXNFLTEAMTO","KXNFLGAMETO","KXNFLTEAM1STDOWNS",
         "KXNFLINT","KXNFLTEAMFG","KXNFL2HTD","KXNFL1HTD","KXNFLSACK",
     ),
-    "NHL": ("KXNHLGAME", "KXNHLSPREAD", "KXNHLTOTAL", "KXNHLTEAMTOTAL", "KXNHLPLAYERGOALS", "KXNHLGOALSCORER", "KXNHLSHOTSONGOAL", "KXNHLPLAYERPOINTS"),
-    "NCAAF": ("KXNCAAFGAME", "KXNCAAFSPREAD", "KXNCAAFTOTAL", "KXCFBGAME", "KXCFBSPREAD", "KXCFBTOTAL"),
-    "Soccer": ("KXSOCCERGAME", "KXSOCCERTOTAL", "KXEPLGAME", "KXEPLTOTAL", "KXMLSGAME", "KXMLSTOTAL", "KXUCLGAME", "KXUCLTOTAL"),
+    "NHL": ("KXNHLGAME", "KXNHLSPREAD", "KXNHLTOTAL", "KXNHLTEAMTOTAL", "KXNHLGOAL", "KXNHLANYGOAL", "KXNHLPTS", "KXNHLAST", "KXNHLSAVE", "KXNHLSAVES"),
+    "NCAAF": ("KXNCAAFGAME", "KXNCAAFSPREAD", "KXNCAAFTOTAL", "KXNCAAFTEAMTOTAL"),
+    "Soccer": ("KXEPLGAME", "KXEPLTOTAL", "KXEPLBTTS", "KXEPLTEAMTOTAL", "KXEPLGOAL", "KXEPLANYGOAL", "KXMLSGAME", "KXMLSTOTAL", "KXUCLGAME", "KXUCLTOTAL"),
     "Tennis": (
         "KXATPMATCH","KXATPCHALLENGERMATCH","KXWTAMATCH","KXITFMATCH",
         "KXITFWMATCH","KXWTACHALLENGERMATCH","KXATPSETWINNER",
@@ -98,7 +98,7 @@ PRODUCTION_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
 }
 
 OVERVIEW_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
-    "NHL": ("KXNHLGAME", "KXNHLTOTAL", "KXNHLPLAYERGOALS"),
+    "NHL": ("KXNHLGAME", "KXNHLTOTAL", "KXNHLGOAL", "KXNHLPTS", "KXNHLAST"),
     "NCAAF": ("KXNCAAFGAME", "KXNCAAFSPREAD", "KXCFBGAME"),
     "Soccer": ("KXEPLGAME", "KXMLSGAME", "KXUCLGAME"),
     "MLB": ("KXMLBGAME","KXMLBSPREAD","KXMLBTOTAL"),
@@ -245,7 +245,7 @@ def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
 
     if sport in {"NHL", "NCAAF", "Soccer"}:
         tokens = ("GAME", "MATCH", "WINNER", "SPREAD", "TOTAL", "GOAL",
-                  "SHOTS", "POINTS", "BTTS", "HANDICAP", "PUCKLINE",
+                  "SHOTS", "POINTS", "PTS", "AST", "SAVE", "SOG", "BTTS", "HANDICAP", "PUCKLINE",
                   "RUSH", "PASS", "REC", "TD", "1H", "2H", "1Q", "2Q")
         title_terms = (" game", " match", "goal", "shots on goal", "points",
                        "total", "spread", "handicap", "touchdown", "passing",
@@ -379,6 +379,10 @@ def _fetch_one_series(
             enriched["series_category"] = series_row.get("category")
             enriched["series_tags"] = series_row.get("tags") or []
             enriched["sports_edge_sport"] = sport
+            received = getattr(response, "received_at", None)
+            enriched["sports_edge_received_at"] = received.isoformat() if received is not None else None
+            enriched["sports_edge_fee_type"] = series_row.get("fee_type")
+            enriched["sports_edge_fee_multiplier"] = series_row.get("fee_multiplier")
             rows.append(enriched)
 
         next_cursor = market_payload.get("cursor")
@@ -407,6 +411,7 @@ def fetch_supported_sport_catalog(
     request_interval_s: float = 0.15,
     sports: tuple[str, ...] | list[str] | None = None,
     overview_only: bool = False,
+    discover_all_series: bool = False,
 ) -> KalshiCatalogResult:
     """Discover supported sports from Kalshi /series, then fetch open markets.
 
@@ -422,7 +427,7 @@ def fetch_supported_sport_catalog(
     incomplete: list[str] = []
     pages = 0
 
-    if client is None:
+    if client is None and not discover_all_series:
         # Production uses the bounded game/prop catalog below; no giant /series
         # payload is needed on every Streamlit cache miss.
         all_series: list[dict] = []
@@ -447,7 +452,7 @@ def fetch_supported_sport_catalog(
 
     selected_sports = tuple(sports) if sports else tuple(PRODUCTION_SERIES_BY_SPORT)
 
-    if client is None:
+    if client is None and not discover_all_series:
         # Production path: bounded live game/prop families. This removes the
         # hundreds of stale/future series requests that caused Kalshi 429s.
         source = OVERVIEW_SERIES_BY_SPORT if overview_only else PRODUCTION_SERIES_BY_SPORT

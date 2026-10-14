@@ -96,7 +96,7 @@ def _fallback_catalog_diagnostics(markets):
     )
 
 catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
-from sports_edge.models.live_board import LiveSignal, build_live_signals, build_underdog_signals, market_yes_probability
+from sports_edge.models.live_board import LiveSignal, build_live_signals as _sportsbook_crosschecks, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 
 # Streamlit Community Cloud can hot-reload the app entrypoint before every
@@ -110,7 +110,28 @@ except Exception:
 assess_leg = _pi.assess_leg
 build_intelligent_parlay = _pi.build_intelligent_parlay
 
-from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi, attach_sportsbook_context, _market_local_date
+from sports_edge.models.kalshi_model_candidates import model_candidates_from_kalshi as _independent_model_candidates, attach_sportsbook_context, _market_local_date
+from sports_edge.models.sleeper_pipeline import audit_app_candidates, scan_sleeper_markets, report_candidates
+from sports_edge.sleeper_panel import render_sleeper_panel
+from dataclasses import replace
+
+def build_live_signals(*args, **kwargs):
+    return [replace(signal, status="WATCH", warnings=signal.warnings+("Sportsbook cross-check only; independent probability qualification required",)) for signal in _sportsbook_crosschecks(*args, **kwargs)]
+
+def model_candidates_from_kalshi(grouped, **kwargs):
+    candidates = _independent_model_candidates(grouped, **kwargs)
+    inventory = [r.market for rows in grouped.values() for r in rows]
+    chosen = kwargs.get("sport_filter", "All")
+    research_markets = [m for m in inventory if m.get("sports_edge_sport") in {"NHL", "NCAAF", "Soccer"} and chosen in {"All", m.get("sports_edge_sport")}
+                        and (kwargs.get("target_local_date") is None or _market_local_date(m, kwargs.get("ticket_timezone", "Pacific/Honolulu")) == kwargs["target_local_date"])]
+    if research_markets:
+        report = scan_sleeper_markets(research_markets, coverage_complete=bool(globals().get("parlay_catalog_complete", False)), limit=40)
+        candidates.extend(report_candidates(report, research_markets))
+        st.session_state["last_ticket_research_report"] = report
+    from sports_edge.models.sleeper_promotion import load_reviewed_promotions
+    reviewed = load_reviewed_promotions("research/reviewed_model_promotions.json", verification_key=os.getenv("SPORTSEDGE_PROMOTION_REVIEW_KEY"), now=datetime.now(timezone.utc).isoformat())
+    return audit_app_candidates(candidates, inventory, coverage_complete=bool(globals().get("parlay_catalog_complete", globals().get("kcursor_exhausted", False))), promotions=reviewed)
+
 
 _tennis_watch_timeline = import_module_fresh("sports_edge.models.tennis_watch_timeline")
 build_tennis_watch_timelines = getattr(
@@ -351,6 +372,7 @@ def get_parlay_kalshi_markets(sport_filter_value: str):
         request_interval_s=0.15,
         sports=selected,
         overview_only=False,
+        discover_all_series=True,
     )
     return (
         list(result.markets),
@@ -731,7 +753,7 @@ def signal_table(signals: list[LiveSignal]) -> pd.DataFrame:
                 "Selection": s.selection,
                 "Kalshi side": s.side,
                 "Kalshi": f"{s.market_probability:.1%}",
-                "Fair": f"{s.fair_probability:.1%}",
+                "Book cross-check": f"{s.fair_probability:.1%}",
                 "Edge": f"{s.edge_points:+.1f} pp",
                 "Books": s.book_count,
                 "Age": f"{s.source_age_s:.0f}s",
@@ -1046,7 +1068,13 @@ def parlay_presets_for_sport(sport_filter_value: str) -> list[str]:
     if sport_filter_value == "MLB":
         return ["Best Available", "MLB Game Markets", "MLB Hits", "MLB Home Runs", "MLB Total Bases", "MLB RBIs", "MLB H+R+RBI", "MLB Strikeouts"]
     if sport_filter_value == "NFL":
-        return ["Best Available", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns"]
+        return ["Best Available", "NFL Game Markets", "NFL Passing", "NFL Rushing", "NFL Receiving", "NFL Touchdowns", "NFL 2+ Touchdowns"]
+    if sport_filter_value == "NHL":
+        return ["Best Available", "NHL Sleeper Markets"]
+    if sport_filter_value == "NCAAF":
+        return ["Best Available", "NCAA Upset Intelligence"]
+    if sport_filter_value == "Soccer":
+        return ["Best Available", "Soccer Totals / BTTS"]
     if sport_filter_value == "NBA":
         return ["Best Available", "NBA Points", "NBA Rebounds", "NBA Assists", "NBA Threes", "NBA PRA"]
     if sport_filter_value == "WNBA":
@@ -1357,7 +1385,7 @@ st.session_state.view = view
 
 sport_filter = st.segmented_control(
     "Sport",
-    ["All", "MLB", "NBA", "WNBA", "NFL", "Tennis"],
+    ["All", "MLB", "NBA", "WNBA", "NFL", "Tennis", "NHL", "NCAAF", "Soccer"],
     default="All",
     key="sport_filter_v2",
     label_visibility="collapsed",
@@ -1371,6 +1399,8 @@ api_key = _secret("THE_ODDS_API_KEY")
 markets, kerr, klat, kpages, kcursor_exhausted, kseries, kincomplete = get_kalshi_markets(sport_filter)
 kalshi_grouped = group_kalshi_sports(markets)
 catalog_health = catalog_diagnostics(markets)
+
+render_sleeper_panel(markets, coverage_complete=kcursor_exhausted and not kerr and sport_filter != "All", scope=sport_filter+"_"+view.replace(" ", "_"))
 kalshi_rows = _kalshi_rows_for_sport(kalshi_grouped, sport_filter)
 
 # Sportsbook schedules are no longer part of the default render path. They are
@@ -1532,7 +1562,7 @@ elif view == "Player Props":
         unsafe_allow_html=True,
     )
     if sport_filter == "All":
-        st.info("Select MLB, NBA, WNBA, NFL or Tennis above to load that sport’s full prop catalog.")
+        st.info("Select a sport above to load that sport’s full prop catalog.")
     sports_to_show = () if sport_filter == "All" else (sport_filter,)
     prop_rows = []
     for sport_name in sports_to_show:
@@ -1894,9 +1924,9 @@ elif view == "Parlay Generator":
     else:
         # Low-stake strong-core profile: default to five qualified legs and do
         # not shrink Best Available below four merely to produce a ticket.
-        min_legs = 5 if mode == "longshot" else 4
+        min_legs = 1
         default_legs = 6 if mode == "longshot" else 5
-        max_legs = 10 if mode == "longshot" else 8
+        max_legs = 30
     target = st.slider(
         "Target legs",
         min_value=min_legs,
@@ -2023,9 +2053,9 @@ elif view == "Parlay Generator":
                     else broad_nfl_cap if use_all_nfl_models
                     else None
                 ),
-                include_nfl_touchdowns=(preset == "NFL Touchdowns" or use_all_nfl_models),
+                include_nfl_touchdowns=(preset in {"NFL Touchdowns", "NFL 2+ Touchdowns"} or use_all_nfl_models),
                 max_nfl_td_players=(
-                    focused_nfl_cap if preset == "NFL Touchdowns"
+                    focused_nfl_cap if preset in {"NFL Touchdowns", "NFL 2+ Touchdowns"}
                     else broad_nfl_cap if use_all_nfl_models
                     else None
                 ),
@@ -2046,6 +2076,9 @@ elif view == "Parlay Generator":
                     preset == "Tennis Games Total" or use_all_tennis_models
                 ),
             )
+
+            if preset == "NFL 2+ Touchdowns":
+                model_candidates = [r for r in model_candidates if r.market_key == "player_anytime_td" and __import__("re").search(r"(?:Over|Under) (?:1\.5|2\.5|3\.5) ", r.selection)]
 
             selected_coverage_ids: list[str] = []
             selected_coverage_labels: dict[str, str] = {}
@@ -2109,6 +2142,10 @@ elif view == "Parlay Generator":
                 "NFL Rushing",
                 "NFL Receiving",
                 "NFL Touchdowns",
+                "NFL 2+ Touchdowns",
+                "NHL Sleeper Markets",
+                "NCAA Upset Intelligence",
+                "Soccer Totals / BTTS",
                 "WNBA Game Markets",
                 "WNBA Points",
                 "WNBA Rebounds",
@@ -2187,7 +2224,7 @@ elif view == "Parlay Generator":
                     row for row in model_candidates
                     if row.sport == "NFL" and row.market_key in {"player_reception_yds", "player_receptions"}
                 ]
-            elif preset == "NFL Touchdowns":
+            elif preset in {"NFL Touchdowns", "NFL 2+ Touchdowns"}:
                 model_candidates = [
                     row for row in model_candidates
                     if row.sport == "NFL" and row.market_key == "player_anytime_td"
@@ -2310,7 +2347,7 @@ elif view == "Parlay Generator":
             c1.metric("Qualified legs", len(result.legs))
             c2.metric("Model fair", f"{result.fair_joint_probability:.2%}")
             c3.metric("Kalshi implied", f"{result.market_joint_probability:.2%}")
-            c4.metric("Current payout", f"{result.market_payout_multiplier:.2f}x")
+            c4.metric("Illustrative payout", f"{result.market_payout_multiplier:.2f}x")
             st.caption(
                 f"Build: {builder_label.upper()} · Ticket math risk: {result.risk_label} · "
                 f"model/market value ratio {result.ticket_value_multiple:.2f}x"

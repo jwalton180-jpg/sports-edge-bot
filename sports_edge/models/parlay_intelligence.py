@@ -121,6 +121,12 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
 
     if price is None or not leg.kalshi_ticker:
         failures.append("no exact current Kalshi price match")
+    if leg.execution_audit_status is not None:
+        if leg.execution_audit_status != "QUALIFIED_VALUE":
+            failures.extend(leg.execution_audit_reasons or ("execution evidence is not qualified",))
+        # Quotes cannot influence the independent model through book blending.
+        if model is not None:
+            fair = model.fair_probability
     if policy.role_check == "BLOCK":
         failures.append("material role/availability uncertainty blocks recommendation")
     reasons.extend(policy.reasons)
@@ -130,10 +136,11 @@ def assess_leg(leg: ParlayCandidateLeg, mode: str) -> LegAssessment:
     if leg.book_count > 0 and leg.source_age_s > 120:
         warnings.append("sportsbook cross-check stale; excluded from fair-value blend")
 
-    edge = None if price is None else 100.0 * (fair - price)
-    ev = None if price is None else fair - price
-    roi = None if price is None or price <= 0 else (fair - price) / price
-    multiple = None if price is None or price <= 0 else fair / price
+    cost = None if price is None else price + (leg.entry_fee_per_contract or 0.)
+    edge = None if cost is None else 100.0 * (fair - cost)
+    ev = None if cost is None else fair - cost
+    roi = None if cost is None or cost <= 0 else (fair - cost) / cost
+    multiple = None if cost is None or cost <= 0 else fair / cost
 
     if edge is not None:
         reasons.append(f"Model-first fair {fair:.1%} vs Kalshi {price:.1%} = {edge:+.1f} pp")
@@ -298,6 +305,9 @@ def build_intelligent_parlay(
     seen_contracts: set[tuple[str, str | None]] = set()
 
     def _try_add(row: LegAssessment) -> bool:
+        from sports_edge.models.ticket_dependencies import incompatible
+        if any(incompatible(row.leg, other.leg) for other in selected):
+            return False
         contract = (row.leg.kalshi_ticker or row.leg.selection, row.leg.kalshi_side)
         if contract in seen_contracts:
             return False
@@ -354,6 +364,10 @@ def build_intelligent_parlay(
     payout_multiple = (1.0 / market_joint) if market_joint > 0 else 0.0
 
     warnings: list[str] = []
+    warnings.append("Payout is illustrative from individual asks; no executable combo quote, combo fees, sizing or fill are verified")
+    from sports_edge.models.ticket_dependencies import probability_bounds
+    bounds = probability_bounds(row.fair_probability for row in selected)
+    warnings.append(f"Dependence-unrestricted joint bounds {bounds[0]:.2%}–{bounds[1]:.2%}; displayed product is an independence benchmark")
     represented_preferred = {
         row.leg.event_id for row in selected if row.leg.event_id in preferred
     }

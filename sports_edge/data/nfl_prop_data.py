@@ -129,6 +129,32 @@ def _season_rows_for_player(rows: tuple[dict, ...], player_id: str) -> list[dict
     return sorted(out, key=lambda r: _safe_int(r.get("week")) or 0)
 
 
+def causal_rows(rows, *, season: int, before_date: date):
+    """Join game week to the real schedule; target-day/future stats are excluded."""
+    schedule = schedule_rows()
+    index = {}
+    for game in schedule:
+        if str(game.get("season")) != str(season) or str(game.get("game_type", "")).upper() != "REG":
+            continue
+        for team in (game.get("home_team"), game.get("away_team")):
+            index.setdefault((team, _safe_int(game.get("week"))), []).append(game)
+    out = []
+    for row in rows:
+        team = str(row.get("team") or row.get("recent_team") or "")
+        matches = index.get((team, _safe_int(row.get("week"))), [])
+        if len(matches) != 1:
+            continue
+        g = matches[0]
+        day = str(g.get("gameday", ""))[:10]
+        try:
+            if date.fromisoformat(day) >= before_date:
+                continue
+        except ValueError:
+            continue
+        out.append(dict(row, date=day, game_id=g.get("game_id") or f"{season}_{row.get('week')}_{g['away_team']}_{g['home_team']}", team=team))
+    return out
+
+
 def _latest_team(rows: list[dict]) -> str:
     for row in reversed(rows):
         team = str(row.get("team") or "").strip()
@@ -173,8 +199,8 @@ def player_context(
         return None
     player_id, canonical_name, position = resolved
 
-    current = _season_rows_for_player(current_all, player_id)
-    prior = _season_rows_for_player(prior_all, player_id)
+    current = causal_rows(_season_rows_for_player(current_all, player_id), season=season, before_date=event_date)
+    prior = causal_rows(_season_rows_for_player(prior_all, player_id), season=season-1, before_date=event_date)
     if not current and not prior:
         return None
 
@@ -213,6 +239,7 @@ def defensive_week_values(
     season: int,
     opponent_team: str,
     stat_key: str,
+    before_date: date | None = None,
 ) -> tuple[float, ...]:
     """Aggregate an opponent's allowed stat by week from player-week rows.
 
@@ -224,6 +251,8 @@ def defensive_week_values(
     except requests.RequestException:
         return ()
 
+    if before_date is not None:
+        rows = causal_rows(rows, season=season, before_date=before_date)
     grouped: dict[int, float] = {}
     for row in rows:
         if str(row.get("opponent_team") or "").strip() != opponent_team:
@@ -245,13 +274,15 @@ def defensive_week_values(
 
 
 @lru_cache(maxsize=32)
-def league_defensive_week_values(*, season: int, stat_key: str) -> tuple[float, ...]:
+def league_defensive_week_values(*, season: int, stat_key: str, before_date: date | None = None) -> tuple[float, ...]:
     """Return team-game allowed values across the league for a matchup prior."""
     try:
         rows = player_week_rows(season)
     except requests.RequestException:
         return ()
 
+    if before_date is not None:
+        rows = causal_rows(rows, season=season, before_date=before_date)
     grouped: dict[tuple[int, str], float] = {}
     for row in rows:
         opp = str(row.get("opponent_team") or "").strip()

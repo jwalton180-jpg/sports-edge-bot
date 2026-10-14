@@ -18,7 +18,7 @@ def leg(
         sport=sport,
         event_id=event_id,
         event_title=f"Event {event_id}",
-        market_key="model_h2h",
+        market_key="test_distinct_"+selection,
         market_label="Moneyline",
         selection=selection,
         consensus_probability=fair,
