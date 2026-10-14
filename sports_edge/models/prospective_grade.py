@@ -19,7 +19,7 @@ from sports_edge.models.prospective_capture import canonical_bytes, PROTOCOL
 from sports_edge.models.sleeper_counts import utc
 
 ARTIFACT_PREFIX="sportsedge-live-research-snapshot-"
-SUPPORTED_PROTOCOLS = {"SPORTSEDGE-PROSPECTIVE-V1-20261014", "SPORTSEDGE-PROSPECTIVE-V2-20261014"}
+SUPPORTED_PROTOCOLS = {"SPORTSEDGE-PROSPECTIVE-V1-20261014", "SPORTSEDGE-PROSPECTIVE-V2-20261014", "SPORTSEDGE-PROSPECTIVE-V3-20261014"}
 
 
 def verify_snapshot(snapshot: dict, manifest: dict, artifact: dict):
