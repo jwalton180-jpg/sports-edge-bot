@@ -170,7 +170,9 @@ class ProspectiveResearchStore:
 
     def record_push_acceptance(self, *, alert_id: str, ticker: str,
                                lane: str, accepted_at: datetime,
-                               provider_id: str) -> bool:
+                               provider_id: str,
+                               entry_ask: float | None = None,
+                               model_fair: float | None = None) -> bool:
         """Durable at-most-once acceptance receipt; no topic or token stored.
 
         A crash after remote acceptance and before checkpoint may still
@@ -186,6 +188,18 @@ class ProspectiveResearchStore:
             "provider_message_id": provider_id,
             "provider": "ntfy", "status": "accepted",
         }
+        # New receipts preserve the quoted alert price. Older receipts stay
+        # unchanged and cannot be used to invent historical entry prices.
+        if entry_ask is not None:
+            ask=float(entry_ask)
+            if not (math.isfinite(ask) and 0 < ask < 1):
+                raise ValueError("invalid quoted alert ask")
+            row["entry_ask"] = round(ask,5)
+        if model_fair is not None:
+            fair=float(model_fair)
+            if not (math.isfinite(fair) and 0 <= fair <= 1):
+                raise ValueError("invalid model fair probability")
+            row["model_fair"] = round(fair,6)
         append_jsonl(self.root / "notifications.jsonl", [row])
         self.notifications.append(row)
         self._notification_ids.add(alert_id)
