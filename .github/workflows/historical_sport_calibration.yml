@@ -24,7 +24,7 @@ jobs:
       - name: Download official historical results and run leakage-safe replay
         env:
           NHL_PLAYER_IDS: ${{ inputs.nhl_player_ids || '' }}
-        run: python scripts/run_sport_walkforward.py --output-dir research-output --nhl-player-ids "$NHL_PLAYER_IDS"
+        run: python -m scripts.run_sport_walkforward --output-dir research-output --nhl-player-ids "$NHL_PLAYER_IDS"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
