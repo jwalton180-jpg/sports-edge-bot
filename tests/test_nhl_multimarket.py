@@ -3,8 +3,8 @@ from sports_edge.models.nhl_prop_walkforward import nhl_prop_walkforward
 
 def _logs():
     return [{"source":"NHL","player_id":123,"game_id":str(i),
-             "date":f"2025-01-{i+1:02d}","goals":i%5==0,
-             "assists":i%3==0,"points":int(i%5==0)+int(i%3==0),
+             "date":f"2025-01-{i+1:02d}","goals":int(i%5==0),
+             "assists":int(i%3==0),"points":int(i%5==0)+int(i%3==0),
              "shots":i%5+1,"power_play_goals":0} for i in range(25)]
 
 def test_multi_market_menu_and_missing_stat_fail_closed():
