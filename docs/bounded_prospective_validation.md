@@ -7,7 +7,7 @@ executable-ask reference prices. There is no Railway, shared Ubuntu load,
 always-on worker, betting order, or account credential.
 
 Source population: open Kalshi series supported by existing discovery; eligibility
-within 60 hours of game start; 14 markets per sport per scheduled capture, restricted to independently modelled contract families,
+within 96 hours of listed market occurrence (with independent kickoff checked afterward); 14 markets per sport per scheduled capture, restricted to independently modelled contract families,
 deterministically selected by SHA256("SPORTSEDGE-PROSPECTIVE-V1-20261014|ticker")
 before viewing outcomes or estimated edge. This is a sample, NOT a complete
 market inventory. Unavailable models stay rejected; repeat scans are deduplicated
@@ -38,3 +38,7 @@ credentials, holdings, signing keys and private account data.
 ## Causal date correction (v2, Oct 14)
 
 Kalshi `occurrence_datetime` can represent expected game expiry rather than kickoff; for example a listed NHL market at 02:30 UTC can concern a game actually starting at 23:30 UTC the previous day. The v2 capture protocol therefore uses the official NHL/ESPN matched event's **actual scheduled start time** for lookback cutoff, pregame admissibility and grading. Contract date encoded in the event ticker selects the official schedule day; team identities and an independently bounded post-start expiry gap must agree. Any unresolved schedule or already-started game fails closed. V1 observations with no model forecasts remain archived and are still digest-verifiable but are not promoted. V2 sampling covers only currently independently modeled NHL player/team families, NCAA game winner and EPL totals/BTTS/team goals. Other families stay explicitly unsupported.
+
+## Scoped prospective capture (v3, Oct 14)
+
+The bounded study now enumerates only independently modeled NHL, NCAA football, and EPL series; it no longer consumes entire unrelated NCAA spread/total inventories just to sample NCAA game winners. Normal application discovery and its pagination remain unchanged. The study fetches at most 24 pages of 500 contracts per included series and reports cursor incompleteness rather than claiming full coverage. The 96-hour listed-occurrence horizon allows weekend Premier League research to enter a midweek capture, while the independent official kickoff check still excludes any game already started. Sampling protocol V3 has a new deterministic hash cohort; the grader retains verification of archived V1/V2 artifacts without converting historical observations into prospective proof or authorizing model promotion.
