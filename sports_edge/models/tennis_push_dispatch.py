@@ -140,6 +140,7 @@ def send_tennis_pushes(
             store.record_push_acceptance(
                 alert_id=event.alert_id, ticker=event.ticker, lane=event.lane,
                 accepted_at=now, provider_id=provider_id,
+                entry_ask=event.price, model_fair=event.fair,
             )
             result["accepted"] += 1
         except RuntimeError as exc:
