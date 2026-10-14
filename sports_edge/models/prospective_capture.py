@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sports_edge.models.sleeper_counts import utc
 
-PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V2-20261014"
+PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V3-20261014"
 SPORTS = ("NHL", "NCAAF", "Soccer")
 END_UTC = datetime(2026, 12, 15, tzinfo=timezone.utc)
 
@@ -41,7 +41,7 @@ def canonical_bytes(value: dict) -> bytes:
 
 
 def select_markets(markets, *, now: datetime, per_sport: int = 14,
-                   horizon_hours: int = 60):
+                   horizon_hours: int = 96):
     """Frozen deterministic sample of pregame listings, not a cherry-picked slate."""
     if now.tzinfo is None or per_sport < 1 or per_sport > 30:
         raise ValueError("invalid sampling configuration")
@@ -91,8 +91,9 @@ def capture(*, now=None, output_dir="prospective-out"):
     output.mkdir(parents=True, exist_ok=True)
     catalog = fetch_supported_sport_catalog(
         sports=SPORTS, overview_only=False,
-        discover_all_series=False, page_size=200,
-        page_limit_per_series=6, max_workers=4)
+        discover_all_series=False, page_size=500,
+        page_limit_per_series=24, max_workers=4,
+        series_allowlist=ELIGIBLE_SERIES)
     selected, selection = select_markets(catalog.markets, now=current)
     # Full-coverage claims are always false for a bounded prospective sample.
     # Use each *actual* post-fetch observation timestamp for quote freshness;
