@@ -2001,7 +2001,7 @@ def model_candidates_from_kalshi(
     ticket_timezone: str = "Pacific/Honolulu",
 ) -> list[ParlayCandidateLeg]:
     sports = (
-        ("MLB", "NBA", "WNBA", "NFL", "Tennis")
+        ("MLB", "NBA", "WNBA", "NFL", "Tennis", "NHL", "NCAAF", "Soccer")
         if sport_filter == "All"
         else (sport_filter,)
     )
@@ -2015,7 +2015,7 @@ def model_candidates_from_kalshi(
                 target_date=target_local_date,
                 timezone_name=ticket_timezone,
             )
-        target_family = "Match Winner" if sport == "Tennis" else "Moneyline"
+        target_family = "Match Winner" if sport == "Tennis" else ("Match Result" if sport == "Soccer" else "Moneyline")
         events: dict[str, list[KalshiSportMarket]] = {}
         for row in rows:
             if row.family != target_family:
