@@ -114,6 +114,9 @@ def send_tennis_pushes(
                 score=row.score,
                 observed_at=utc_iso(now),
                 source_label="Kalshi quote, score unverified",
+                observed_trough=getattr(row, "observed_trough", None),
+                rebound_pp=getattr(row, "rebound_pp", None),
+                quote_spread_pp=getattr(row, "quote_spread_pp", None),
             )
             if event.is_eligible(now=now, allow_extreme=True):
                 queue.append(event)
