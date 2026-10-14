@@ -128,3 +128,28 @@ def historical_ncaaf_projection(games: tuple[dict, ...], *, favorite_id: str,
         upset_red_flags=upset_red_flags,
         source_verified=all(r.get("source") == "ESPN" for r in prior),
         as_of_before_event=bool(prior))
+
+NHL_SKATER_ROSTER = "https://api.nhle.com/stats/rest/en/skater/summary"
+
+@lru_cache(maxsize=8)
+def nhl_complete_skater_ids(season: int) -> tuple[int, ...]:
+    """Enumerate every skater appearing in the official NHL regular season.
+
+    Never use scoring leaders or a curated star sample for calibration.
+    Fail closed if the API does not return the full roster.
+    """
+    if not 20002001 <= season <= 20992000:
+        raise ValueError("invalid NHL season")
+    data = _get_json(NHL_SKATER_ROSTER, {
+        "isAggregate": "false", "isGame": "false",
+        "cayenneExp": f"seasonId={season} and gameTypeId=2",
+        "limit": -1, "start": 0,
+    })
+    rows = data.get("data")
+    total = data.get("total")
+    if not isinstance(rows, list) or not isinstance(total, int) or len(rows) != total or total < 300:
+        raise ValueError("NHL roster incomplete; refuse biased calibration")
+    ids = [int(row["playerId"]) for row in rows]
+    if len(set(ids)) != len(ids) or min(ids) <= 0:
+        raise ValueError("NHL roster duplicate or invalid player IDs")
+    return tuple(sorted(ids))

@@ -6,10 +6,11 @@ Requires public ESPN/NHL endpoints; aborts on missing provider responses.
 from __future__ import annotations
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
 
-from sports_edge.data.historical_sport_evidence import completed_team_games, nhl_player_goal_log
+from sports_edge.data.historical_sport_evidence import completed_team_games, nhl_player_goal_log, nhl_complete_skater_ids
 from sports_edge.models.sport_walkforward import team_walkforward, nhl_player_walkforward, calibration_report
 from sports_edge.models.sport_calibration import chronological_calibration
 
@@ -40,18 +41,23 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
         data[sport] = {"events_fetched": len(games), "source": "ESPN",
                        "period": [start.isoformat(), end.isoformat()]}
         predictions.extend(team_walkforward(games, sport=sport))
-    if nhl_player_ids:
-        total = 0
-        for player_id in nhl_player_ids:
-            logs = nhl_player_goal_log(player_id, 20242025)
+    all_ids = nhl_complete_skater_ids(20242025)
+    selected = nhl_player_ids if nhl_player_ids else list(all_ids)
+    if not set(selected).issubset(set(all_ids)) or len(set(selected)) != len(selected):
+        raise ValueError("NHL IDs must be unique members of official season roster")
+    total = 0
+    # Bounded concurrency; all failures abort the report rather than bias the sample.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(nhl_player_goal_log, player_id, 20242025): player_id
+                   for player_id in selected}
+        for future in as_completed(futures):
+            logs = future.result()
             total += len(logs)
             predictions.extend(nhl_player_walkforward(list(logs)))
-        data["NHL"] = {"player_count": len(nhl_player_ids), "game_logs": total,
-                       "source": "NHL official API", "sampling": "explicit_player_id_sample",
-                       "representative": False}
-    else:
-        data["NHL"] = {"source": "NHL official API", "status": "missing_full_roster_sample",
-                       "representative": False}
+    data["NHL"] = {"player_count": len(selected), "official_roster_count": len(all_ids),
+                   "game_logs": total, "source": "NHL official API",
+                   "sampling": "full_roster" if len(selected) == len(all_ids) else "explicit_subset",
+                   "representative": len(selected) == len(all_ids)}
     calibrations = {sport: chronological_calibration([r for r in predictions if r["sport"] == sport])
                     for sport in ("NHL", "NCAAF", "Soccer")}
     result = {"method": "retrospective_strict_walkforward",
