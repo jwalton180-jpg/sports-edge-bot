@@ -10,7 +10,7 @@ NOW=datetime(2026,10,13,19,0,tzinfo=timezone.utc)
 def market(*, ticker="KXW15SHENZHEN-ZHALAN-ZHA", ask=.12, name="Ziyan Zhang"):
     return {
         "ticker":ticker, "yes_sub_title":name,
-        "yes_ask_dollars":str(ask), "status":"open",
+        "yes_ask_dollars":str(ask), "status":"active",
         "event_ticker":"KXW15SHENZHEN-ZHALAN",
     }
 
