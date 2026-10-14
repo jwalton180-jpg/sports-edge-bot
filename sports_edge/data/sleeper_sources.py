@@ -215,6 +215,81 @@ class SleeperSources:
                 "away_name": away["team"]["displayName"], "rows": sorted(collected.values(), key=lambda r:r["event_time"]),
                 "missing": ["confirmed_lineups", "weather", "injuries"], "deployment_verified": False}
 
+    def nba_margin_context(self, market):
+        """Exact NBA regular-season event and past complete-game schedule joins.
+
+        Market occurrence is NOT assumed to be tipoff. Sources and identity
+        come from ESPN; no Kalshi probabilities or sportsbook spreads enter.
+        """
+        from sports_edge.data.public_team_data import _metadata_aliases
+        from sports_edge.models.game_scope import normalize
+        nominal=nominal_day(market)
+        occurrence=utc(market["occurrence_datetime"])
+        ticker=str(market.get("event_ticker") or "").upper()
+        events={}
+        for day in (nominal,nominal+timedelta(days=1)):
+            payload=self.get(f"{ESPN}/basketball/nba/scoreboard",
+                             {"dates":day.strftime("%Y%m%d"),"limit":100})
+            for e in payload.get("events",[]):
+                events[str(e["id"])]=e
+        matched=[]
+        for e in events.values():
+            try:
+                teams=e["competitions"][0]["competitors"]
+                codes=[t["team"]["abbreviation"].upper() for t in teams]
+                start=utc(e["date"])
+                pairs=["".join(codes),"".join(reversed(codes))]
+                if (len(teams)==2 and len(set(codes))==2 and
+                    0 <= (occurrence-start).total_seconds() <= 8*3600 and
+                    any(code in ticker for code in pairs)):
+                    matched.append(e)
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(matched)!=1:
+            raise ValueError("nba_margin_schedule_identity_or_time_conflict")
+        e=matched[0]
+        kind=e.get("season",{}).get("type") or e.get("seasonType",{}).get("type")
+        if str(kind) != "2":
+            raise ValueError("nba_margin_preseason_or_playoffs_unmodeled")
+        comp=e["competitions"][0]["competitors"]
+        home=next(c for c in comp if c["homeAway"]=="home")
+        away=next(c for c in comp if c["homeAway"]=="away")
+        season=utc(e["date"]).year+int(utc(e["date"]).month>=7)
+        rows={}
+        for team in (home,away):
+            for year in (season-1,season):
+                data=self.get(f"{ESPN}/basketball/nba/teams/{team['id']}/schedule",
+                              {"season":year,"limit":250})
+                for past in data.get("events",[]):
+                    season_info=past.get("season") or data.get("season") or {}
+                    typ=season_info.get("type") if isinstance(season_info,dict) else None
+                    if str(typ)!="2":
+                        continue
+                    result=self.espn_result(past,"NBA")
+                    if result is None:
+                        continue
+                    if utc(result["event_time"])+timedelta(hours=24)>=utc(e["date"]):
+                        continue
+                    result["season_type"]="regular"
+                    key=result["event_id"]
+                    if key in rows and rows[key]!=result:
+                        raise ValueError("conflicting_espn_nba_completed_game")
+                    rows[key]=result
+        def aliases(team):
+            info=team["team"]
+            return sorted(_metadata_aliases(info) | {normalize(info.get("abbreviation",""))})
+        games=sorted(rows.values(),key=lambda g:g["event_time"])
+        return {"event_id":str(e["id"]),"start":e["date"],"season_type":"regular",
+                "home_id":str(home["id"]),"away_id":str(away["id"]),
+                "home_name":home["team"]["displayName"],
+                "away_name":away["team"]["displayName"],
+                "home_aliases":aliases(home),"away_aliases":aliases(away),
+                "rows":games,"source_urls":[f"{ESPN}/basketball/nba/scoreboard",
+                                          f"{ESPN}/basketball/nba/teams/{home['id']}/schedule",
+                                          f"{ESPN}/basketball/nba/teams/{away['id']}/schedule"],
+                "missing":["confirmed_starters_and_injuries","rotation_and_minutes",
+                           "rest_travel_and_game_script","prospective_margin_calibration"]}
+
     def basketball_context(self, market, sport, player):
         start = utc(market["occurrence_datetime"])
         league = sport.lower()
