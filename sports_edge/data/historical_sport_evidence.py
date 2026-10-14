@@ -91,7 +91,10 @@ def nhl_player_goal_log(player_id: int, season: int) -> tuple[dict, ...]:
                 continue
             rows.append({"source": "NHL", "player_id": player_id,
                          "game_id": str(item["gameId"]), "date": day, "goals": goals,
-                         "shots": int(item["shots"]) if item.get("shots") is not None else None})
+                         "shots": int(item["shots"]) if item.get("shots") is not None else None,
+                         "assists": int(item["assists"]) if item.get("assists") is not None else None,
+                         "points": int(item["points"]) if item.get("points") is not None else None,
+                         "power_play_goals": int(item["powerPlayGoals"]) if item.get("powerPlayGoals") is not None else None})
         except (KeyError, TypeError, ValueError):
             continue
     return tuple(rows)
