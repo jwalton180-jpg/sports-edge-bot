@@ -66,7 +66,7 @@ def completed_team_games(sport: str, day: str) -> tuple[dict, ...]:
 @lru_cache(maxsize=256)
 def nhl_player_goal_log(player_id: int, season: int) -> tuple[dict, ...]:
     """NHL official completed regular-season player game logs."""
-    if player_id <= 0 or not 2000 <= season <= 2100:
+    if player_id <= 0 or not 20002001 <= season <= 20992000 or season % 100 != ((season // 10000 + 1) % 100):
         raise ValueError("invalid player or season")
     data = _get_json(NHL_LOG.format(player_id=player_id, season=season))
     rows = []
@@ -99,8 +99,8 @@ def historical_soccer_projection(games: tuple[dict, ...], *, home_id: str,
     cutoff = _datetime(before_time)
     prior = [r for r in games if r.get("sport") == "Soccer"
              and _datetime(r["event_time"]) < cutoff]
-    home = [r for r in prior if r["home_id"] == home_id]
-    away = [r for r in prior if r["away_id"] == away_id]
+    home = [r for r in prior if r["home_id"] == home_id][-20:]
+    away = [r for r in prior if r["away_id"] == away_id][-20:]
     def avg(rows, field):
         return sum(r[field] for r in rows) / len(rows) if rows else None
     return soccer_goals(home_scored=avg(home,"home_score"),home_conceded=avg(home,"away_score"),
@@ -119,7 +119,7 @@ def historical_ncaaf_projection(games: tuple[dict, ...], *, favorite_id: str,
     def margins(team_id):
         return [(r["home_score"] - r["away_score"]) * (1 if r["home_id"] == team_id else -1)
                 for r in prior if team_id in (r["home_id"], r["away_id"])]
-    favorite, underdog = margins(favorite_id), margins(underdog_id)
+    favorite, underdog = margins(favorite_id)[-12:], margins(underdog_id)[-12:]
     return college_football_win(
         favorite_rating=sum(favorite)/len(favorite) if favorite else None,
         underdog_rating=sum(underdog)/len(underdog) if underdog else None,
@@ -128,3 +128,28 @@ def historical_ncaaf_projection(games: tuple[dict, ...], *, favorite_id: str,
         upset_red_flags=upset_red_flags,
         source_verified=all(r.get("source") == "ESPN" for r in prior),
         as_of_before_event=bool(prior))
+
+NHL_SKATER_ROSTER = "https://api.nhle.com/stats/rest/en/skater/summary"
+
+@lru_cache(maxsize=8)
+def nhl_complete_skater_ids(season: int) -> tuple[int, ...]:
+    """Enumerate every skater appearing in the official NHL regular season.
+
+    Never use scoring leaders or a curated star sample for calibration.
+    Fail closed if the API does not return the full roster.
+    """
+    if not 20002001 <= season <= 20992000:
+        raise ValueError("invalid NHL season")
+    data = _get_json(NHL_SKATER_ROSTER, {
+        "isAggregate": "false", "isGame": "false",
+        "cayenneExp": f"seasonId={season} and gameTypeId=2",
+        "limit": -1, "start": 0,
+    })
+    rows = data.get("data")
+    total = data.get("total")
+    if not isinstance(rows, list) or not isinstance(total, int) or len(rows) != total or total < 300:
+        raise ValueError("NHL roster incomplete; refuse biased calibration")
+    ids = [int(row["playerId"]) for row in rows]
+    if len(set(ids)) != len(ids) or min(ids) <= 0:
+        raise ValueError("NHL roster duplicate or invalid player IDs")
+    return tuple(sorted(ids))

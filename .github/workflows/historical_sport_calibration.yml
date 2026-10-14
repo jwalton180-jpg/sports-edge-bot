@@ -1,0 +1,37 @@
+name: Source-backed historical sport calibration
+on:
+  workflow_dispatch:
+    inputs:
+      nhl_player_ids:
+        description: 'Verified NHL player IDs (comma-separated; research sample only)'
+        type: string
+        default: ''
+  push:
+    branches:
+      - sportsedge-walkforward-source-calibration-20261014
+concurrency:
+  group: sportsedge-historical-calibration
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Download official historical results and run leakage-safe replay
+        env:
+          NHL_PLAYER_IDS: ${{ inputs.nhl_player_ids || '' }}
+        run: python -m scripts.run_sport_walkforward --output-dir research-output --nhl-player-ids "$NHL_PLAYER_IDS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sportsedge-historical-calibration
+          path: research-output/
+          if-no-files-found: warn
+          retention-days: 30
