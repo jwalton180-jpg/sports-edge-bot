@@ -83,3 +83,14 @@ def render_sleeper_panel(markets, *, coverage_complete, scope, runner=None):
             if report.get("ledger_export"):
                 st.download_button("Export all recorded scans and settlements (JSONL)", data=report["ledger_export"],
                     file_name="sportsedge_sleeper_ledger.jsonl", mime="application/x-ndjson", key="sleeper_ledger_export_"+scope)
+                from sports_edge.models.prospective_review import prospective_review_export
+                import json
+                try:
+                    review = prospective_review_export(report["ledger_export"])
+                    st.caption(f"Prospective review: {review['coverage']['canonical_predictions']} canonical YES-side observations; {review['coverage']['officially_graded']} official outcomes. No authenticated model promotion.")
+                    st.download_button("Export prospective review dataset (JSON)",
+                        data=json.dumps(review, indent=2, allow_nan=False),
+                        file_name="sportsedge_prospective_review.json", mime="application/json",
+                        key="sleeper_prospective_export_"+scope)
+                except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+                    st.warning("Prospective review export cannot be verified; retain the raw ledger.")

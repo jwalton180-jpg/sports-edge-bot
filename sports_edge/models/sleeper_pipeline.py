@@ -222,10 +222,14 @@ def research_projection(row, spec, sources):
         context = sources.espn_match_history(m, "NCAAF")
         projection = ncaaf_opponent_challenger(context["rows"], home_id=context["home_id"], away_id=context["away_id"], before_time=context["start"])
         selected = name(m.get("yes_sub_title", ""))
-        if selected == name(context["away_name"]) and projection.probability is not None:
-            projection = replace(projection, probability=1-projection.probability)
-        elif selected != name(context["home_name"]):
+        home_aliases = {name(x) for x in context.get("home_aliases", [context["home_name"]])}
+        away_aliases = {name(x) for x in context.get("away_aliases", [context["away_name"]])}
+        home_selected = selected in home_aliases
+        away_selected = selected in away_aliases
+        if home_selected == away_selected:
             raise ValueError("ncaaf_selection_identity_unresolved")
+        if away_selected and projection.probability is not None:
+            projection = replace(projection, probability=1-projection.probability)
         context["upset_review"] = asdict(review_upset({}, event_id=context["event_id"], now=datetime.now(timezone.utc).isoformat()))
         return projection, context
     return None, {}
@@ -271,14 +275,35 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
                         raise ValueError("fee_series_mismatch")
                     series_cache[series_key] = sr
                 projection, context = research_projection(row, spec, sources)
-                if context.get("start"):
-                    spec=replace(spec,event_time=context["start"])
-                    if utc(spec.event_time) <= (now or datetime.now(timezone.utc)):
-                        projection=None
-                        pregame=False
-                        issues.append("independent_start_passed_requires_live_model")
             except requests_error_types() as exc:
                 issues.append("source_or_quote_unavailable:"+(str(exc)[:100] if isinstance(exc,ValueError) else type(exc).__name__))
+        # Once independently matched, the official game start replaces
+        # Kalshi occurrence_datetime (often the expected postgame close).
+        # Neither a missed matchup nor an already-live game may inherit an
+        # outdated pregame projection or legacy price-following fallback.
+        if row.sport in {"NHL", "NCAAF", "Soccer", "NBA", "WNBA"} or (row.sport == "NFL" and row.family == "Player Touchdowns"):
+            verified_start = context.get("start")
+            if verified_start:
+                try:
+                    true_start = utc(verified_start)
+                    if true_start > utc(spec.event_time):
+                        issues.append("official_start_after_market_occurrence")
+                        projection = None
+                        pregame = False
+                    elif true_start <= current:
+                        issues.append("official_game_already_started")
+                        issues.append("independent_start_passed_requires_live_model")
+                        projection = None
+                        pregame = False
+                    spec = replace(spec, event_time=true_start.isoformat())
+                except (ValueError, TypeError):
+                    issues.append("official_start_invalid")
+                    projection = None
+                    pregame = False
+            else:
+                issues.append("official_game_start_unverified")
+                projection = None
+                pregame = False
         probability = getattr(projection, "probability", None)
         base = legacy.get((spec.ticker,"YES"))
         if projection is None and base is not None and spec.rules_supported and pregame:

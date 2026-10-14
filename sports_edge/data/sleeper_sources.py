@@ -24,6 +24,11 @@ def nominal_day(market):
     return date(2000+int(match[1]),months[match[2]],int(match[3]))
 
 
+def kalshi_event_day(ticker):
+    """Compatibility helper for independent prospective capture."""
+    return nominal_day({"event_ticker": ticker})
+
+
 def name(value):
     value = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode()
     return normalize(value)
@@ -65,7 +70,7 @@ class SleeperSources:
                 pairs = ["".join(codes), "".join(reversed(codes))]
                 # Kalshi's TB code differs from NHL's TBL.
                 pairs += [p.replace("TBL", "TB") for p in pairs]
-                if any(p in ticker for p in pairs) and abs((utc(g["startTimeUTC"])-start).total_seconds()) <= 12*3600:
+                if any(p in ticker for p in pairs) and 0 <= (start-utc(g["startTimeUTC"])).total_seconds() <= 8*3600:
                     matches.append(g)
         if len(matches) != 1:
             raise ValueError("nhl_schedule_identity_or_start_conflict")
@@ -175,7 +180,7 @@ class SleeperSources:
         rules = str(market.get("rules_primary", ""))
         candidates = []
         for e in events.values():
-            if abs((utc(e["date"])-start).total_seconds()) > 12*3600:
+            if not 0 <= (start-utc(e["date"])).total_seconds() <= 8*3600:
                 continue
             teams = e["competitions"][0]["competitors"]
             # Exact names/abbreviations bounded by words, not fuzzy guesses.
@@ -190,6 +195,7 @@ class SleeperSources:
         comp = e["competitions"][0]
         home = next(t for t in comp["competitors"] if t["homeAway"] == "home")
         away = next(t for t in comp["competitors"] if t["homeAway"] == "away")
+        start = utc(e["date"])
         collected = {}
         for t in (home, away):
             for season in (start.year-1, start.year):
@@ -200,7 +206,11 @@ class SleeperSources:
                     row = self.espn_result(past, sport)
                     if row:
                         collected[row["event_id"]] = row
+        def aliases(team):
+            info = team["team"]
+            return [info[k] for k in ("displayName", "shortDisplayName", "abbreviation", "location") if info.get(k)]
         return {"event_id": str(e["id"]), "start": e["date"], "home_id": str(home["id"]),
+                "home_aliases": aliases(home), "away_aliases": aliases(away),
                 "away_id": str(away["id"]), "home_name": home["team"]["displayName"],
                 "away_name": away["team"]["displayName"], "rows": sorted(collected.values(), key=lambda r:r["event_time"]),
                 "missing": ["confirmed_lineups", "weather", "injuries"], "deployment_verified": False}
@@ -219,7 +229,7 @@ class SleeperSources:
             codes = [t["team"]["abbreviation"] for t in teams]
             if len(codes) != 2:
                 continue
-            if abs((utc(e["date"])-start).total_seconds()) <= 12*3600 and any("".join(pair) in market.get("event_ticker", "") for pair in (codes, list(reversed(codes)))):
+            if 0 <= (start-utc(e["date"])).total_seconds() <= 8*3600 and any("".join(pair) in market.get("event_ticker", "") for pair in (codes, list(reversed(codes)))):
                 matches.append(e)
         if len(matches) != 1:
             raise ValueError("basketball_schedule_identity_conflict")
