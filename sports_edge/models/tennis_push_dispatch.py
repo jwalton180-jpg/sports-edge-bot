@@ -15,11 +15,12 @@ from sports_edge.models.tennis_prospective_store import stable_id, utc_iso
 
 RANK = {
     "EXTREME DIP — TRACKING ONLY": 1,
-    "WATCH": 2,
-    "EARLY WATCH — RESEARCH": 2,
-    "RECOVERY BUILDING — RESEARCH": 3,
-    "REVERSAL SIGNAL": 4,
-    "DEEP REVERSAL": 5,
+    "PRICE RECOVERY — TRACKING ONLY": 2,
+    "WATCH": 3,
+    "EARLY WATCH — RESEARCH": 3,
+    "RECOVERY BUILDING — RESEARCH": 4,
+    "REVERSAL SIGNAL": 5,
+    "DEEP REVERSAL": 6,
 }
 
 
@@ -27,6 +28,7 @@ def send_tennis_pushes(
     store, *,
     now: datetime,
     extreme_observations=(),
+    price_observations=(),
     model_candidates=(),
     environ=None,
     session=None,
@@ -89,6 +91,29 @@ def send_tennis_pushes(
                 fair=row.live_fair,
                 score=row.score,
                 observed_at=utc_iso(now),
+            )
+            if event.is_eligible(now=now, allow_extreme=True):
+                queue.append(event)
+
+    # Score-unverified market observations remain outside the forecast/settlement
+    # ledger. Track-only notices must never become a model-confirmed prediction.
+    if allow_extreme:
+        for row in price_observations:
+            if row.lane not in {
+                "EXTREME DIP — TRACKING ONLY",
+                "PRICE RECOVERY — TRACKING ONLY",
+            }:
+                continue
+            event = PushEvent(
+                alert_id=stable_id("unverified-market-push", row.ticker, row.lane),
+                ticker=row.ticker,
+                selection=row.selection,
+                lane=row.lane,
+                price=row.current_ask,
+                fair=None,
+                score=row.score,
+                observed_at=utc_iso(now),
+                source_label="Kalshi quote, score unverified",
             )
             if event.is_eligible(now=now, allow_extreme=True):
                 queue.append(event)
