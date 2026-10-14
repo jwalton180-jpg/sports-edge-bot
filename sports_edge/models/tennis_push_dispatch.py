@@ -30,6 +30,7 @@ def send_tennis_pushes(
     extreme_observations=(),
     price_observations=(),
     model_candidates=(),
+    allowed_tickers: set[str] | None = None,
     environ=None,
     session=None,
     max_per_poll: int = 5,
@@ -128,6 +129,11 @@ def send_tennis_pushes(
     ))
     seen_tickers: set[str] = set()
     for event in queue:
+        # Production observers provide a fresh, score-verified allowlist. Any
+        # unknown or near-elimination market cannot push, even if a past price
+        # observation or model snapshot qualified a research WATCH.
+        if allowed_tickers is not None and event.ticker not in allowed_tickers:
+            continue
         if event.ticker in seen_tickers:
             continue
         if store.has_accepted_push(event.alert_id):
