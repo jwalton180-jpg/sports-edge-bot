@@ -85,7 +85,7 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
         safe_movement=tuple(
             replace(row,score=(
                 f"{allowed[row.ticker].score_label} | "
-                "score independently corroborated; model edge unverified"
+                "live score independently observed; model edge unverified"
             ))
             for row in movement if row.ticker in allowed
         )
