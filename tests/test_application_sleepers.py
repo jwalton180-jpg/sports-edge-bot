@@ -221,3 +221,23 @@ def test_official_finalized_status_grades_and_fair_price_does_not(tmp_path):
     assert len(ledger.metrics()["groups"]) == 2
     assert ledger.metrics()["realized_returns"] is None
     ledger.close()
+
+
+def test_bounded_grading_rotates_past_open_markets(tmp_path):
+    from types import SimpleNamespace
+    ledger=SleeperLedger(tmp_path/"rotate.sqlite")
+    for ticker in ("A","B"):
+        report=example_report()
+        for r in report["records"]:
+            r["ticker"]=ticker
+        ledger.append_scan(report)
+    class Open:
+        calls=[]
+        def market(self,ticker):
+            self.calls.append(ticker)
+            return SimpleNamespace(data={"market":{"ticker":ticker,"status":"active"}})
+    client=Open()
+    ledger.grade_official(client,limit=1)
+    ledger.grade_official(client,limit=1)
+    assert client.calls==["A","B"]
+    ledger.close()

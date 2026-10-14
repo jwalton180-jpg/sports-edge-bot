@@ -15,6 +15,7 @@ class SleeperLedger:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(path), timeout=10)
         self.db.execute("CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS runtime_state (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
         self.db.execute("CREATE TRIGGER IF NOT EXISTS immutable_update BEFORE UPDATE ON records BEGIN SELECT RAISE(ABORT, 'immutable'); END")
         self.db.execute("CREATE TRIGGER IF NOT EXISTS immutable_delete BEFORE DELETE ON records BEGIN SELECT RAISE(ABORT, 'immutable'); END")
         self.db.commit()
@@ -45,6 +46,8 @@ class SleeperLedger:
 
     def grade_official(self, client, *, limit=40):
         """On-demand read-only final-market grading. Open/ambiguous results wait."""
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError("bounded positive grading limit required")
         pending=[]
         for scan_id,payload in self.db.execute("SELECT id,payload FROM records WHERE kind='scan'"):
             report=json.loads(payload)
@@ -52,8 +55,11 @@ class SleeperLedger:
                 key=hashlib.sha256((scan_id+":"+ticker).encode()).hexdigest()
                 if not self.db.execute("SELECT 1 FROM records WHERE id=?",(key,)).fetchone():
                     pending.append((scan_id,ticker))
+        cursor=self.db.execute("SELECT value FROM runtime_state WHERE key='grade_cursor'").fetchone()
+        offset=(cursor[0] if cursor else 0)%len(pending) if pending else 0
+        rotated=pending[offset:]+pending[:offset]
         cache={}; graded=0; errors=[]
-        for scan_id,ticker in pending[:limit]:
+        for scan_id,ticker in rotated[:limit]:
             try:
                 if ticker not in cache:
                     cache[ticker]=client.market(ticker).data["market"]
@@ -71,6 +77,8 @@ class SleeperLedger:
                 graded+=1
             except (ValueError, KeyError, sqlite3.Error, __import__("requests").RequestException) as exc:
                 errors.append(type(exc).__name__)
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO runtime_state VALUES ('grade_cursor',?)",(offset+min(limit,len(pending)),))
         return {"graded":graded,"pending_records":len(pending)-graded,"capacity_complete":len(pending)<=limit,"errors":errors}
 
     def metrics(self):
@@ -78,20 +86,25 @@ class SleeperLedger:
         for key,kind,payload in self.db.execute("SELECT id,kind,payload FROM records"):
             if kind=="scan":scans[key]=json.loads(payload)
             else:settlements.append(json.loads(payload))
-        groups={}
+        groups={};seen=set();duplicates=0
         for final in settlements:
             if final.get("settlement_verified") is not True or final["result"] not in {"yes","no"}:
                 continue
             for r in scans.get(final["scan_id"],{}).get("records",[]):
                 if r["ticker"]!=final["ticker"] or r["probability"] is None:
                     continue
+                identity=(r["ticker"],r["model"],r["side"])
+                if identity in seen:
+                    duplicates+=1
+                    continue
+                seen.add(identity)
                 band=(int(r["quote"]["ask"]*10) if r["quote"]["ask"] is not None else "unpriced")
                 key=(r["sport"],r["family"],r["threshold"],r["model"],r["side"],band)
                 groups.setdefault(key,[]).append((r["probability"],int(r["side"].lower()==final["result"])))
         return {"groups":[{"sport":k[0],"family":k[1],"threshold":k[2],"model":k[3],"side":k[4],"price_decile":k[5],
                            "graded":len(v),"brier":sum((p-y)**2 for p,y in v)/len(v),
                            "calibration_gap":sum(p-y for p,y in v)/len(v)} for k,v in groups.items()],
-                "realized_returns":None,"execution_verified":False,"qualified_for_live":False}
+                "duplicate_recommendations_excluded":duplicates,"realized_returns":None,"execution_verified":False,"qualified_for_live":False}
 
     def export_jsonl(self):
         return "".join(json.dumps({"id":i,"kind":k,"payload":json.loads(p)}, sort_keys=True)+"\n"

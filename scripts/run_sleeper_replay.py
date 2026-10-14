@@ -8,11 +8,35 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
+import hashlib
 from pathlib import Path
 
 from sports_edge.data.sleeper_sources import SleeperSources, NHL
 from sports_edge.models.sleeper_counts import nhl_count, nfl_scored_touchdowns
 from sports_edge.models.sport_calibration import chronological_calibration
+
+
+class ReplaySources(SleeperSources):
+    """Checkpoint source downloads so a retry doesn't lose the collected dataset."""
+    cache_dir = None
+
+    def get(self, url, params=None):
+        request_key=json.dumps([url,params or {}],sort_keys=True)
+        path=self.cache_dir/(hashlib.sha256(request_key.encode()).hexdigest()+".json")
+        if path.exists():
+            captured=json.loads(path.read_text())
+            if captured["request"]!=request_key:
+                raise ValueError("source checkpoint identity mismatch")
+            digest=hashlib.sha256(json.dumps(captured["data"],sort_keys=True).encode()).hexdigest()
+            if digest!=captured["sha256"]:
+                raise ValueError("source checkpoint changed")
+            self.provenance.append(captured["provenance"])
+            return captured["data"]
+        data=super().get(url,params)
+        payload={"request":request_key,"data":data,"provenance":self.provenance[-1],
+                 "sha256":hashlib.sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()}
+        path.write_text(json.dumps(payload))
+        return data
 
 
 def replay(log, *, sport, field, threshold):
@@ -36,7 +60,9 @@ def replay(log, *, sport, field, threshold):
 
 def run(output_dir, sample_size=4):
     dest=Path(output_dir); dest.mkdir(parents=True,exist_ok=True)
-    sources=SleeperSources()
+    ReplaySources.cache_dir=dest/"source-cache"
+    ReplaySources.cache_dir.mkdir(exist_ok=True)
+    sources=ReplaySources()
     records=[]; coverage={}; failures=[]
     for kind in ("skater","goalie"):
         url=f"https://api.nhle.com/stats/rest/en/{kind}/summary"
@@ -46,9 +72,10 @@ def run(output_dir, sample_size=4):
             raise ValueError("official population incomplete")
         ids=sorted({r["playerId"] for r in rows})
         selected=ids[:sample_size] if sample_size else ids
+        print(f"Collecting {kind}: {len(selected)}/{len(ids)} official participants",flush=True)
         coverage[kind]={"official_population":len(ids),"sampled":len(selected),"representative":not sample_size}
         def collect(pid):
-            s=SleeperSources()
+            s=ReplaySources()
             data=s.get(f"{NHL}/player/{pid}/game-log/20242025/2")
             log=[]
             for r in data.get("gameLog",[]):
@@ -62,14 +89,16 @@ def run(output_dir, sample_size=4):
                     item["saves"]=r["shotsAgainst"]-r["goalsAgainst"]
                 log.append(item)
             return log,s.provenance
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            for log,provenance in pool.map(collect,selected):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for index,(log,provenance) in enumerate(pool.map(collect,selected)):
                 sources.provenance.extend(provenance)
                 if kind=="goalie":
                     records.extend(replay(log,sport="NHL",field="saves",threshold=25))
                 else:
                     for field,threshold in (("shots",3),("goals",2),("assists",1),("points",2)):
                         records.extend(replay(log,sport="NHL",field=field,threshold=threshold))
+                if (index+1)%25==0:
+                    print(f"Completed {kind} {index+1}/{len(selected)}; {len(records)} predictions",flush=True)
     # All NHL franchises enumerated from official standings; no scoring-leader sample.
     teams=sources.get(f"{NHL}/standings/2025-04-17")["standings"]
     abbreviations=sorted({r["teamAbbrev"]["default"] for r in teams})
@@ -77,6 +106,7 @@ def run(output_dir, sample_size=4):
         raise ValueError("historical NHL team population incomplete")
     selected=abbreviations[:sample_size] if sample_size else abbreviations
     coverage["team"]={"official_population":len(abbreviations),"sampled":len(selected),"representative":not sample_size}
+    print(f"Collecting teams: {len(selected)}/{len(abbreviations)}",flush=True)
     for abbr in selected:
         data=sources.get(f"{NHL}/club-schedule-season/{abbr}/20242025")
         log=[]
@@ -111,6 +141,7 @@ def run(output_dir, sample_size=4):
     except Exception as exc:
         failures.append("NFL source collection failed:"+type(exc).__name__)
     metrics={}
+    print(f"Calibrating {len(records)} historical predictions",flush=True)
     for sport,outcome in sorted({(r["sport"],r["outcome"]) for r in records}):
         rows=[r for r in records if r["sport"]==sport and r["outcome"]==outcome]
         metrics[sport+":"+outcome]=chronological_calibration(rows)

@@ -122,7 +122,7 @@ def model_candidates_from_kalshi(grouped, **kwargs):
     candidates = _independent_model_candidates(grouped, **kwargs)
     inventory = [r.market for rows in grouped.values() for r in rows]
     chosen = kwargs.get("sport_filter", "All")
-    research_markets = [m for m in inventory if m.get("sports_edge_sport") in {"NHL", "NCAAF", "Soccer"} and chosen in {"All", m.get("sports_edge_sport")}
+    research_markets = [m for m in inventory if m.get("sports_edge_sport") in {"NHL", "NCAAF", "Soccer", "NBA"} and chosen in {"All", m.get("sports_edge_sport")}
                         and (kwargs.get("target_local_date") is None or _market_local_date(m, kwargs.get("ticket_timezone", "Pacific/Honolulu")) == kwargs["target_local_date"])]
     if research_markets:
         report = scan_sleeper_markets(research_markets, coverage_complete=bool(globals().get("parlay_catalog_complete", False)), limit=40)
@@ -1630,7 +1630,7 @@ elif view == "Player Props":
             model_family_key = "tennis_games_total"
 
         if model_family_key:
-            st.success("Independent Sports Edge model available for this prop family.")
+            st.info("Independent projection available; qualification requires fresh evidence and scoped validation.")
             if st.button(
                 "Run Sports Edge prop analysis",
                 type="primary",
@@ -2143,6 +2143,7 @@ elif view == "Parlay Generator":
                 "NFL Receiving",
                 "NFL Touchdowns",
                 "NFL 2+ Touchdowns",
+                "NBA Points", "NBA Rebounds", "NBA Assists", "NBA Threes", "NBA PRA",
                 "NHL Sleeper Markets",
                 "NCAA Upset Intelligence",
                 "Soccer Totals / BTTS",
@@ -2244,6 +2245,9 @@ elif view == "Parlay Generator":
                 model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_threes"]
             elif preset == "WNBA PRA":
                 model_candidates = [row for row in model_candidates if row.sport == "WNBA" and row.market_key == "player_points_rebounds_assists"]
+            elif preset.startswith("NBA "):
+                nba_keys = {"NBA Points": "player_points", "NBA Rebounds": "player_rebounds", "NBA Assists": "player_assists", "NBA Threes": "player_threes", "NBA PRA": "player_points_rebounds_assists"}
+                model_candidates = [r for r in model_candidates if r.sport == "NBA" and r.market_key == nba_keys.get(preset)]
             elif preset not in supported_model_presets:
                 model_candidates = []
 

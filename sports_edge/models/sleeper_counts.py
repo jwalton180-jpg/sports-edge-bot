@@ -20,6 +20,7 @@ class CountEstimate:
     model: str
     reasons: tuple[str, ...]
     status: str = "UNVALIDATED_RESEARCH"
+    source_as_of: str | None = None
 
 
 def utc(value):
@@ -109,7 +110,7 @@ def estimate_counts(rows, *, field, threshold, before_time, source, model,
     p = .8*dispersed+.2*empirical
     tails = [poisson, dispersed, empirical,
              count_tail(mu*.8, variance, threshold), count_tail(mu*1.2, max(variance,mu*1.2), threshold)]
-    return CountEstimate(p, min(tails), max(tails), mu, variance, n, model, tuple(reasons))
+    return CountEstimate(p, min(tails), max(tails), mu, variance, n, model, tuple(reasons), source_as_of=prior[-1][0].isoformat())
 
 
 def nfl_scored_touchdowns(rows, *, threshold=2, before_time):

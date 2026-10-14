@@ -21,6 +21,19 @@ from sports_edge.models.sleeper_quote_audit import screen_sleeper_quote
 VERSION = "sleeper-evidence-v2"
 
 
+def production_commit():
+    import os
+    from pathlib import Path
+    import subprocess
+    sha = os.getenv("GITHUB_SHA", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        try:
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[2], timeout=2, stderr=subprocess.DEVNULL, text=True).strip()
+        except (OSError, subprocess.SubprocessError):
+            return "unknown"
+    return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else "unknown"
+
+
 @dataclass(frozen=True)
 class MarketSpec:
     ticker: str
@@ -156,7 +169,13 @@ def research_projection(row, spec, sources):
         return None, {}
     if row.sport in {"NBA", "WNBA"} and row.family in {"Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"}:
         from sports_edge.models.basketball_sleeper import basketball_sleeper
+        from sports_edge.data.basketball_prop_data import _url
         context = sources.basketball_context(m, row.sport, spec.participant)
+        event=utc(spec.event_time)
+        season=event.year+int(row.sport=="NBA" and event.month>=7)
+        context["source_urls"]=[_url(row.sport,season-1),_url(row.sport,season)]
+        context["source_retrieved_at"]=None
+        context["freshness_limitations"]=["existing_cached_player_loader_retrieval_time_not_recorded"]
         return basketball_sleeper(sport=row.sport, player=spec.participant, family=row.family,
             threshold=spec.threshold, before_time=spec.event_time, season_type=context["season_type"]), context
     if row.sport == "NHL":
@@ -291,11 +310,11 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
                             "category":"research_only", "reasons":reasons,
                             "model":getattr(projection,"model","unsupported"),
                             "sample":getattr(projection,"sample",getattr(projection,"sample_size",0)),
-                            "source_as_of":max(source_dates, key=utc) if source_dates else None,
+                            "source_as_of":getattr(projection,"source_as_of",None) or (max(source_dates, key=utc) if source_dates else None),
                             "model_reasons":list(getattr(projection,"reasons",())),
                             "context":{k:v for k,v in context.items() if k != "rows"},
                             "observed_at":observed.isoformat()})
-    return {"schema_version":VERSION, "generated_at":current.isoformat(),
+    return {"schema_version":VERSION, "production_commit":production_commit(), "generated_at":current.isoformat(),
             "coverage":{"catalog_complete":coverage_complete, "listed_markets":len(rows),
                         "analyzed_markets":analyzed, "limit":limit, "scan_complete":analyzed == len(rows)},
             "sources":sources.provenance, "records":records,
@@ -331,7 +350,7 @@ def report_candidates(report, original_markets):
             continue
         m = originals[r["ticker"]]
         candidates.append(ParlayCandidateLeg(sport=r["sport"], event_id=m.get("event_ticker",r["ticker"]),
-            event_title=m.get("event_title", m.get("title", "")), market_key=r["family"].lower().replace(" ","_"),
+            event_title=m.get("event_title", m.get("title", "")), market_key={"Points":"player_points", "Rebounds":"player_rebounds", "Assists":"player_assists", "Three-Pointers":"player_threes", "Points + Rebounds + Assists":"player_points_rebounds_assists"}.get(r["family"],r["family"].lower().replace(" ","_")),
             market_label=r["family"], selection=f"{r['participant']} {r['side']} {r['threshold'] or ''} {r['family']}",
             consensus_probability=r["probability"], book_count=0, source_age_s=0, median_odds=None,
             kalshi_ticker=r["ticker"], kalshi_side=r["side"], kalshi_price=r["quote"]["ask"],
@@ -351,7 +370,9 @@ def requests_error_types():
 
 def export_evidence(report):
     """Only the deliberately public report schema is exported; never session/account data."""
-    return json.dumps({k:report[k] for k in ("schema_version", "generated_at", "coverage", "sources", "records", "safety", "payout")}, indent=2, allow_nan=False)
+    exported = {k:report[k] for k in ("schema_version", "generated_at", "coverage", "sources", "records", "safety", "payout")}
+    exported["production_commit"] = report.get("production_commit", "unknown")
+    return json.dumps(exported, indent=2, allow_nan=False)
 
 
 def audit_app_candidates(candidates, markets, *, coverage_complete, now=None, promotions=None):
@@ -366,7 +387,7 @@ def audit_app_candidates(candidates, markets, *, coverage_complete, now=None, pr
     result = []
     for c in candidates:
         row = by_ticker.get(c.kalshi_ticker)
-        issues, fee = [], None
+        issues, fee = [reason for reason in c.execution_audit_reasons if reason not in {"prospective_validation_required","scoped_prospective_model_validation_required"}], None
         if not row:
             issues.append("exact_market_missing_from_current_catalog")
         else:
