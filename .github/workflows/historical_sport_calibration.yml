@@ -11,6 +11,7 @@ on:
       - sportsedge-walkforward-source-calibration-20261014
       - sportedge-challenger-models-20261014
       - sportedge-nhl-multimarket-research-20261014
+      - sportedge-soccer-sleeper-20261014
 concurrency:
   group: sportsedge-historical-calibration
   cancel-in-progress: true

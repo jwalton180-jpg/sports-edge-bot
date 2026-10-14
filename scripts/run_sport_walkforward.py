@@ -15,6 +15,7 @@ from sports_edge.models.sport_walkforward import team_walkforward, nhl_player_wa
 from sports_edge.models.sport_calibration import chronological_calibration
 from sports_edge.models.challenger_evaluation import challenger_team_rows, challenger_nhl_rows, matched_holdout
 from sports_edge.models.nhl_prop_walkforward import nhl_prop_walkforward
+from sports_edge.models.soccer_sleeper_walkforward import soccer_sleeper_walkforward
 
 def days(start: date, end: date):
     current = start
@@ -36,6 +37,7 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     predictions = []
     challengers = []
     nhl_prop_predictions = []
+    soccer_sleeper_predictions = []
     sources = {
         "NCAAF": (date(2024, 8, 15), date(2025, 12, 20)),
         "Soccer": (date(2023, 8, 1), date(2025, 5, 31)),
@@ -46,6 +48,8 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
                        "period": [start.isoformat(), end.isoformat()]}
         predictions.extend(team_walkforward(games, sport=sport))
         challengers.extend(challenger_team_rows(games, sport))
+        if sport == "Soccer":
+            soccer_sleeper_predictions.extend(soccer_sleeper_walkforward(games))
     all_ids = nhl_complete_skater_ids(20242025)
     selected = nhl_player_ids if nhl_player_ids else list(all_ids)
     if not set(selected).issubset(set(all_ids)) or len(set(selected)) != len(selected):
@@ -74,12 +78,17 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     for outcome in sorted({r["outcome"] for r in nhl_prop_predictions}):
         selected_rows = [dict(r, sport=outcome) for r in nhl_prop_predictions if r["outcome"]==outcome]
         prop_metrics[outcome] = calibration_report(selected_rows)[outcome]
+    soccer_sleeper_metrics = {}
+    for outcome in sorted({r["outcome"] for r in soccer_sleeper_predictions}):
+        rows = [dict(r,sport=outcome) for r in soccer_sleeper_predictions if r["outcome"]==outcome]
+        soccer_sleeper_metrics[outcome] = calibration_report(rows)[outcome]
     result = {"method": "retrospective_strict_walkforward",
               "live_recommendation_eligible": False,
               "data_coverage": data, "metrics": calibration_report(predictions),
               "temporal_calibration": calibrations,
               "challenger_matched_holdout": comparisons,
-              "nhl_prop_research_by_outcome": prop_metrics}
+              "nhl_prop_research_by_outcome": prop_metrics,
+              "soccer_sleeper_research_by_outcome": soccer_sleeper_metrics}
     (dest / "research_metrics.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     with (dest / "historical_predictions.jsonl").open("w") as fh:
         for row in predictions:
@@ -89,6 +98,9 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     with (dest / "historical_nhl_prop_predictions.jsonl").open("w") as fh:
         for row in nhl_prop_predictions:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    with (dest / "historical_soccer_sleeper_predictions.jsonl").open("w") as fh:
+        for row in soccer_sleeper_predictions:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     return result
 
