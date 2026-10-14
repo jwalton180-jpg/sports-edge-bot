@@ -247,8 +247,8 @@ def test_bounded_grading_rotates_past_open_markets(tmp_path):
             self.calls.append(ticker)
             return SimpleNamespace(data={"market":{"ticker":ticker,"status":"active"}})
     client=Open()
-    ledger.grade_official(client,limit=1)
-    ledger.grade_official(client,limit=1)
+    ledger.grade_official(client,limit=1,now=NOW+timedelta(days=1))
+    ledger.grade_official(client,limit=1,now=NOW+timedelta(days=1))
     assert client.calls==["A","B"]
     ledger.close()
 
@@ -320,3 +320,77 @@ def test_complete_td_tail_requires_complete_counts():
     p=nfl_all_scored_touchdowns(rows,threshold=2,before_time=NOW.isoformat())
     assert p.probability is not None
     assert nfl_all_scored_touchdowns([dict(r,all_scored_tds=None) for r in rows],before_time=NOW.isoformat()).probability is None
+
+
+def test_ledger_does_not_grade_unmodeled_placeholders_or_future_games(tmp_path):
+    from types import SimpleNamespace
+    ledger=SleeperLedger(tmp_path/"big.sqlite")
+    report=example_report()
+    # A typical 10-of-474 bounded scan writes hundreds of placeholders.
+    for i in range(382):
+        r=dict(report["records"][0],ticker=f"KXNHLPTS-PLACEHOLDER-{i}",probability=None,
+               model="unsupported",reasons=["scan_limit_not_analyzed"])
+        report["records"].append(r)
+    ledger.append_scan(report)
+    class NeverCall:
+        def market(self,ticker):
+            raise AssertionError("No unmodeled or future market should be queried")
+    result=ledger.grade_official(NeverCall(),now=NOW)
+    assert result["graded"]==0 and result["due_model_predictions"]==0
+    assert result["future_model_predictions_not_due"]==2
+    assert result["unmodeled_placeholders_excluded"]==382
+    assert result["capacity_complete"] and not result["errors"]
+    assert ledger.metrics()["groups"]==[]
+    ledger.close()
+
+
+def test_grader_only_queries_real_causal_predictions_not_same_day_placeholders(tmp_path):
+    from types import SimpleNamespace
+    ledger=SleeperLedger(tmp_path/"mixed.sqlite")
+    report=example_report()
+    for r in report["records"]:
+        r["observed_at"]="2026-10-13T18:00:00Z"
+        r["event_time"]="2026-10-13T23:30:00Z"
+    for i in range(100):
+        report["records"].append(dict(report["records"][0],
+            ticker=f"DUMMY-{i}",probability=None,model="unsupported",
+            reasons=["scan_limit_not_analyzed"]))
+    ledger.append_scan(report)
+    class Official:
+        base="https://external-api.kalshi.com/trade-api/v2"
+        calls=[]
+        def market(self,ticker):
+            self.calls.append(ticker)
+            return SimpleNamespace(data={"market":{"ticker":ticker,"status":"settled","result":"yes",
+                "settlement_value_dollars":"1.00","settlement_ts":"2026-10-14T01:00:00Z"}})
+    client=Official()
+    result=ledger.grade_official(client,now=NOW)
+    assert result["graded"]==1 and result["checked"]==1
+    assert len(client.calls)==1 and client.calls[0]==market()["ticker"]
+    assert result["unmodeled_placeholders_excluded"]==100
+    assert len(ledger.metrics()["groups"])==2
+    ledger.close()
+
+
+def test_bounded_multi_sport_scan_includes_more_than_first_sport():
+    from types import SimpleNamespace
+    from sports_edge.models.sleeper_pipeline import scan_sleeper_markets
+    nhl=[dict(market(),ticker=f"KXNHLPTS-26OCT14-A-{i}") for i in range(4)]
+    ncaa=[dict(market(),ticker=f"KXNCAAFGAME-26OCT14-B-{i}",series_ticker="KXNCAAFGAME",
+         event_ticker="KXNCAAFGAME-26OCT14ABC",title="Alpha vs Beta",
+         floor_strike=None) for i in range(4)]
+    class Client:
+        calls=[]
+        def market(self,ticker):
+            self.calls.append(ticker)
+            selected=next(m for m in nhl+ncaa if m["ticker"]==ticker)
+            return SimpleNamespace(data={"market":selected},received_at=NOW)
+        def series(self,ticker):
+            return SimpleNamespace(data={"series":{"ticker":ticker,"fee_type":"quadratic","fee_multiplier":1}})
+    client=Client()
+    report=scan_sleeper_markets(nhl+ncaa,coverage_complete=True,limit=2,
+                               client=client,sources=FakeSources(),now=NOW)
+    assert len(client.calls)==2
+    assert {x.split("-",1)[0] for x in client.calls}=={"KXNHLPTS","KXNCAAFGAME"}
+    assert report["coverage"]["analyzed_markets"]==2
+    assert any("scan_limit_not_analyzed" in r["reasons"] for r in report["records"])
