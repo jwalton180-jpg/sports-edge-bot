@@ -67,6 +67,15 @@ def render_sleeper_panel(markets, *, coverage_complete, scope, runner=None):
         if report:
             st.caption("Local evidence is append-only; hosted local storage may reset. Download the full ledger for a durable record. No live win rate is claimed.")
             records = report["records"]
+            margin_rows=[r for r in records if r.get("sport")=="NBA" and r.get("family")=="Spread" and r.get("threshold")==19]
+            if margin_rows:
+                st.subheader("NBA 19+ point victory • research")
+                st.caption("A 19-point win is much rarer than an outright win. Model sensitivity is NOT calibrated confidence; validation is required before recommendations.")
+                st.dataframe(pd.DataFrame([{
+                    "Team":r["participant"],"Side":r["side"],"Model P":r["probability"],
+                    "Sensitivity":str(r["sensitivity_range"]),"Kalshi ask":r["quote"]["ask"],
+                    "Fee":r["quote"]["entry_fee_per_contract"],"Indicative edge":r["net_edge"],
+                    "Status":r["status"]} for r in margin_rows]),use_container_width=True,hide_index=True)
             st.dataframe(pd.DataFrame([{
                 "Sport":r["sport"], "Market":r["family"], "Participant":r["participant"],
                 "Threshold":r["threshold"], "Side":r["side"], "Ask":r["quote"]["ask"],
