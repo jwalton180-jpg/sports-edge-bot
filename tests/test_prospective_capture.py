@@ -32,3 +32,16 @@ def test_canonical_hash_and_expiration():
     assert canonical_bytes({"b":2,"a":1})==canonical_bytes({"a":1,"b":2})
     with pytest.raises(ValueError):canonical_bytes({"p":float("nan")})
     assert END_UTC>NOW
+
+
+def test_nba_research_sampling_only_exact_18_5_and_bounded():
+    from sports_edge.models.prospective_capture import model_family_supported
+    rows=[dict(market(f"KXNBASPREAD-{i}","NBA",24),
+               floor_strike=18.5,strike_type="greater") for i in range(15)]
+    wrong=[dict(rows[0],ticker="KXNBASPREAD-wrong",floor_strike=16.5)]
+    assert model_family_supported(rows[0],"NBA")
+    assert not model_family_supported(wrong[0],"NBA")
+    chosen,meta=select_markets(rows+wrong,now=NOW)
+    assert len(chosen)==6
+    assert all(m["floor_strike"]==18.5 for m in chosen)
+    assert meta["sample_by_sport"]["NBA"]==6
