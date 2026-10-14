@@ -1494,6 +1494,22 @@ elif view == "Game Lines":
         family = st.selectbox("Market type", family_options, key=f"kalshi_lines_{sport_filter}")
         show_rows = line_rows if family == "All" else [row for row in line_rows if row.family == family]
         st.dataframe(kalshi_market_table(show_rows[:250]), use_container_width=True, hide_index=True)
+        if sport_filter in {"NHL", "NCAAF", "Soccer"}:
+            st.caption("Independent models for this sport are in research mode. A listed Kalshi price is not an independent probability or a recommendation.")
+            research_export = [
+                {"sport": r.sport, "family": r.family,
+                 "ticker": str(r.market.get("ticker") or ""),
+                 "event": str(r.market.get("event_title") or r.market.get("title") or ""),
+                 "yes_ask": r.market.get("yes_ask_dollars"),
+                 "no_ask": r.market.get("no_ask_dollars"),
+                 "status": "RESEARCH_ONLY", "reason": "prospective_model_validation_required"}
+                for r in show_rows
+            ]
+            st.download_button("Export research-only market evidence (JSON)",
+                               data=json.dumps(research_export, default=str, indent=2),
+                               file_name=f"sportsedge_{sport_filter.lower()}_research.json",
+                               mime="application/json", key=f"research_export_{sport_filter}")
+
 
 elif view == "Player Props":
     _section_hero("PLAYER LAB", "Props with model accountability", "See the real Kalshi prop board, then run independent Sports Edge models only where production-grade player evidence exists.")
