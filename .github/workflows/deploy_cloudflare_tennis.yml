@@ -1,0 +1,100 @@
+name: Deploy Cloudflare Tennis Sentinel
+
+# Explicit owner-only opt-in; NEVER deploy Railway, shared Ubuntu or other bots.
+on:
+  workflow_dispatch:
+    inputs:
+      send_test_notification:
+        description: 'Send one labeled ntfy test message to the existing iPhone topic'
+        type: boolean
+        default: true
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-tennis-sentinel-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: cloudflare-tennis-sentinel
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TOPIC: ${{ secrets.SPORTSEDGE_NTFY_TOPIC }}
+      NTFY_TOKEN: ${{ secrets.SPORTSEDGE_NTFY_TOKEN }}
+      NTFY_SERVER: ${{ secrets.SPORTSEDGE_NTFY_SERVER }}
+      HEALTH_TOKEN: ${{ secrets.SPORTSEDGE_HEALTH_TOKEN }}
+      CI: 'true'
+    defaults:
+      run:
+        working-directory: deploy/cloudflare_tennis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify read-only safety tests first
+        working-directory: .
+        run: node --test tests/cloudflare_tennis_sentinel.test.mjs
+      - name: Refuse unconfigured deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$HEALTH_TOKEN"
+          [[ "$TOPIC" =~ ^[A-Za-z0-9_-]{24,64}$ ]]
+          echo 'Required Cloudflare/ntfy/health secrets are present (not disclosed).'
+      - name: Install Wrangler CLI
+        run: npm install --no-save --no-audit --no-fund wrangler@4
+      - name: Create or reuse isolated free D1 database
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > "$RUNNER_TEMP/sportsedge_d1_list.json"
+          uuid="$(node -e 'const x=require(process.argv[1]);const a=Array.isArray(x)?x:(x.result??x.databases??[]);console.log(a.find(y=>y.name==="sportsedge-tennis-sentinel")?.uuid??"")' "$RUNNER_TEMP/sportsedge_d1_list.json")"
+          if [ -z "$uuid" ]; then
+            # D1 Free limits are enforced by Cloudflare; never enable a paid plan.
+            npx wrangler d1 create sportsedge-tennis-sentinel --binding TENNIS_DB --use-remote > "$RUNNER_TEMP/sportsedge_d1_create.txt"
+            npx wrangler d1 list --json > "$RUNNER_TEMP/sportsedge_d1_list.json"
+            uuid="$(node -e 'const x=require(process.argv[1]);const a=Array.isArray(x)?x:(x.result??x.databases??[]);console.log(a.find(y=>y.name==="sportsedge-tennis-sentinel")?.uuid??"")' "$RUNNER_TEMP/sportsedge_d1_list.json")"
+          fi
+          [[ "$uuid" =~ ^[a-fA-F0-9-]{36}$ ]]
+          sed -i "s/11111111-1111-1111-1111-111111111111/${uuid}/" wrangler.toml
+          echo 'Validated isolated D1 database binding.'
+      - name: Apply backward-compatible database schema
+        run: npx wrangler d1 execute sportsedge-tennis-sentinel --config wrangler.toml --file schema.sql --remote --yes
+      - name: Deploy only the Cloudflare Tennis Worker
+        run: npx wrangler deploy --config wrangler.toml
+      - name: Configure existing ntfy topic and health secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$TOPIC" | npx wrangler secret put SPORTSEDGE_NTFY_TOPIC --config wrangler.toml >/dev/null
+          printf '%s' "$HEALTH_TOKEN" | npx wrangler secret put SPORTSEDGE_HEALTH_TOKEN --config wrangler.toml >/dev/null
+          if [ -n "$NTFY_TOKEN" ]; then printf '%s' "$NTFY_TOKEN" | npx wrangler secret put SPORTSEDGE_NTFY_TOKEN --config wrangler.toml >/dev/null; fi
+          if [ -n "$NTFY_SERVER" ]; then printf '%s' "$NTFY_SERVER" | npx wrangler secret put SPORTSEDGE_NTFY_SERVER --config wrangler.toml >/dev/null; fi
+          echo 'Cloudflare secrets configured. Never log actual ntfy topic or token.'
+      - name: Optional labeled phone delivery smoke
+        if: ${{ inputs.send_test_notification }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin="${NTFY_SERVER:-https://ntfy.sh}"
+          [[ "$origin" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
+          node -e 'process.stdout.write(JSON.stringify({topic:process.env.TOPIC,title:"SportsEdge Cloudflare Sentinel - TEST",message:"Cloudflare deployment pipeline test; NOT a Tennis trade alert. Please confirm receipt on iPhone.",priority:3,tags:["tennis","white_check_mark"]}))' > "$RUNNER_TEMP/cloudflare_sentinel_test_payload.json"
+          if [ -n "$NTFY_TOKEN" ]; then
+            curl --fail --silent --show-error --max-time 10 -H 'Content-Type: application/json' -H "Authorization: Bearer $NTFY_TOKEN" --data-binary "@$RUNNER_TEMP/cloudflare_sentinel_test_payload.json" "$origin/" >/dev/null
+          else
+            curl --fail --silent --show-error --max-time 10 -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/cloudflare_sentinel_test_payload.json" "$origin/" >/dev/null
+          fi
+          echo 'ntfy HTTP accepted TEST only; iOS display requires owner confirmation.'
+      - name: Deployment does not prove prospective reliability
+        run: |
+          echo 'Worker deployed; validate Cloudflare Cron logs, actual 10ms CPU fit, D1 runs, score availability, and iOS notifications over at least 24h.'
+          echo 'Keep GitHub observers enabled. No Railway or Ubuntu resources touched.'

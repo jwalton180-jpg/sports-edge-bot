@@ -1,0 +1,40 @@
+name: Cloudflare Tennis Sentinel safety tests
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/cloudflare_tennis/**'
+      - 'tests/cloudflare_tennis_sentinel.test.mjs'
+      - '.github/workflows/cloudflare_tennis_sentinel_ci.yml'
+      - '.github/workflows/deploy_cloudflare_tennis.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/cloudflare_tennis/**'
+      - 'tests/cloudflare_tennis_sentinel.test.mjs'
+      - '.github/workflows/cloudflare_tennis_sentinel_ci.yml'
+      - '.github/workflows/deploy_cloudflare_tennis.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-orders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Cloudflare isolated sentinel test suite
+        run: node --test tests/cloudflare_tennis_sentinel.test.mjs
+      - name: Assert deployment scope and ban execution endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Eiq 'orders/(create|cancel)|/portfolio/(orders|positions)|/trade-api/v2/portfolio|ORDER_SUBMISSION_ENABLED[[:space:]]*=[[:space:]]*"true"' deploy/cloudflare_tennis/worker.mjs deploy/cloudflare_tennis/wrangler.toml
+          grep -q 'READ_ONLY_KALSHI = "true"' deploy/cloudflare_tennis/wrangler.toml
+          grep -q 'LIVE_TRADING = "false"' deploy/cloudflare_tennis/wrangler.toml
+          grep -q 'ORDER_SUBMISSION_ENABLED = "false"' deploy/cloudflare_tennis/wrangler.toml
+          echo 'PASS: cloud worker has no trade endpoints or enabled trading flags'
