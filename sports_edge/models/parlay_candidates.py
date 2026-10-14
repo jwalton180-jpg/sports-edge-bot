@@ -47,6 +47,8 @@ class ParlayCandidateLeg:
     execution_audit_status: str | None = None
     execution_audit_reasons: tuple[str, ...] = ()
     entry_fee_per_contract: float | None = None
+    verified_start: str | None = None
+    validation_reviewed: bool = False
 
 
 @dataclass(frozen=True)

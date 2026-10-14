@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from functools import lru_cache
 
 import requests
@@ -39,6 +39,7 @@ class NFLPlayerContext:
     game_title: str
     current_rows: tuple[dict, ...]
     prior_rows: tuple[dict, ...]
+    scheduled_start: str | None = None
 
 
 def _aliases(value: str | None) -> set[str]:
@@ -212,6 +213,17 @@ def player_context(
     if scheduled is None:
         return None
     opponent, game_title = scheduled
+    schedule=[r for r in schedule_rows() if str(r.get("season"))==str(season)
+              and str(r.get("gameday"))==event_date.isoformat()
+              and {r.get("home_team"),r.get("away_team")}=={team,opponent}]
+    start=None
+    if len(schedule)==1 and schedule[0].get("gametime"):
+        from zoneinfo import ZoneInfo
+        try:
+            local=datetime.fromisoformat(event_date.isoformat()+"T"+str(schedule[0]["gametime"])).replace(tzinfo=ZoneInfo("America/New_York"))
+            start=local.astimezone(timezone.utc).isoformat()
+        except ValueError:
+            pass
 
     if event_ticker:
         team_code = _KALSHI_TEAM_CODES.get(team, team)
@@ -230,6 +242,7 @@ def player_context(
         game_title=game_title,
         current_rows=tuple(current),
         prior_rows=tuple(prior),
+        scheduled_start=start,
     )
 
 

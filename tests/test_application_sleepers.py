@@ -269,3 +269,43 @@ def test_nhl_live_game_log_is_not_treated_as_completed_history():
         return {"games":[{"id":7,"gameState":"LIVE","startTimeUTC":"2026-10-12T23:30:00Z"}]}
     sources.get=get
     assert sources.nhl_player(market(),"Alpha Player")["rows"] == []
+
+
+def test_independent_kickoff_overrides_occurrence_and_blocks_live_pregame_model():
+    class Started(FakeSources):
+        def nhl_player(self,m,p):
+            return {"rows":history(),"start":(NOW-timedelta(hours=1)).isoformat(),"missing":[]}
+    report=scan_sleeper_markets([market()],coverage_complete=True,client=FakeClient(),sources=Started(),now=NOW)
+    assert all(r["probability"] is None and r["start_verified"] for r in report["records"])
+    assert all("independent_start_passed_requires_live_model" in r["reasons"] for r in report["records"])
+
+
+def test_nhl_schedule_join_does_not_assume_occurrence_is_kickoff():
+    from sports_edge.data.sleeper_sources import SleeperSources
+    sources=SleeperSources()
+    g={"id":7,"gameType":2,"gameScheduleState":"OK","startTimeUTC":"2026-10-14T23:30:00Z",
+       "awayTeam":{"abbrev":"MTL"},"homeTeam":{"abbrev":"WSH"}}
+    sources.get=lambda *a,**k:{"gameWeek":[{"date":"2026-10-14","games":[g]}]}
+    m=dict(market(),occurrence_datetime="2026-10-15T02:30:00Z")
+    assert sources.nhl_match(m)["startTimeUTC"]=="2026-10-14T23:30:00Z"
+
+
+def test_credited_scorers_include_returns_once_and_exclude_passers_and_cancelled_plays():
+    from sports_edge.data.nfl_scoring_credits import normalize_scoring_credits
+    rows=[{"season_type":"REG","game_id":"G","play_id":str(i),"play_type":kind,
+           "touchdown":"1","td_player_id":scorer,"passer_player_id":"QB"}
+          for i,(kind,scorer) in enumerate([("pass","Receiver"),("kickoff","Returner"),("punt","Returner")])]
+    rows.append({"season_type":"REG","game_id":"G","play_id":"9","play_type":"no_play","touchdown":"1","td_player_id":"QB"})
+    counts,games=normalize_scoring_credits(rows)
+    assert counts[("G","Returner")]==2 and counts[("G","Receiver")]==1
+    assert ("G","QB") not in counts and "G" in games
+    with pytest.raises(ValueError):
+        normalize_scoring_credits(rows+[rows[0]])
+
+
+def test_complete_td_tail_requires_complete_counts():
+    from sports_edge.models.sleeper_counts import nfl_all_scored_touchdowns
+    rows=[dict(r,source="nflverse",all_scored_tds=int(i%3==0)) for i,r in enumerate(history())]
+    p=nfl_all_scored_touchdowns(rows,threshold=2,before_time=NOW.isoformat())
+    assert p.probability is not None
+    assert nfl_all_scored_touchdowns([dict(r,all_scored_tds=None) for r in rows],before_time=NOW.isoformat()).probability is None

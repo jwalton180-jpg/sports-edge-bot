@@ -1,5 +1,5 @@
 """Shared mobile-friendly evidence surface across the on-demand application."""
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import pandas as pd
@@ -17,16 +17,30 @@ def render_sleeper_panel(markets, *, coverage_complete, scope, runner=None):
         selected, unknown = [], 0
         for m in markets:
             try:
-                if utc(m["occurrence_datetime"]).astimezone(ZoneInfo("Pacific/Honolulu")).date() == day:
+                if abs(utc(m["occurrence_datetime"]).astimezone(ZoneInfo("Pacific/Honolulu")).date()-day) <= timedelta(days=1):
                     selected.append(m)
             except (KeyError, ValueError, TypeError):
                 unknown += 1
         complete = coverage_complete and unknown == 0
-        st.caption(f"{len(selected)} listed contracts on this date; {unknown} lack a verified start time. Catalog {'complete' if complete else 'incomplete'}.")
+        st.caption(f"{len(selected)} listed contracts near this date; actual starts are verified during the scan; {unknown} lack a verified start time. Catalog {'complete' if complete else 'incomplete'}.")
         key = "sleeper_report_"+scope+"_"+day.isoformat()
         if st.button("Run sleeper value scan", key="sleeper_scan_"+scope, use_container_width=True):
             with st.spinner("Checking independent history, both sides, rules and executable costs…"):
                 report = (runner or run_application_sleeper_scan)(selected, coverage_complete=complete, limit=int(limit))
+                verified=[]
+                unknown_starts=0
+                for record in report["records"]:
+                    if record.get("start_verified"):
+                        if utc(record["event_time"]).astimezone(ZoneInfo("Pacific/Honolulu")).date()==day:
+                            verified.append(record)
+                    else:
+                        unknown_starts+=1
+                        verified.append(record)
+                report["records"]=verified
+                report["coverage"]["requested_hst_date"]=day.isoformat()
+                report["coverage"]["unverified_start_records"]=unknown_starts
+                if unknown_starts:
+                    report["coverage"]["catalog_complete"]=False
                 ledger = None
                 try:
                     ledger = SleeperLedger(Path("research/sleeper_ledger.sqlite"))

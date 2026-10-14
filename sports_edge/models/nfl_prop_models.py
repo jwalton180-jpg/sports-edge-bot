@@ -1004,9 +1004,11 @@ def project_nfl_touchdowns(
     # Passing scores never enter the scorer count, including quarterback legs.
     tail = None
     if all(r.get("date") for r in (*ctx.prior_rows, *ctx.current_rows)):
-        from sports_edge.models.sleeper_counts import nfl_scored_touchdowns
+        from sports_edge.models.sleeper_counts import nfl_all_scored_touchdowns
+        from sports_edge.data.nfl_scoring_credits import attach_scored_totals
         rows = [dict(r, source="nflverse", player_id=ctx.player_id) for r in (*ctx.prior_rows, *ctx.current_rows)]
-        tail = nfl_scored_touchdowns(rows, threshold=milestone_tds,
+        rows,credit_sources=attach_scored_totals(rows)
+        tail = nfl_all_scored_touchdowns(rows, threshold=milestone_tds,
                                      before_time=ctx.event_date.isoformat()+"T00:00:00Z")
         if tail.probability is None:
             return None
@@ -1018,6 +1020,7 @@ def project_nfl_touchdowns(
         f"Expected carries + targets {expected_opp:.1f}",
         f"Scored touchdown mean {lam:.2f}; tail distribution includes empirical dispersion",
         "Passing TDs are excluded from this scorer market model",
+        "Timestamped histories use credited scorers for return/defensive/fumble touchdowns as well",
     ]
     if tail is not None:
         factors.extend([f"Dispersed tail sensitivity {tail.lower:.1%}–{tail.upper:.1%}; not a calibrated confidence interval", *tail.reasons])
@@ -1043,7 +1046,7 @@ def project_nfl_touchdowns(
 
     evidence = ModelEvidence(
         sport="NFL",
-        model_name="NFL Touchdowns: rushing/receiving scoring rate + opportunity + prior",
+        model_name="nfl_all_credited_td_dispersion_v3" if tail is not None else "NFL offensive-only unverified scorer prior",
         fair_probability=probability,
         confidence=confidence,
         sample_size=sample,

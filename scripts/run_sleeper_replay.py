@@ -12,7 +12,7 @@ import hashlib
 from pathlib import Path
 
 from sports_edge.data.sleeper_sources import SleeperSources, NHL
-from sports_edge.models.sleeper_counts import nhl_count, nfl_scored_touchdowns
+from sports_edge.models.sleeper_counts import nhl_count, nfl_scored_touchdowns, nfl_all_scored_touchdowns
 from sports_edge.models.sport_calibration import chronological_calibration
 
 
@@ -45,8 +45,9 @@ def replay(log, *, sport, field, threshold):
     for i,r in enumerate(ordered):
         before=r["date"]+"T00:00:00Z"
         projection=(nhl_count(ordered[:i],market=field,threshold=threshold,before_time=before)
-                    if sport=="NHL" else nfl_scored_touchdowns(ordered[:i],threshold=threshold,before_time=before))
-        value=r.get(field) if sport=="NHL" else r.get("scored_tds")
+                    if sport=="NHL" else nfl_all_scored_touchdowns(ordered[:i],threshold=threshold,before_time=before)
+                    if field=="all_scored_tds" else nfl_scored_touchdowns(ordered[:i],threshold=threshold,before_time=before))
+        value=r.get(field)
         if projection.probability is None or type(value) is not int:
             continue
         pid=r.get("player_id") or r.get("team_id")
@@ -132,12 +133,19 @@ def run(output_dir, sample_size=4):
             if any(not isfinite(v) or v<0 or not v.is_integer() for v in values):
                 raise ValueError("invalid official touchdown count")
             groups[r["player_id"]].append(dict(r,source="nflverse",scored_tds=int(sum(values))))
+        from sports_edge.data.nfl_scoring_credits import attach_scored_totals
+        credited,credit_sources=attach_scored_totals([r for values in groups.values() for r in values])
+        sources.provenance.extend(credit_sources)
+        credited_groups=defaultdict(list)
+        for row in credited:
+            credited_groups[row["player_id"]].append(row)
         eligible={k:v for k,v in groups.items() if len(v)>=12}
         selected=sorted(eligible)[:sample_size] if sample_size else sorted(eligible)
         coverage["NFL"]={"eligible_players":len(eligible),"sampled":len(selected),"representative":not sample_size,
                          "source":"nflverse stats_player_week_2025; schedule-joined causal dates"}
         for pid in selected:
             records.extend(replay(eligible[pid],sport="NFL",field="scored_tds",threshold=2))
+            records.extend(replay(credited_groups[pid],sport="NFL",field="all_scored_tds",threshold=2))
     except Exception as exc:
         failures.append("NFL source collection failed:"+type(exc).__name__)
     metrics={}

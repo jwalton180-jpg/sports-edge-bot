@@ -23,7 +23,7 @@ The existing on-demand Streamlit application exposes the same **Sleeper value �
 - Taker costs use verified quadratic series metadata and `ceil(0.07 * multiplier * quantity * price * (1-price) * 100)/100`. Break-even is ask plus the per-contract entry fee. Unknown/flat fee schedules are unpriced. The displayed size and quote are not a promise of a fill.
 - Count floors must be half-integers and agree with the primary rule's threshold. Variable-payoff ladders/escalators are not treated as $1 binary contracts.
 - NHL team histories reproduce the contract's OT/shootout treatment. The observed KXNHLTEAMTOTAL rule credits the shootout winner with one additional goal; models for that rule use official final scores including the bonus.
-- Exact participant/schedule joins and UTC start times are required. Conflicting independent start times reject a join; settlement/expiration dates cannot replace kickoff.
+- Exact participants, nominal event dates and independently verified UTC kickoff times are required. Some observed Kalshi occurrence fields described a later time, so the pipeline preserves that field separately and uses the independent schedule for kickoff. Started games require a live model. The Hawaiʻi filter verifies the actual start date after resolving nearby inventory; unverified starts keep coverage incomplete. Settlement/expiration dates cannot replace kickoff.
 - Main overview discovery is bounded. The full ticket catalog opts into metadata discovery and exhausts cursors; scan caps, source failures and unknown starts are exposed. Incomplete coverage is never an exhaustive “no opportunities” claim.
 
 ## Tickets
@@ -52,3 +52,9 @@ The first replay is labeled a nonrepresentative source-integration smoke; the se
 Primary references: [Kalshi public orderbook semantics](https://docs.kalshi.com/getting_started/orderbook_responses), [Kalshi fee schedule](https://kalshi.com/docs/kalshi-fee-schedule.pdf), [NHL API](https://api-web.nhle.com/v1/), [NHL official statistics](https://api.nhle.com/stats/rest/en/), [nflverse source releases](https://github.com/nflverse/nflverse-data/releases), [ESPN public scoreboards](https://site.api.espn.com/apis/site/v2/sports/), [sportsdataverse releases](https://github.com/sportsdataverse/sportsdataverse-data/releases).
 
 No Railway, paid service, scheduled continuous runtime, shared Ubuntu host change, trading action or unrelated project modification is introduced.
+
+### Exact NFL scorer scope
+
+The offensive-only v2 replay is retained as a benchmark, rather than rewritten. The current v3 scorer model uses nflverse play-by-play `td_player_id` credits for each actual touchdown, covering offensive, return, defensive and fumble scores exactly once and excluding the passer for a passing TD. Cancelled plays and duplicate or missing credits fail closed. Missing games cannot be assumed to have zero touchdowns. The complete-population replay separately reports v2 and v3. Source payload hashes and retrieval times accompany v3 inputs. None of this automatically promotes v3 to recommendations.
+
+Authenticated statistical review is a separate usability signal from heuristic confidence; approved scopes can pass the model-usability guard without inventing a new confidence percentage. Fresh market, kickoff, availability and contract-input guards still apply.
