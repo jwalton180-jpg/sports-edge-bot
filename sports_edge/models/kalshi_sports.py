@@ -435,35 +435,32 @@ def choose_kalshi_ticket(
     mode: str,
     target_legs: int,
     max_per_event: int = 1,
+    verified_value: dict[tuple[str, str], object] | None = None,
 ) -> list[KalshiSideCandidate]:
-    """Build distinct Kalshi-first ticket profiles.
+    """Only select independently qualified value, never price/volume proxies.
 
-    Longshot is only a candidate profile until independent fair value exists;
-    it must not be presented as positive EV merely because the price is low.
+    Callers without verified_value intentionally receive an empty ticket:
+    discovery-only markets must not be presented as recommended legs.
     """
-    if mode == "longshot":
-        pool = [candidate for candidate in candidates if 0.05 <= candidate.price <= 0.35]
-        pool.sort(
-            key=lambda candidate: (
-                candidate.volume,
-                -abs(candidate.price - 0.20),
-            ),
-            reverse=True,
-        )
-    else:
-        pool = [candidate for candidate in candidates if 0.40 <= candidate.price <= 0.82]
-        pool.sort(
-            key=lambda candidate: (
-                candidate.volume,
-                candidate.price,
-            ),
-            reverse=True,
-        )
-
+    if target_legs <= 0 or max_per_event <= 0 or not verified_value:
+        return []
+    eligible: list[tuple[float, KalshiSideCandidate]] = []
+    for candidate in candidates:
+        audit = verified_value.get((candidate.ticker, candidate.side))
+        if audit is None or getattr(audit, "status", None) != "QUALIFIED_VALUE":
+            continue
+        executable = getattr(audit, "executable_price", None)
+        edge = getattr(audit, "edge", None)
+        if executable is None or edge is None or edge <= 0:
+            continue
+        if abs(executable - candidate.price) > 0.000001:
+            continue  # reject stale or different quote snapshots
+        eligible.append((edge, candidate))
+    eligible.sort(key=lambda item: item[0], reverse=True)
     selected: list[KalshiSideCandidate] = []
     event_counts: dict[str, int] = {}
     used_tickers: set[str] = set()
-    for candidate in pool:
+    for _, candidate in eligible:
         if candidate.ticker in used_tickers:
             continue
         if event_counts.get(candidate.event_key, 0) >= max_per_event:
