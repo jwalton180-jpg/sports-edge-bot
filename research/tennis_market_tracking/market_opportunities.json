@@ -149,10 +149,10 @@
       "lane": "PRICE RECOVERY \u2014 TRACKING ONLY",
       "max_observed_gross_return_pct": -13.33,
       "max_observed_quote_improvement_pp": -2.0,
-      "post_alert_sample_count": 1,
+      "post_alert_sample_count": 2,
       "status": "sampled",
       "ticker": "KXWTAMATCH-26OCT13JOVYAS-YAS",
-      "worst_observed_bid": 0.13
+      "worst_observed_bid": 0.07
     },
     {
       "accepted_at": "2026-10-14T05:17:06.200580+00:00",
