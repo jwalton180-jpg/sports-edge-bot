@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt pytest
       - name: Model, rule, quote, ledger and mobile action regressions
-        run: python -m pytest -q tests/test_application_sleepers.py tests/test_sleeper_panel.py tests/test_prospective_promotion.py
+        run: python -m pytest -q tests/test_application_sleepers.py tests/test_sleeper_panel.py tests/test_prospective_promotion.py tests/test_prospective_review.py
       - name: Official NHL and nflverse source integration smoke (not representative validation)
         run: python -m scripts.run_sleeper_replay --output-dir sleeper-source-smoke --sample-size 4
       - uses: actions/upload-artifact@v4

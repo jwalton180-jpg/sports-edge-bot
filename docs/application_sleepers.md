@@ -52,3 +52,9 @@ The first replay is labeled a nonrepresentative source-integration smoke; the se
 Primary references: [Kalshi public orderbook semantics](https://docs.kalshi.com/getting_started/orderbook_responses), [Kalshi fee schedule](https://kalshi.com/docs/kalshi-fee-schedule.pdf), [NHL API](https://api-web.nhle.com/v1/), [NHL official statistics](https://api.nhle.com/stats/rest/en/), [nflverse source releases](https://github.com/nflverse/nflverse-data/releases), [ESPN public scoreboards](https://site.api.espn.com/apis/site/v2/sports/), [sportsdataverse releases](https://github.com/sportsdataverse/sportsdataverse-data/releases).
 
 No Railway, paid service, scheduled continuous runtime, shared Ubuntu host change, trading action or unrelated project modification is introduced.
+
+## First-outcome prospective review export (not live promotion)
+
+After running a sleeper scan, use **Export prospective review dataset (JSON)**. It canonically retains the earliest YES-side model forecast per contract, model and outcome; later rescans and the complementary NO side cannot inflate samples. Verified binary official results can be attached on a later session using the existing bounded GET-only grading. Void and fair-price resolutions never count as ordinary wins. The output includes source timestamps, prediction identities, indicative prices, missing evidence and a breakdown by sport.
+
+**This export is deliberately unattested.** Neither the downloaded JSON file nor ephemeral local SQLite proves the prediction was externally timestamped before the game. This prevents retrospective editing from being confused with a prospective holdout. An independently time-stamped remote archive, a preregistered baseline, authenticated source review, and sufficient future official results are still required before the signed model-promotion gate can pass. No 24/7 process or paid hosting is introduced.

@@ -110,5 +110,10 @@ class SleeperLedger:
         return "".join(json.dumps({"id":i,"kind":k,"payload":json.loads(p)}, sort_keys=True)+"\n"
                        for i,k,p in self.db.execute("SELECT id,kind,payload FROM records ORDER BY rowid"))
 
+    def prospective_review(self):
+        """Prepare a read-only, explicitly unattested study dataset."""
+        from sports_edge.models.prospective_review import prospective_review_export
+        return prospective_review_export(self.export_jsonl())
+
     def close(self):
         self.db.close()
