@@ -7,7 +7,7 @@ from sports_edge.models.game_scope import looks_like_future, normalize
 from sports_edge.models.live_board import market_side_probability
 
 
-SUPPORTED_SPORTS: tuple[str, ...] = ("MLB", "NBA", "WNBA", "NFL", "Tennis")
+SUPPORTED_SPORTS: tuple[str, ...] = ("MLB", "NBA", "WNBA", "NFL", "Tennis", "NHL", "NCAAF", "Soccer")
 
 
 @dataclass(frozen=True)
@@ -168,6 +168,35 @@ def _tennis_family(series: str) -> str:
     return "Other Tennis"
 
 
+def _hockey_family(series: str) -> str:
+    for tokens, family in (
+        (("PLAYERGOALS", "GOALSCORER", "ANYTIMEGOAL"), "Player Goals"),
+        (("PLAYERSHOTS", "SHOTSONGOAL"), "Shots on Goal"),
+        (("PLAYERPOINTS",), "Player Points"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("SPREAD", "PUCKLINE"), "Puck Line"),
+        (("TOTAL",), "Game Total"),
+        (("GAME", "WINNER"), "Moneyline"),
+    ):
+        if _contains(series, *tokens):
+            return family
+    return "Other NHL"
+
+
+def _soccer_family(series: str) -> str:
+    for tokens, family in (
+        (("ANYTIMEGOAL", "GOALSCORER", "PLAYERGOALS"), "Player Goals"),
+        (("BTTS", "BOTHSCOR"), "Both Teams Score"),
+        (("TEAMTOTAL",), "Team Total"),
+        (("SPREAD", "HANDICAP"), "Handicap"),
+        (("TOTAL",), "Game Total"),
+        (("GAME", "MATCH", "WINNER"), "Match Result"),
+    ):
+        if _contains(series, *tokens):
+            return family
+    return "Other Soccer"
+
+
 def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
     """Classify any supported current-event market without requiring a whitelist.
 
@@ -194,7 +223,19 @@ def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
             return "NFL", _football_family(series)
         if discovered_sport == "Tennis":
             return "Tennis", _tennis_family(series)
+        if discovered_sport == "NHL":
+            return "NHL", _hockey_family(series)
+        if discovered_sport == "NCAAF":
+            return "NCAAF", _football_family(series)
+        if discovered_sport == "Soccer":
+            return "Soccer", _soccer_family(series)
 
+    if series.startswith("KXNHL"):
+        return "NHL", _hockey_family(series)
+    if series.startswith(("KXNCAAF", "KXCFB", "KXCOLLEGEFOOTBALL")):
+        return "NCAAF", _football_family(series)
+    if series.startswith(("KXSOCCER", "KXEPL", "KXMLS", "KXUCL", "KXLALIGA", "KXSERIEA")):
+        return "Soccer", _soccer_family(series)
     if series.startswith("KXMLB"):
         return "MLB", _baseball_family(series)
     if series.startswith("KXNBA"):
@@ -209,6 +250,12 @@ def classify_kalshi_market(market: dict) -> tuple[str, str] | None:
     # Metadata fallback for future ticker changes. This is intentionally
     # conservative and only applies when sport identity is explicit.
     text = _text(market)
+    if any(x in text for x in (" nhl ", " national hockey league ")):
+        return "NHL", "Other NHL"
+    if any(x in text for x in (" ncaaf ", " college football ", " ncaa football ")):
+        return "NCAAF", "Other NCAAF"
+    if any(x in text for x in (" soccer ", " premier league ", " champions league ", " mls ")):
+        return "Soccer", "Other Soccer"
     if any(x in text for x in (" major league baseball ", " mlb ", " pro baseball ")):
         return "MLB", "Other MLB"
     if any(x in text for x in (" national basketball association ", " nba ", " pro basketball ")):
@@ -259,7 +306,7 @@ def catalog_diagnostics(markets: Iterable[dict]) -> CatalogDiagnostics:
         series = _series(market)
         if (
             not looks_like_future(market)
-            and series.startswith(("KXMLB", "KXNBA", "KXWNBA", "KXNFL", "KXATP", "KXWTA", "KXITF"))
+            and series.startswith(("KXMLB", "KXNBA", "KXWNBA", "KXNFL", "KXATP", "KXWTA", "KXITF", "KXNHL", "KXNCAAF", "KXCFB", "KXSOCCER", "KXEPL", "KXMLS", "KXUCL"))
         ):
             unknown_prefixes.add(series)
 
@@ -288,6 +335,12 @@ def prop_families(sport: str) -> set[str]:
             "Points + Rebounds + Assists", "Steals", "Blocks",
             "Double Double", f"Other {sport}",
         }
+    if sport == "NHL":
+        return {"Player Goals", "Shots on Goal", "Player Points", "Other NHL"}
+    if sport == "NCAAF":
+        return {"Passing Yards", "Rushing Yards", "Receiving Yards", "Player Touchdowns", "Other NFL"}
+    if sport == "Soccer":
+        return {"Player Goals", "Other Soccer"}
     if sport == "Tennis":
         return {
             "Match Winner", "Doubles Match Winner", "Set Winner", "Any Set Winner",
