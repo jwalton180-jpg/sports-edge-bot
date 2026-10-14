@@ -44,42 +44,87 @@ class SleeperLedger:
             self.db.execute("INSERT INTO records VALUES (?,?,?)",(key,"settlement",payload))
         return key
 
-    def grade_official(self, client, *, limit=40):
-        """On-demand read-only final-market grading. Open/ambiguous results wait."""
+    def grade_official(self, client, *, limit=40, now=None):
+        """Grade due, causal independent forecasts; do not spend requests on placeholders.
+
+        The full evidence ledger retains all rejected/unmodeled records, but
+        those are NOT model predictions and cannot contribute to win rates.
+        Remaining future games are not grading backlog. Per-run request budget
+        stays bounded; a persisted cursor rotates past unresolved open games.
+        """
+        from math import isfinite
+        from sports_edge.models.sleeper_counts import utc
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("bounded positive grading limit required")
-        pending=[]
-        for scan_id,payload in self.db.execute("SELECT id,payload FROM records WHERE kind='scan'"):
-            report=json.loads(payload)
-            for ticker in dict.fromkeys(r["ticker"] for r in report["records"]):
-                key=hashlib.sha256((scan_id+":"+ticker).encode()).hexdigest()
+        current = now or datetime.now(timezone.utc)
+        pending = []
+        unmodeled, not_due, noncausal = 0, 0, 0
+        for scan_id, payload in self.db.execute("SELECT id,payload FROM records WHERE kind='scan' ORDER BY rowid"):
+            report = json.loads(payload)
+            tickers = {}
+            for row in report.get("records", []):
+                ticker = row.get("ticker")
+                if not ticker:
+                    continue
+                try:
+                    p = row.get("probability")
+                    if type(p) not in (int,float) or not isfinite(p) or not 0 <= p <= 1:
+                        unmodeled += 1
+                        continue
+                    if ("scan_limit_not_analyzed" in row.get("reasons",())
+                        or row.get("model") in (None,"unsupported")):
+                        unmodeled += 1
+                        continue
+                    start = utc(row["event_time"])
+                    observed = utc(row["observed_at"])
+                    if observed >= start or (row.get("sport") in {"NHL","NCAAF","Soccer","NBA","WNBA"}
+                         and not row.get("start_verified")):
+                        noncausal += 1
+                        continue
+                    if start >= current:
+                        not_due += 1
+                        continue
+                    tickers[ticker] = True
+                except (ValueError,TypeError,KeyError):
+                    noncausal += 1
+            for ticker in tickers:
+                key = hashlib.sha256((scan_id+":"+ticker).encode()).hexdigest()
                 if not self.db.execute("SELECT 1 FROM records WHERE id=?",(key,)).fetchone():
                     pending.append((scan_id,ticker))
-        cursor=self.db.execute("SELECT value FROM runtime_state WHERE key='grade_cursor'").fetchone()
-        offset=(cursor[0] if cursor else 0)%len(pending) if pending else 0
-        rotated=pending[offset:]+pending[:offset]
-        cache={}; graded=0; errors=[]
+        cursor = self.db.execute("SELECT value FROM runtime_state WHERE key='grade_cursor'").fetchone()
+        offset = (cursor[0] if cursor else 0) % len(pending) if pending else 0
+        rotated = pending[offset:]+pending[:offset]
+        cache, graded, errors = {}, 0, []
         for scan_id,ticker in rotated[:limit]:
             try:
                 if ticker not in cache:
-                    cache[ticker]=client.market(ticker).data["market"]
-                m=cache[ticker]
-                if m.get("ticker")!=ticker or m.get("status") not in {"settled","finalized"} or m.get("result") not in {"yes","no"}:
+                    cache[ticker] = client.market(ticker).data["market"]
+                market = cache[ticker]
+                if (market.get("ticker") != ticker
+                    or market.get("status") not in {"settled","finalized"}
+                    or market.get("result") not in {"yes","no"}):
                     continue
-                if float(m.get("settlement_value_dollars", "nan")) != int(m["result"] == "yes"):
-                    # Fair-price resolutions and voids are not binary wins.
+                if float(market.get("settlement_value_dollars", "nan")) != int(market["result"] == "yes"):
                     continue
-                settled=m.get("settlement_ts") or m.get("settlement_time")
+                settled = market.get("settlement_ts") or market.get("settlement_time")
                 if not settled:
                     continue
-                self.settle(scan_id=scan_id,ticker=ticker,result=m["result"],source_url=client.base+"/markets/"+ticker,
+                self.settle(scan_id=scan_id,ticker=ticker,result=market["result"],
+                            source_url=client.base+"/markets/"+ticker,
                             settled_at=settled,_verified=True)
-                graded+=1
-            except (ValueError, KeyError, sqlite3.Error, __import__("requests").RequestException) as exc:
+                graded += 1
+            except (ValueError,KeyError,sqlite3.Error,__import__("requests").RequestException) as exc:
                 errors.append(type(exc).__name__)
         with self.db:
-            self.db.execute("INSERT OR REPLACE INTO runtime_state VALUES ('grade_cursor',?)",(offset+min(limit,len(pending)),))
-        return {"graded":graded,"pending_records":len(pending)-graded,"capacity_complete":len(pending)<=limit,"errors":errors}
+            self.db.execute("INSERT OR REPLACE INTO runtime_state VALUES ('grade_cursor',?)",
+                            (offset+min(limit,len(pending)),))
+        return {"graded":graded,"pending_records":len(pending)-graded,
+                "capacity_complete":len(pending)<=limit,"errors":errors,
+                "due_model_predictions":len(pending),
+                "checked":min(limit,len(pending)),
+                "unmodeled_placeholders_excluded":unmodeled,
+                "future_model_predictions_not_due":not_due,
+                "noncausal_records_excluded":noncausal}
 
     def metrics(self):
         scans={}; settlements=[]
