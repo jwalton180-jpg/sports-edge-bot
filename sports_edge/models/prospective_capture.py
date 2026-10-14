@@ -95,8 +95,10 @@ def capture(*, now=None, output_dir="prospective-out"):
         page_limit_per_series=6, max_workers=4)
     selected, selection = select_markets(catalog.markets, now=current)
     # Full-coverage claims are always false for a bounded prospective sample.
+    # Use each *actual* post-fetch observation timestamp for quote freshness;
+    # the frozen sampling clock must not predate a newly retrieved quote.
     report = scan_sleeper_markets(selected, coverage_complete=False,
-                                 limit=42, now=current)
+                                 limit=42)
     report["sampling"] = selection
     report["catalog_status"] = {
         "cursor_exhausted": bool(catalog.cursor_exhausted),
