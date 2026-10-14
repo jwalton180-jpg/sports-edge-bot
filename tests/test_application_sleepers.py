@@ -118,7 +118,7 @@ class FakeClient:
 class FakeSources:
     provenance=[]
     def nhl_player(self,m,p):
-        return {"rows":history(),"missing":["confirmed_line_role"]}
+        return {"start": (NOW+timedelta(hours=2)).isoformat(), "rows":history(),"missing":["confirmed_line_role"]}
 
 
 def example_report():

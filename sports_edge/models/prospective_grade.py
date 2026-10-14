@@ -19,11 +19,13 @@ from sports_edge.models.prospective_capture import canonical_bytes, PROTOCOL
 from sports_edge.models.sleeper_counts import utc
 
 ARTIFACT_PREFIX="sportsedge-live-research-snapshot-"
+SUPPORTED_PROTOCOLS = {"SPORTSEDGE-PROSPECTIVE-V1-20261014", "SPORTSEDGE-PROSPECTIVE-V2-20261014"}
 
 
 def verify_snapshot(snapshot: dict, manifest: dict, artifact: dict):
     """Artifact creation/hosting time is external; local timestamps alone aren't."""
-    if manifest.get("schema_version")!=PROTOCOL or not manifest.get("no_promotions"):
+    protocol = manifest.get("schema_version")
+    if protocol not in SUPPORTED_PROTOCOLS or not manifest.get("no_promotions"):
         raise ValueError("unknown protocol or attempted promotion")
     digest=hashlib.sha256(canonical_bytes(snapshot)).hexdigest()
     if digest!=manifest.get("capture_sha256"):
@@ -40,7 +42,7 @@ def verify_snapshot(snapshot: dict, manifest: dict, artifact: dict):
         raise ValueError("artifact claims future pre-upload capture")
     if not (0<=(created-captured).total_seconds()<=3600):
         raise ValueError("unbounded capture-to-archive delay")
-    if snapshot.get("study",{}).get("protocol")!=PROTOCOL:
+    if snapshot.get("study",{}).get("protocol")!=protocol:
         raise ValueError("study protocol mismatch")
     return created
 
@@ -71,7 +73,7 @@ def first_archived_predictions(pairs: list[tuple[dict,dict,dict]]):
             p=r["probability"]
             if type(p) not in (int,float) or not __import__("math").isfinite(p) or not 0<=p<=1:
                 issues.append("invalid_probability")
-            if snapshot.get("sampling",{}).get("protocol")!=PROTOCOL:
+            if snapshot.get("sampling",{}).get("protocol")!=manifest["schema_version"]:
                 issues.append("inconsistent_sampling_protocol")
             if r.get("quote",{}).get("reasons") or r.get("quote",{}).get("ask") is None:
                 issues.append("market_baseline_unusable")
