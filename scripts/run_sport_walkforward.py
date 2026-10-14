@@ -78,7 +78,7 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     with (dest / "historical_challenger_predictions.jsonl").open("w") as fh:
         for row in challengers:
-            fh.write(json.dumps(row, sort_keys=True) + "\\n")
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
     return result
 
 def main():
