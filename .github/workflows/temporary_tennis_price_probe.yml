@@ -28,6 +28,17 @@ jobs:
                   print("TRACKING",row.ticker,row.selection,row.lane,row.current_ask,row.rebound_pp)
               return {"configured":True,"accepted":0,"failed":0,"errors":[]}
           worker.send_tennis_pushes=no_push
+          from collections import Counter
+          markets=worker.fetch_open_tennis_match_markets(strict=True)
+          print("PUBLIC TENNIS MARKET KEYS",list(markets[0]) if markets else [])
+          print("PUBLIC TENNIS MARKET SAMPLES",[
+              {key:m.get(key) for key in (
+                 "ticker","status","yes_sub_title","subtitle",
+                 "yes_ask_dollars","yes_ask","no_ask_dollars",
+                 "last_price_dollars","yes_bid_dollars","title"
+              )} for m in markets[:5]
+          ])
+          print("TENNIS MARKET STATUS COUNTS",dict(Counter(m.get("status") for m in markets)))
           with TemporaryDirectory() as d:
               result=worker.poll_once(ProspectiveResearchStore(d))
               print("LIVE PRICE PROBE",result)
