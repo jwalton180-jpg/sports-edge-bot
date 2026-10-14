@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from scripts import tennis_realtime_sentinel as mod
+from sports_edge.models.tennis_price_movement import PriceMovement
 
 NOW=datetime(2026,10,14,10,0,tzinfo=timezone.utc)
 
@@ -45,9 +46,10 @@ def test_websocket_quote_is_not_pushable_without_verified_fresh_score(monkeypatc
         return {"accepted":1,"failed":0}
     monkeypatch.setattr(mod,"send_tennis_pushes",fake_send)
     monkeypatch.setattr(mod,"build_price_movements",lambda *args,**kwargs:(
-        SimpleNamespace(lane="PRICE RECOVERY — TRACKING ONLY",
-                        ticker="KX-TEST",selection="Player",current_ask=.14,
-                        observed_trough=.03,rebound_pp=11,quote_spread_pp=2),
+        PriceMovement(lane="PRICE RECOVERY — TRACKING ONLY",
+                      ticker="KX-TEST",selection="Player",current_ask=.14,
+                      observed_trough=.03,rebound_pp=11,drawdown_pp=40,
+                      quote_spread_pp=2),
     ))
     frame=SimpleNamespace(received_at=NOW,payload={
         "type":"ticker","msg":{"market_ticker":"KX-TEST",
