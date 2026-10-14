@@ -66,7 +66,7 @@ def completed_team_games(sport: str, day: str) -> tuple[dict, ...]:
 @lru_cache(maxsize=256)
 def nhl_player_goal_log(player_id: int, season: int) -> tuple[dict, ...]:
     """NHL official completed regular-season player game logs."""
-    if player_id <= 0 or not 2000 <= season <= 2100:
+    if player_id <= 0 or not 20002001 <= season <= 20992000 or season % 100 != ((season // 10000 + 1) % 100):
         raise ValueError("invalid player or season")
     data = _get_json(NHL_LOG.format(player_id=player_id, season=season))
     rows = []
