@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sports_edge.data.historical_sport_evidence import completed_team_games, nhl_player_goal_log
 from sports_edge.models.sport_walkforward import team_walkforward, nhl_player_walkforward, calibration_report
+from sports_edge.models.sport_calibration import chronological_calibration
 
 def days(start: date, end: date):
     current = start
@@ -51,9 +52,12 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     else:
         data["NHL"] = {"source": "NHL official API", "status": "missing_full_roster_sample",
                        "representative": False}
+    calibrations = {sport: chronological_calibration([r for r in predictions if r["sport"] == sport])
+                    for sport in ("NHL", "NCAAF", "Soccer")}
     result = {"method": "retrospective_strict_walkforward",
               "live_recommendation_eligible": False,
-              "data_coverage": data, "metrics": calibration_report(predictions)}
+              "data_coverage": data, "metrics": calibration_report(predictions),
+              "temporal_calibration": calibrations}
     (dest / "research_metrics.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     with (dest / "historical_predictions.jsonl").open("w") as fh:
         for row in predictions:
