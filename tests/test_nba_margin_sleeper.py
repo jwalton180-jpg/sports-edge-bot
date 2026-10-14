@@ -109,3 +109,22 @@ def test_nba_schedule_exact_join_and_preseason_gate():
     try:s.nba_margin_context(m)
     except ValueError as exc:assert "preseason" in str(exc)
     else:assert False
+
+
+def test_real_kalshi_shorthand_names_are_exact_official_aliases():
+    m=dict(market(),event_ticker="KXNBASPREAD-26NOV20GSWLAL",
+           ticker="KXNBASPREAD-26NOV20GSWLAL-LAL19",
+           yes_sub_title="LA Lakers win by over 18.5 points")
+    home={"homeAway":"home","id":"LAL","team":{
+        "displayName":"Los Angeles Lakers","name":"Lakers",
+        "location":"Los Angeles","abbreviation":"LAL"}}
+    away={"homeAway":"away","id":"GSW","team":{
+        "displayName":"Golden State Warriors","name":"Warriors",
+        "location":"Golden State","abbreviation":"GSW"}}
+    event={"id":"NBA1","date":"2026-11-20T23:00:00Z","season":{"type":2},
+           "competitions":[{"competitors":[away,home]}]}
+    source=SleeperSources()
+    source.get=lambda url,params=None:({"events":[event]} if "scoreboard" in url else {"events":[]})
+    ctx=source.nba_margin_context(m)
+    assert "la lakers" in ctx["home_aliases"]
+    assert "gs warriors" in ctx["away_aliases"]
