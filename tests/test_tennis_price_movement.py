@@ -72,3 +72,43 @@ def test_price_watch_tickers_includes_unmodeled_cheap_matches():
         {**market(ticker="KX-closed",ask=.05),"status":"closed"},
     ])
     assert found==("KXW15SHENZHEN-ZHALAN-ZHA","KX-W50-SAI")
+
+
+
+def test_lightweight_observer_persists_diagnostic_without_scores(monkeypatch,tmp_path):
+    from scripts import tennis_price_only_worker as worker
+    from sports_edge.models.tennis_prospective_store import ProspectiveResearchStore
+    m=market(ask=.12)
+    monkeypatch.setattr(worker,"fetch_open_tennis_match_markets",lambda strict: (m,))
+    monkeypatch.setattr(
+        worker,"fetch_tennis_candle_history",
+        lambda tickers, **kwargs: {m["ticker"]:path([.68,.48,.19,.03,.05,.08,.12])}
+    )
+    seen=[]
+    def fake_send(store, **kwargs):
+        seen.extend(kwargs["price_observations"])
+        return {"configured":True,"accepted":1,"failed":0,"errors":[]}
+    monkeypatch.setattr(worker,"send_tennis_pushes",fake_send)
+    store=ProspectiveResearchStore(tmp_path/"research")
+    result=worker.poll_once(store,now=NOW)
+    assert result["healthy"]
+    assert result["open_contracts"]==1
+    assert result["tracking_observations"]==1
+    assert result["push_accepted"]==1
+    assert len(seen)==1
+    assert "UNVERIFIED" in seen[0].score
+    assert (tmp_path/"research"/"latest_poll.json").exists()
+    assert not store.signals
+
+
+def test_lightweight_observer_fails_closed_when_market_coverage_errors(monkeypatch,tmp_path):
+    from scripts import tennis_price_only_worker as worker
+    from sports_edge.models.tennis_prospective_store import ProspectiveResearchStore
+    def failed(strict):
+        raise RuntimeError("one Tennis market series unavailable")
+    monkeypatch.setattr(worker,"fetch_open_tennis_match_markets",failed)
+    store=ProspectiveResearchStore(tmp_path/"research")
+    result=worker.poll_once(store,now=NOW)
+    assert not result["healthy"]
+    assert not result["push_accepted"]
+    assert result["errors"]
