@@ -1,0 +1,38 @@
+name: Temporary Tennis price-only live probe
+on:
+  push:
+    branches: [tennis-unverified-price-alerts-20261013]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Read-only live market and quote probe
+        shell: bash
+        run: |
+          export PYTHONPATH="$(pwd)"
+          python - <<'PY'
+          from datetime import datetime,timezone
+          from tempfile import TemporaryDirectory
+          from scripts import tennis_price_only_worker as worker
+          from sports_edge.models.tennis_prospective_store import ProspectiveResearchStore
+          def no_push(store,**kwargs):
+              print("PRICE-ONLY LIVE WATCH CANDIDATES",len(kwargs["price_observations"]))
+              for row in kwargs["price_observations"][:8]:
+                  print("TRACKING",row.ticker,row.selection,row.lane,row.current_ask,row.rebound_pp)
+              return {"configured":True,"accepted":0,"failed":0,"errors":[]}
+          worker.send_tennis_pushes=no_push
+          with TemporaryDirectory() as d:
+              result=worker.poll_once(ProspectiveResearchStore(d))
+              print("LIVE PRICE PROBE",result)
+              assert result["healthy"], result["errors"]
+              assert result["open_contracts"]>0
+              assert result["cheap_contracts"]>0
+              assert result["history_contracts"]>0
+          PY
