@@ -118,7 +118,7 @@ class FakeClient:
 class FakeSources:
     provenance=[]
     def nhl_player(self,m,p):
-        return {"rows":history(),"missing":["confirmed_line_role"]}
+        return {"rows":history(),"start":m["occurrence_datetime"],"missing":["confirmed_line_role"]}
 
 
 def example_report():
@@ -270,6 +270,17 @@ def test_nhl_live_game_log_is_not_treated_as_completed_history():
     sources.get=get
     assert sources.nhl_player(market(),"Alpha Player")["rows"] == []
 
+
+
+def test_nhl_missing_independent_start_fails_closed_despite_market_occurrence():
+    class UnverifiedStart(FakeSources):
+        def nhl_player(self,m,p):
+            return {"rows":history(),"missing":["confirmed_line_role"]}
+    report=scan_sleeper_markets([market()],coverage_complete=True,client=FakeClient(),sources=UnverifiedStart(),now=NOW)
+    assert len(report["records"]) == 2
+    assert all(r["probability"] is None and not r["start_verified"] for r in report["records"])
+    assert all("official_game_start_unverified" in r["reasons"] for r in report["records"])
+    assert all(r["net_edge"] is None for r in report["records"])
 
 def test_independent_kickoff_overrides_occurrence_and_blocks_live_pregame_model():
     class Started(FakeSources):
