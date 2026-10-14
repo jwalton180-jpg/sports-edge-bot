@@ -277,7 +277,16 @@ class SleeperSources:
                     rows[key]=result
         def aliases(team):
             info=team["team"]
-            return sorted(_metadata_aliases(info) | {normalize(info.get("abbreviation",""))})
+            variants=_metadata_aliases(info) | {normalize(info.get("abbreviation",""))}
+            # Kalshi uses well-known abbreviations in its NBA market labels
+            # (e.g. "LA Lakers", "GS Warriors"). Never fuzzy-match teams.
+            short_city={"LAL":"LA","LAC":"LA","GSW":"GS","NYK":"NY",
+                        "NOP":"NO","SAS":"SA","OKC":"OKC"}.get(
+                            str(info.get("abbreviation") or "").upper())
+            nickname=normalize(info.get("name",""))
+            if short_city and nickname:
+                variants.add(normalize(short_city+" "+nickname))
+            return sorted(variants)
         games=sorted(rows.values(),key=lambda g:g["event_time"])
         return {"event_id":str(e["id"]),"start":e["date"],"season_type":"regular",
                 "home_id":str(home["id"]),"away_id":str(away["id"]),
