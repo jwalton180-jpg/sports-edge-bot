@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - sportsedge-walkforward-source-calibration-20261014
+      - sportedge-challenger-models-20261014
 concurrency:
   group: sportsedge-historical-calibration
   cancel-in-progress: true

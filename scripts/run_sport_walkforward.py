@@ -13,6 +13,7 @@ from pathlib import Path
 from sports_edge.data.historical_sport_evidence import completed_team_games, nhl_player_goal_log, nhl_complete_skater_ids
 from sports_edge.models.sport_walkforward import team_walkforward, nhl_player_walkforward, calibration_report
 from sports_edge.models.sport_calibration import chronological_calibration
+from sports_edge.models.challenger_evaluation import challenger_team_rows, challenger_nhl_rows, matched_holdout
 
 def days(start: date, end: date):
     current = start
@@ -32,6 +33,7 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     dest.mkdir(parents=True, exist_ok=True)
     data = {}
     predictions = []
+    challengers = []
     sources = {
         "NCAAF": (date(2024, 8, 15), date(2025, 12, 20)),
         "Soccer": (date(2023, 8, 1), date(2025, 5, 31)),
@@ -41,6 +43,7 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
         data[sport] = {"events_fetched": len(games), "source": "ESPN",
                        "period": [start.isoformat(), end.isoformat()]}
         predictions.extend(team_walkforward(games, sport=sport))
+        challengers.extend(challenger_team_rows(games, sport))
     all_ids = nhl_complete_skater_ids(20242025)
     selected = nhl_player_ids if nhl_player_ids else list(all_ids)
     if not set(selected).issubset(set(all_ids)) or len(set(selected)) != len(selected):
@@ -54,19 +57,27 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
             logs = future.result()
             total += len(logs)
             predictions.extend(nhl_player_walkforward(list(logs)))
+            challengers.extend(challenger_nhl_rows(list(logs)))
     data["NHL"] = {"player_count": len(selected), "official_roster_count": len(all_ids),
                    "game_logs": total, "source": "NHL official API",
                    "sampling": "full_roster" if len(selected) == len(all_ids) else "explicit_subset",
                    "representative": len(selected) == len(all_ids)}
     calibrations = {sport: chronological_calibration([r for r in predictions if r["sport"] == sport])
                     for sport in ("NHL", "NCAAF", "Soccer")}
+    comparisons = {sport: matched_holdout([r for r in predictions if r["sport"]==sport],
+                                            [r for r in challengers if r["sport"]==sport])
+                   for sport in ("NHL","NCAAF","Soccer")}
     result = {"method": "retrospective_strict_walkforward",
               "live_recommendation_eligible": False,
               "data_coverage": data, "metrics": calibration_report(predictions),
-              "temporal_calibration": calibrations}
+              "temporal_calibration": calibrations,
+              "challenger_matched_holdout": comparisons}
     (dest / "research_metrics.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     with (dest / "historical_predictions.jsonl").open("w") as fh:
         for row in predictions:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    with (dest / "historical_challenger_predictions.jsonl").open("w") as fh:
+        for row in challengers:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     return result
 
