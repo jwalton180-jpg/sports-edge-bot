@@ -57,8 +57,8 @@ def test_no_quote_stale_quote_or_market_mismatch_fails_closed():
     unquoted=list(history)
     unquoted[-1]=candle(.12,0,quote=False)
     assert not build_price_movements([m],{m["ticker"]:unquoted},now=NOW)
-    stale=list(history)
-    stale[-1]=candle(.12,0,end=int((NOW-timedelta(minutes=4)).timestamp()))
+    stale=[candle(v,minute) for minute,v in
+           zip((10,9,8,7,6,5),(.62,.3,.03,.05,.08,.12))]
     assert not build_price_movements([m],{m["ticker"]:stale},now=NOW)
     assert not build_price_movements([market(ask=.24)],{m["ticker"]:history},now=NOW)
     assert not build_price_movements([m],{m["ticker"]:path([.12,.12,.12,.12])},now=NOW)
