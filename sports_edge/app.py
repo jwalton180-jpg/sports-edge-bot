@@ -2489,6 +2489,28 @@ elif view == "Parlay Generator":
                 f"model-covered: {state.get('model_covered', 0)} · "
                 f"sportsbook-confirmed: {state.get('book_confirmed', 0)}."
             )
+            # Do not hide the audit reasons behind an empty ticket.
+            # Historical/research probabilities remain explicitly unqualified.
+            from sports_edge.models.parlay_diagnostics import parlay_evidence_diagnostics
+            evidence = parlay_evidence_diagnostics(state.get("model_candidate_rows") or ())
+            if evidence["candidates"]:
+                st.markdown("### Why no ticket cleared")
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Independent models", evidence["modeled"])
+                d2.metric("Ask + fee checked", evidence["modeled_and_fee_priced"])
+                d3.metric("Reviewed value", evidence["qualified"])
+                if evidence["common_blockers"]:
+                    st.dataframe(pd.DataFrame([
+                        {"Evidence blocker":reason,"Candidates":count}
+                        for reason,count in evidence["common_blockers"]]),
+                        use_container_width=True,hide_index=True)
+                if evidence["research_preview"]:
+                    st.markdown("### Model-priced watchlist · research only")
+                    st.caption("Research probabilities and indicative edges are NOT validated picks, executable combo quotes or guaranteed returns. Rejected legs never enter recommended tickets.")
+                    st.dataframe(pd.DataFrame(evidence["research_preview"]),
+                                 use_container_width=True,hide_index=True)
+            else:
+                st.info("No independently modeled candidate rows. Check sport, date, Kalshi contract family, and supported historical data.")
         if state.get("errors"):
             with st.expander("Secondary data diagnostics"):
                 for error in state["errors"][:12]:
