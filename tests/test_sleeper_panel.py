@@ -13,7 +13,7 @@ render_sleeper_panel([market()],coverage_complete=True,scope="NHL",runner=lambda
     app.button[0].click().run()
     assert not app.exception
     assert len(app.dataframe)==1
-    assert len(app.get("download_button"))==2
+    assert len(app.get("download_button"))==3
     assert (tmp_path/"research/sleeper_ledger.sqlite").exists()
 
 
