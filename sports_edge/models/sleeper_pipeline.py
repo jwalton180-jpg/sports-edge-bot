@@ -65,6 +65,27 @@ def contract_spec(row):
         problems.append("non_binary_ladder_payoff_unsupported")
     threshold = None
     participant = title.split(":", 1)[0].strip() if ":" in title else str(m.get("yes_sub_title", ""))
+    if row.sport == "NBA" and row.family == "Spread":
+        # Accept only the exact full-game Kalshi 18.5 alternate spread, not
+        # generic NBA winning or first-half lines.
+        if not str(m.get("ticker","")).startswith("KXNBASPREAD-"):
+            problems.append("unsupported_nba_spread_series")
+        selection=str(m.get("yes_sub_title") or title)
+        choice=re.fullmatch(r"(.+?)\s+wins?\s+by\s+(?:over|more than)\s+18\.5\s+points?",selection.strip(),re.I)
+        if choice is None:
+            problems.append("not_exact_nba_19plus_yes_selection")
+        else:
+            participant=choice.group(1).strip()
+        try:
+            if float(m["floor_strike"]) != 18.5 or str(m.get("strike_type")) != "greater":
+                raise ValueError("strike mismatch")
+        except (KeyError,TypeError,ValueError):
+            problems.append("nba_margin_half_point_strike_unverified")
+        if not re.search(r"\b(?:over|more than)\s+18\.5\s+points?",primary,re.I):
+            problems.append("nba_margin_rules_threshold_mismatch")
+        if re.search(r"\b(first half|second half|quarter|regulation only|excluding overtime)\b",rules,re.I):
+            problems.append("nba_margin_not_entire_game_including_overtime")
+        threshold=19
     if row.family == "Team Total":
         match = re.match(r"^(.+?)\s+(?:over|under)\s+[0-9.]+",title,re.I)
         if match:
@@ -167,6 +188,20 @@ def research_projection(row, spec, sources):
     m = row.market
     if not spec.rules_supported:
         return None, {}
+    if row.sport == "NBA" and row.family == "Spread" and spec.threshold == 19:
+        from sports_edge.models.nba_margin_sleeper import nba_margin_tail
+        context = sources.nba_margin_context(m)
+        selected=name(spec.participant)
+        home_match=selected in set(context["home_aliases"])
+        away_match=selected in set(context["away_aliases"])
+        if home_match == away_match:
+            raise ValueError("nba_19plus_selected_team_unresolved")
+        projection=nba_margin_tail(context["rows"],home_id=context["home_id"],
+            away_id=context["away_id"],
+            selected_id=context["home_id"] if home_match else context["away_id"],
+            before_time=context["start"],line=18.5,season_type=context["season_type"])
+        context["focus_market"]="NBA team wins by 19+ points"
+        return projection,context
     if row.sport in {"NBA", "WNBA"} and row.family in {"Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"}:
         from sports_edge.models.basketball_sleeper import basketball_sleeper
         from sports_edge.data.basketball_prop_data import _url

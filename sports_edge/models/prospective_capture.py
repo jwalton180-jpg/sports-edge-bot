@@ -15,8 +15,8 @@ from pathlib import Path
 
 from sports_edge.models.sleeper_counts import utc
 
-PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V3-20261014"
-SPORTS = ("NHL", "NCAAF", "Soccer")
+PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V4-20261014"
+SPORTS = ("NHL", "NCAAF", "Soccer", "NBA")
 END_UTC = datetime(2026, 12, 15, tzinfo=timezone.utc)
 
 # Frozen pre-sampling model/league eligibility. Does not inspect prices,
@@ -26,13 +26,21 @@ ELIGIBLE_SERIES = {
             "KXNHLSHOTS", "KXNHLTEAMTOTAL"),
     "NCAAF": ("KXNCAAFGAME",),
     "Soccer": ("KXEPLTOTAL", "KXEPLBTTS", "KXEPLTEAMTOTAL"),
+    "NBA": ("KXNBASPREAD",),
 }
 
 
 def model_family_supported(market, sport):
     ticker = str(market.get("ticker") or "")
     prefix = ticker.split("-", 1)[0]
-    return prefix in ELIGIBLE_SERIES.get(sport, ())
+    if prefix not in ELIGIBLE_SERIES.get(sport, ()):
+        return False
+    if sport == "NBA":
+        try:
+            return float(market["floor_strike"]) == 18.5 and market.get("strike_type") == "greater"
+        except (KeyError,ValueError,TypeError):
+            return False
+    return True
 
 
 def canonical_bytes(value: dict) -> bytes:
@@ -70,11 +78,11 @@ def select_markets(markets, *, now: datetime, per_sport: int = 14,
         ranked = sorted(unique.values(), key=lambda m: (
             hashlib.sha256((PROTOCOL + "|" + m["ticker"]).encode()).hexdigest(),
             m["ticker"]))
-        picked.extend(ranked[:per_sport])
+        picked.extend(ranked[:min(per_sport, 6) if sport == "NBA" else per_sport])
     return picked, {"inventory_by_sport": inventory,
                     "eligible_by_sport": {s:len({m["ticker"] for m in by_sport[s]}) for s in SPORTS},
                     "sample_by_sport": {s:sum(m["sports_edge_sport"] == s for m in picked) for s in SPORTS},
-                    "sampling": "SHA256(protocol|ticker), first 14 per eligible modeled sport; prices not sampled",
+                    "sampling": "SHA256(protocol|ticker), up to 14 per sport and 6 NBA 18.5 spreads; prices not sampled",
                     "subset_not_full_market_coverage": True,
                     "protocol": PROTOCOL}
 
@@ -99,7 +107,7 @@ def capture(*, now=None, output_dir="prospective-out"):
     # Use each *actual* post-fetch observation timestamp for quote freshness;
     # the frozen sampling clock must not predate a newly retrieved quote.
     report = scan_sleeper_markets(selected, coverage_complete=False,
-                                 limit=42)
+                                 limit=50)
     report["sampling"] = selection
     report["catalog_status"] = {
         "cursor_exhausted": bool(catalog.cursor_exhausted),

@@ -132,6 +132,7 @@ def _basketball_family(series: str, sport: str) -> str:
         (("4Q",), "Fourth Quarter"),
         (("GAME",), "Moneyline"),
         (("SPREAD",), "Spread"),
+        (("WINMARGIN",), "Win Margin"),
         (("TEAMTOTAL",), "Team Total"),
         (("TOTAL",), "Game Total"),
         (("PRA",), "Points + Rebounds + Assists"),
