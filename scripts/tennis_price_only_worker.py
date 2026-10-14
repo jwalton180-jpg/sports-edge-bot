@@ -6,6 +6,7 @@ notifications are explicitly MARKET-ONLY and not wagering recommendations.
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -13,11 +14,13 @@ import sys
 
 from sports_edge.data.tennis_live import (
     fetch_open_tennis_match_markets, fetch_tennis_candle_history,
+    fetch_live_tennis_states,
 )
 from sports_edge.models.tennis_price_movement import (
     price_watch_tickers, build_price_movements,
 )
 from sports_edge.models.tennis_push_dispatch import send_tennis_pushes
+from sports_edge.models.tennis_alert_survivability import qualified_tickers
 from sports_edge.models.tennis_market_outcomes import (
     sample_followthrough, save_opportunity_report,
 )
@@ -33,7 +36,10 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
         "open_contracts":0, "cheap_contracts":0, "history_contracts":0,
         "tracking_observations":0, "push_configured":False,
         "push_accepted":0, "push_failed":0,
-        "score_verified":False, "poll_gap_minutes":None,
+        "score_verified":False, "live_score_states":0,
+        "survivability_cleared":0, "suppressed_unverified_or_late":0,
+        "suppression_reasons":{},
+        "poll_gap_minutes":None,
         "late_poll_gap":False, "post_alert_eligible":0,
         "post_alert_bid_samples":0,
     }
@@ -64,8 +70,28 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
             raise RuntimeError("No Kalshi candle histories returned for cheap contracts")
         movement=build_price_movements(markets,histories,now=now)
         status["tracking_observations"]=len(movement)
+        # Market movements are kept as research even if no provider can verify
+        # the match state. Phone push, by contrast, requires independent,
+        # fresh two-player match confirmation and material comeback evidence.
+        score_states=fetch_live_tennis_states()
+        status["live_score_states"]=len(score_states)
+        allowed,reasons=qualified_tickers(markets,score_states,now=now)
+        status["score_verified"]=bool(score_states)
+        status["survivability_cleared"]=len(allowed)
+        status["suppression_reasons"]=reasons
+        status["suppressed_unverified_or_late"]=sum(
+            row.ticker not in allowed for row in movement
+        )
+        safe_movement=tuple(
+            replace(row,score=(
+                f"{allowed[row.ticker].score_label} | "
+                "score independently corroborated; model edge unverified"
+            ))
+            for row in movement if row.ticker in allowed
+        )
         delivery=send_tennis_pushes(
-            store,now=now,price_observations=movement,max_per_poll=6,
+            store,now=now,price_observations=safe_movement,
+            allowed_tickers=set(allowed),max_per_poll=6,
         )
         status["push_configured"]=delivery["configured"]
         status["push_accepted"]=delivery["accepted"]
