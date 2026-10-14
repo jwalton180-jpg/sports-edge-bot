@@ -112,7 +112,8 @@ def test_lightweight_observer_persists_diagnostic_without_scores(monkeypatch,tmp
     assert result["push_accepted"]==1
     assert result["survivability_cleared"]==1
     assert len(seen)==1
-    assert "UNVERIFIED" in seen[0].score
+    assert "score independently corroborated" in seen[0].score
+    assert "model edge unverified" in seen[0].score
     assert (tmp_path/"research"/"latest_poll.json").exists()
     assert not store.signals
 
