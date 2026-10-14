@@ -1496,6 +1496,20 @@ elif view == "Game Lines":
         st.dataframe(kalshi_market_table(show_rows[:250]), use_container_width=True, hide_index=True)
         if sport_filter in {"NHL", "NCAAF", "Soccer"}:
             st.caption("Independent models for this sport are in research mode. A listed Kalshi price is not an independent probability or a recommendation.")
+            from sports_edge.data.validation_snapshot import HISTORICAL_RESEARCH_SNAPSHOT
+            snapshot = HISTORICAL_RESEARCH_SNAPSHOT[sport_filter]
+            with st.expander(f"{sport_filter} — verified historical research results (not live picks)"):
+                st.caption(snapshot["scope"])
+                st.write(snapshot["interpretation"])
+                st.write({
+                    "Holdout predictions": snapshot["holdout_predictions"],
+                    "Holdout Brier": round(snapshot["holdout_brier"], 5),
+                    "Training-baseline Brier": round(snapshot["holdout_train_baseline_brier"], 5),
+                    "Holdout calibration error": round(snapshot["holdout_ece"], 5),
+                    "Model status": snapshot["status"],
+                })
+                st.caption("Reproducible GitHub Actions run: 38553755658. Retrospective results never auto-promote a model.")
+
             research_export = [
                 {"sport": r.sport, "family": r.family,
                  "ticker": str(r.market.get("ticker") or ""),
