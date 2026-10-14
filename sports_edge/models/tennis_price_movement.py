@@ -105,7 +105,18 @@ def build_price_movements(
             lane="EXTREME DIP — TRACKING ONLY"
         elif .04<latest.close<=.20:
             movements=[b-a for (ia,a),(ib,b) in zip(quoted,quoted[1:]) if ia>=trough_idx]
-            if rebound<.02 or sum(move>=.005 for move in movements)<2:
+            # Usually require two upward one-minute quotes. An exceptional
+            # single-minute repricing can be tracked sooner, but only if the
+            # final quoted ASK is up >=6pp, the last minute added >=5pp and
+            # the quote remains fresh and tight-spread (checked above).
+            rapid_jump = (
+                rebound >= .06
+                and len(quoted) >= 2
+                and latest.close - quoted[-2][1] >= .05
+            )
+            if rebound<.02 or (
+                sum(move>=.005 for move in movements)<2 and not rapid_jump
+            ):
                 continue
             if latest.close<quoted[-2][1]:
                 continue
