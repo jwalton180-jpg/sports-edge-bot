@@ -193,3 +193,10 @@ def test_table_tennis_never_enters_wta_tennis_catalog():
         event="TT1",
     )
     assert classify_kalshi_market(row) is None
+
+
+def test_nba_win_margin_is_not_a_winner_or_player_prop():
+    m=market("KXNBAWINMARGIN-26NOV20HMA-H","Home team wins by 19+")
+    assert classify_kalshi_market(m)==("NBA","Win Margin")
+    m=market("KXNBASPREAD-26NOV20HMA-H19","Home team wins by over 18.5 points")
+    assert classify_kalshi_market(m)==("NBA","Spread")
