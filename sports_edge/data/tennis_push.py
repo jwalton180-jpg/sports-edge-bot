@@ -18,6 +18,7 @@ import requests
 
 SUPPORTED = {
     "EXTREME DIP — TRACKING ONLY": (2, "Cheap dip • TRACK ONLY"),
+    "PRICE RECOVERY — TRACKING ONLY": (2, "Market price recovery • TRACK ONLY"),
     "RECOVERY BUILDING — RESEARCH": (3, "Recovery forming • RESEARCH"),
     "EARLY WATCH — RESEARCH": (3, "Early reversal • RESEARCH"),
     "WATCH": (3, "Reversal watch • NOT CONFIRMED"),
@@ -77,6 +78,8 @@ class PushEvent:
             return False
         if self.lane == "EXTREME DIP — TRACKING ONLY":
             return allow_extreme and self.price <= 0.04
+        if self.lane == "PRICE RECOVERY — TRACKING ONLY":
+            return allow_extreme and 0.04 < self.price <= 0.20 and self.fair is None
         if self.fair is None:
             return False
         # Research lanes and WATCHs require independent evidence even to alert.
@@ -87,7 +90,7 @@ class PushEvent:
         def cent(value: float) -> str:
             return f"{100*value:.1f}¢"
         fair = cent(self.fair) if self.fair is not None else "not available"
-        prefix = ("TRACKING ONLY — not a bet." if self.lane.startswith("EXTREME DIP")
+        prefix = ("TRACKING ONLY — not a bet." if self.lane in {"EXTREME DIP — TRACKING ONLY", "PRICE RECOVERY — TRACKING ONLY"}
                   else "Research estimate — not a guaranteed outcome.")
         return (
             f"{self.selection} | quoted ASK {cent(self.price)} | model live fair {fair}\n"
