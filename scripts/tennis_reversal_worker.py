@@ -37,6 +37,9 @@ from sports_edge.models.tennis_prospective_store import (
     verified_kalshi_settlement,
 )
 from sports_edge.models.tennis_push_dispatch import send_tennis_pushes
+from sports_edge.models.tennis_price_movement import (
+    build_price_movements, price_watch_tickers,
+)
 
 
 def _unwrap(payload):
@@ -83,11 +86,13 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
     diagnostics = {
         "observed_at": utc_iso(now), "healthy": False, "errors": [],
         "open_contracts": 0, "score_states": 0, "model_sides": 0,
-        "quoted_snapshots_added": 0, "extreme_dip_observations": 0, "recovery_building": 0, "post_surge_audits": 0, "early_watches": 0,
+        "quoted_snapshots_added": 0, "price_only_scanned": 0,
+        "price_only_watches": 0, "extreme_dip_observations": 0, "recovery_building": 0, "post_surge_audits": 0, "early_watches": 0,
         "confirmed_radar_signals": 0, "new_signals": 0, "new_settlements": 0,
         "pending_settlements": 0,
         "push_configured": False, "push_accepted": 0, "push_failed": 0,
     }
+    price_for_push = ()
     extreme_for_push = ()
     candidates_for_push = ()
     try:
@@ -108,10 +113,16 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         fallbacks = build_lower_tour_live_fallback_candidates(markets, states, candidates)
         candidates.extend(fallbacks)
         diagnostics["model_sides"] = len(candidates)
+        price_tickers = price_watch_tickers(markets)
+        diagnostics["price_only_scanned"] = len(price_tickers)
+        all_tickers = tuple(sorted(
+            {str(c.kalshi_ticker) for c in candidates} | set(price_tickers)
+        ))
         candles = fetch_tennis_candle_history(
-            tuple(sorted({str(c.kalshi_ticker) for c in candidates})),
-            lookback_minutes=60, period_interval=1, now=now,
+            all_tickers, lookback_minutes=60, period_interval=1, now=now,
         )
+        price_for_push = build_price_movements(markets, candles, now=now)
+        diagnostics["price_only_watches"] = len(price_for_push)
         state_index, by_pair = _state_lookup(states)
         radar = build_tennis_reversal_radar(
             candidates, candles,
@@ -283,6 +294,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
     if diagnostics["healthy"]:
         push = send_tennis_pushes(
             store, now=now, extreme_observations=extreme_for_push,
+            price_observations=price_for_push,
             model_candidates=candidates_for_push,
         )
         diagnostics["push_configured"] = push["configured"]
