@@ -12,7 +12,7 @@ import requests
 
 def kalshi_event_day(ticker):
     """Extract the event date printed in the Kalshi event ticker, not its expiry."""
-    match = re.search(r"-(\\d{2}[A-Z]{3}\\d{2})(?:[A-Z]|-|$)", str(ticker))
+    match = re.search(r"-(\d{2}[A-Z]{3}\d{2})(?:[A-Z]|-|$)", str(ticker))
     if not match:
         raise ValueError("kalshi_event_date_missing")
     return datetime.strptime(match.group(1), "%y%b%d").date()
