@@ -14,6 +14,7 @@ from sports_edge.data.historical_sport_evidence import completed_team_games, nhl
 from sports_edge.models.sport_walkforward import team_walkforward, nhl_player_walkforward, calibration_report
 from sports_edge.models.sport_calibration import chronological_calibration
 from sports_edge.models.challenger_evaluation import challenger_team_rows, challenger_nhl_rows, matched_holdout
+from sports_edge.models.nhl_prop_walkforward import nhl_prop_walkforward
 
 def days(start: date, end: date):
     current = start
@@ -34,6 +35,7 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     data = {}
     predictions = []
     challengers = []
+    nhl_prop_predictions = []
     sources = {
         "NCAAF": (date(2024, 8, 15), date(2025, 12, 20)),
         "Soccer": (date(2023, 8, 1), date(2025, 5, 31)),
@@ -58,6 +60,7 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
             total += len(logs)
             predictions.extend(nhl_player_walkforward(list(logs)))
             challengers.extend(challenger_nhl_rows(list(logs)))
+            nhl_prop_predictions.extend(nhl_prop_walkforward(list(logs)))
     data["NHL"] = {"player_count": len(selected), "official_roster_count": len(all_ids),
                    "game_logs": total, "source": "NHL official API",
                    "sampling": "full_roster" if len(selected) == len(all_ids) else "explicit_subset",
@@ -67,17 +70,25 @@ def run(output_dir: str, nhl_player_ids: list[int] | None = None):
     comparisons = {sport: matched_holdout([r for r in predictions if r["sport"]==sport],
                                             [r for r in challengers if r["sport"]==sport])
                    for sport in ("NHL","NCAAF","Soccer")}
+    prop_metrics = {}
+    for outcome in sorted({r["outcome"] for r in nhl_prop_predictions}):
+        selected_rows = [dict(r, sport=outcome) for r in nhl_prop_predictions if r["outcome"]==outcome]
+        prop_metrics[outcome] = calibration_report(selected_rows)[outcome]
     result = {"method": "retrospective_strict_walkforward",
               "live_recommendation_eligible": False,
               "data_coverage": data, "metrics": calibration_report(predictions),
               "temporal_calibration": calibrations,
-              "challenger_matched_holdout": comparisons}
+              "challenger_matched_holdout": comparisons,
+              "nhl_prop_research_by_outcome": prop_metrics}
     (dest / "research_metrics.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     with (dest / "historical_predictions.jsonl").open("w") as fh:
         for row in predictions:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     with (dest / "historical_challenger_predictions.jsonl").open("w") as fh:
         for row in challengers:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+    with (dest / "historical_nhl_prop_predictions.jsonl").open("w") as fh:
+        for row in nhl_prop_predictions:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     return result
 
