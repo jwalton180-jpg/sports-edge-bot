@@ -165,12 +165,20 @@ class SleeperSources:
         def score(x):
             v = x["score"]
             return int(v.get("value", v.get("displayValue"))) if isinstance(v, dict) else int(v)
-        return {"source": "ESPN", "sport": sport, "event_id": str(event["id"]),
-                "event_time": event["date"], "home_id": str(home["id"]), "away_id": str(away["id"]),
-                "home_score": score(home), "away_score": score(away)}
+        result = {"source": "ESPN", "sport": sport, "event_id": str(event["id"]),
+                  "event_time": event["date"], "home_id": str(home["id"]), "away_id": str(away["id"]),
+                  "home_score": score(home), "away_score": score(away)}
+        if sport == "NBA":
+            season = event.get("season") or event.get("seasonType") or {}
+            kind = season.get("type") if isinstance(season, dict) else None
+            kind = {"1": "preseason", "2": "regular", "3": "playoffs"}.get(str(kind), "unknown")
+            if kind not in {"regular", "playoffs"}:
+                return None  # Preseason results must not train NBA regular-season tails.
+            result["season_type"] = kind
+        return result
 
     def espn_match_history(self, market, sport):
-        path = {"Soccer": "soccer/eng.1", "NCAAF": "football/college-football"}[sport]
+        path = {"Soccer": "soccer/eng.1", "NCAAF": "football/college-football", "NBA": "basketball/nba"}[sport]
         start = utc(market["occurrence_datetime"])
         day=nominal_day(market)
         events={}
@@ -197,8 +205,16 @@ class SleeperSources:
         away = next(t for t in comp["competitors"] if t["homeAway"] == "away")
         start = utc(e["date"])
         collected = {}
+        target_season_type = "unknown"
+        if sport == "NBA":
+            season_meta = e.get("season") or e.get("seasonType") or {}
+            kind = season_meta.get("type") if isinstance(season_meta, dict) else None
+            target_season_type = {"1":"preseason","2":"regular","3":"playoffs"}.get(str(kind),"unknown")
+        # ESPN basketball season numbers denote their ending year.
+        ending_year = start.year + int(sport == "NBA" and start.month >= 7)
+        years = (ending_year-1, ending_year) if sport == "NBA" else (start.year-1,start.year)
         for t in (home, away):
-            for season in (start.year-1, start.year):
+            for season in years:
                 data = self.get(f"{ESPN}/{path}/teams/{t['id']}/schedule", {"season": season})
                 for past in data.get("events", []):
                     if utc(past["date"])+timedelta(hours=24) >= start:
@@ -213,7 +229,8 @@ class SleeperSources:
                 "home_aliases": aliases(home), "away_aliases": aliases(away),
                 "away_id": str(away["id"]), "home_name": home["team"]["displayName"],
                 "away_name": away["team"]["displayName"], "rows": sorted(collected.values(), key=lambda r:r["event_time"]),
-                "missing": ["confirmed_lineups", "weather", "injuries"], "deployment_verified": False}
+                "missing": (["confirmed_lineups", "injuries", "rest_and_minutes"] if sport == "NBA" else ["confirmed_lineups", "weather", "injuries"]),
+                "season_type": target_season_type, "deployment_verified": False}
 
     def basketball_context(self, market, sport, player):
         start = utc(market["occurrence_datetime"])
