@@ -230,3 +230,20 @@ def test_price_only_recovery_does_not_block_later_model_confirmed_alert(tmp_path
                                  environ=env,session=client)
     assert stronger["accepted"]==1
     assert len(store.notifications)==2
+
+
+
+def test_tracking_alert_includes_quote_trough_rebound_and_spread():
+    event=PushEvent(
+        alert_id="market-tracking-proof",selection="Maja Chwalinska",
+        ticker="KX-WTA-MATCH",lane="PRICE RECOVERY — TRACKING ONLY",
+        price=.148,fair=None,score="Live score UNVERIFIED",
+        observed_at=NOW.isoformat(),observed_trough=.03,
+        rebound_pp=11.8,quote_spread_pp=1.5,
+    )
+    message=event.public_message()
+    assert "Observed quote trough 3.0¢" in message
+    assert "rebound +11.8 percentage points" in message
+    assert "bid/ask spread 1.5pp" in message
+    assert "TRACKING ONLY" in message
+    assert "model live fair not available" in message
