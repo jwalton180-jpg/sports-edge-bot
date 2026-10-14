@@ -19,7 +19,7 @@ def history():
     # Independent games per team; avoid the synthetic shortcut of a single
     # fake head-to-head matchup repeated forty times.
     a=[game(i,home="H",away=f"T{i%8}",hs=120,aws=108) for i in range(32)]
-    b=[game(i+100,home=f"T{i%8}",away="A",hs=112,aws=105) for i in range(32)]
+    b=[game(i+100,home=f"T{i%8}",away="A",date=NOW-timedelta(days=130-i*2),hs=112,aws=105) for i in range(32)]
     return a+b
 
 def market():
