@@ -1,0 +1,39 @@
+name: Temporary live Tennis alert quality probe
+
+on:
+  push:
+    branches: [tennis-alert-match-survivability-20261014]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Read public markets and score-feed health without sending push
+        run: |
+          python - <<'PY'
+          from datetime import datetime,timezone
+          from collections import Counter
+          from sports_edge.data.tennis_live import fetch_open_tennis_match_markets,fetch_live_tennis_states
+          from sports_edge.models.tennis_alert_survivability import qualified_tickers
+          markets=fetch_open_tennis_match_markets(strict=True)
+          states=fetch_live_tennis_states(timeout=8)
+          allowed,reasons=qualified_tickers(markets,states,now=datetime.now(timezone.utc))
+          print("LIVE QUALITY PUBLIC CONTRACTS",len(markets))
+          print("LIVE QUALITY SCORE STATES",len(states))
+          print("LIVE QUALITY SCORE CLEARED",len(allowed))
+          print("LIVE QUALITY REJECTIONS",dict(reasons))
+          assert markets, "No public Tennis markets"
+          assert all(any(m["ticker"]==t for m in markets) for t in allowed)
+          assert set(allowed).isdisjoint({
+              m["ticker"] for m in markets
+              if m.get("status") not in ("active","open")
+          })
+          print("LIVE QUALITY PROBE PASSED; NO PUSH SENT")
+          PY
