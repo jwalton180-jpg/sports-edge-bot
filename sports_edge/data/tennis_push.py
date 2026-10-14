@@ -63,6 +63,9 @@ class PushEvent:
     score: str
     observed_at: str
     source_label: str = "SportsEdge"
+    observed_trough: float | None = None
+    rebound_pp: float | None = None
+    quote_spread_pp: float | None = None
 
     def is_eligible(self, *, now: datetime, allow_extreme: bool = True) -> bool:
         if self.lane not in SUPPORTED or not self.alert_id or not self.ticker:
@@ -92,8 +95,18 @@ class PushEvent:
         fair = cent(self.fair) if self.fair is not None else "not available"
         prefix = ("TRACKING ONLY — not a bet." if self.lane in {"EXTREME DIP — TRACKING ONLY", "PRICE RECOVERY — TRACKING ONLY"}
                   else "Research estimate — not a guaranteed outcome.")
+        movement = ""
+        if self.lane in {"PRICE RECOVERY — TRACKING ONLY", "EXTREME DIP — TRACKING ONLY"}:
+            if self.observed_trough is not None and self.rebound_pp is not None:
+                movement += (
+                    f"Observed quote trough {cent(self.observed_trough)} "
+                    f"| rebound +{self.rebound_pp:.1f} percentage points\n"
+                )
+            if self.quote_spread_pp is not None:
+                movement += f"Observed bid/ask spread {self.quote_spread_pp:.1f}pp\n"
         return (
             f"{self.selection} | quoted ASK {cent(self.price)} | model live fair {fair}\n"
+            f"{movement}"
             f"{self.score}\n"
             f"{prefix}\n"
             f"Ticker: {self.ticker}\n"

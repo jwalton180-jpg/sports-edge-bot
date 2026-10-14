@@ -550,6 +550,25 @@ def get_tennis_cloud_prospective_report():
         return None, _safe_error(exc)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def get_tennis_market_opportunity_report():
+    root = (
+        "https://raw.githubusercontent.com/jwalton180-jpg/sports-edge-bot/"
+        "tennis-market-alert-data/research/tennis_market_tracking/"
+    )
+    try:
+        response = requests.get(root + "market_opportunities.json", timeout=8)
+        response.raise_for_status()
+        report = response.json()
+        if not isinstance(report, dict) or report.get("schema_version") != 1:
+            return None, None, "Unrecognized market opportunity report."
+        status_response = requests.get(root + "latest_poll.json", timeout=8)
+        poll = status_response.json() if status_response.ok else None
+        return report, poll, None
+    except (requests.RequestException, ValueError, TypeError) as exc:
+        return None, None, _safe_error(exc)
+
+
 @st.cache_data(ttl=12, show_spinner=False)
 def get_tennis_score_states_live():
     try:
@@ -2730,6 +2749,55 @@ elif view == "Live Feed":
             ]),use_container_width=True,hide_index=True)
         else:
             st.caption("No early research watches currently meet the quality requirements.")
+        market_report, market_poll, market_error = get_tennis_market_opportunity_report()
+        with st.expander("Tennis alert follow-through · observed exit quotes", expanded=False):
+            st.caption(
+                "After each market-tracking notification, SportsEdge records later Kalshi "
+                "YES bids on subsequent scheduled polls. These are sampled prices only, "
+                "NOT executed trades, realized profit or prediction wins."
+            )
+            if market_report is None:
+                st.caption("No readable post-alert quote report yet. " + str(market_error or ""))
+            else:
+                st.caption(
+                    f"ntfy receipts: {market_report.get('notification_count', 0)} · "
+                    f"priced receipts: {market_report.get('entry_price_recorded', 0)} · "
+                    f"with later bid samples: {market_report.get('with_post_alert_bid_samples', 0)} · "
+                    f"unsampled: {market_report.get('without_post_alert_samples', 0)}"
+                )
+                if isinstance(market_poll, dict):
+                    gap = market_poll.get("poll_gap_minutes")
+                    if gap is not None:
+                        st.caption(
+                            f"Last poll gap: {gap} minutes "
+                            + ("(delayed monitoring)" if market_poll.get("late_poll_gap") else "")
+                        )
+                rows = [
+                    {
+                        "Market": row.get("ticker", ""),
+                        "Lane": row.get("lane", ""),
+                        "Alert ask": f"{row['alert_ask']*100:.1f}¢",
+                        "Best later observed bid": f"{row['best_observed_bid']*100:.1f}¢",
+                        "Gross quote improvement": f"{row['max_observed_quote_improvement_pp']:+.1f}pp",
+                        "Bid samples": row.get("post_alert_sample_count", 0),
+                    }
+                    for row in (market_report.get("alerts") or [])
+                    if row.get("status") == "sampled"
+                    and row.get("alert_ask") is not None
+                    and row.get("best_observed_bid") is not None
+                ]
+                if rows:
+                    st.dataframe(pd.DataFrame(rows[-25:]),use_container_width=True,hide_index=True)
+                else:
+                    st.caption(
+                        "No qualifying later bid observations yet. Older alerts without "
+                        "a saved entry quote cannot be retroactively valued."
+                    )
+                st.caption(
+                    "A sampled market bid does not guarantee fillable size. Fees, "
+                    "cash-out costs and unsampled price peaks are not measured."
+                )
+
         cloud_report, cloud_report_error = get_tennis_cloud_prospective_report()
         with st.expander("Prospective Tennis reversal results · Git-backed", expanded=False):
             st.caption(

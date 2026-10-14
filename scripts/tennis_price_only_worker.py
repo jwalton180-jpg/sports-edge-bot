@@ -18,6 +18,9 @@ from sports_edge.models.tennis_price_movement import (
     price_watch_tickers, build_price_movements,
 )
 from sports_edge.models.tennis_push_dispatch import send_tennis_pushes
+from sports_edge.models.tennis_market_outcomes import (
+    sample_followthrough, save_opportunity_report,
+)
 from sports_edge.models.tennis_prospective_store import (
     ProspectiveResearchStore, utc_iso,
 )
@@ -30,9 +33,23 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
         "open_contracts":0, "cheap_contracts":0, "history_contracts":0,
         "tracking_observations":0, "push_configured":False,
         "push_accepted":0, "push_failed":0,
-        "score_verified":False,
+        "score_verified":False, "poll_gap_minutes":None,
+        "late_poll_gap":False, "post_alert_eligible":0,
+        "post_alert_bid_samples":0,
     }
     try:
+        prior_path=store.root/"latest_poll.json"
+        if prior_path.exists():
+            try:
+                previous=json.loads(prior_path.read_text(encoding="utf-8"))
+                seen=datetime.fromisoformat(str(previous["observed_at"]))
+                gap=(now-seen).total_seconds()/60
+                if gap>=0:
+                    status["poll_gap_minutes"]=round(gap,1)
+                    status["late_poll_gap"]=gap>15
+            except (ValueError,KeyError,TypeError):
+                # A corrupt previous heartbeat must not become a fabricated gap.
+                pass
         markets=list(fetch_open_tennis_match_markets(strict=True))
         status["open_contracts"]=len(markets)
         if not markets:
@@ -54,6 +71,9 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
         status["push_accepted"]=delivery["accepted"]
         status["push_failed"]=delivery["failed"]
         status["errors"].extend(delivery["errors"])
+        follow = sample_followthrough(store,markets,now=now)
+        status["post_alert_eligible"]=follow["eligible_alerts"]
+        status["post_alert_bid_samples"]=follow["new_quote_samples"]
         status["healthy"]=delivery["failed"]==0 and delivery["configured"]
         if not delivery["configured"]:
             status["errors"].append("ntfy push topic not configured")
@@ -61,6 +81,7 @@ def poll_once(store: ProspectiveResearchStore, *, now: datetime | None = None) -
         status["errors"].append(f"{type(exc).__name__}: {exc}")
     store.add_run(status,hourly_only=True)
     store.save_report()
+    save_opportunity_report(store)
     (store.root/"latest_poll.json").write_text(
         json.dumps(status,sort_keys=True,indent=2)+"\n",encoding="utf-8",
     )
