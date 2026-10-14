@@ -3,6 +3,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - sports_edge/data/sleeper_sources.py
+      - sports_edge/models/sleeper_pipeline.py
       - sports_edge/models/prospective_capture.py
       - sports_edge/models/prospective_grade.py
       - tests/test_prospective_capture.py
@@ -11,6 +13,8 @@ on:
   push:
     branches: [main]
     paths:
+      - sports_edge/data/sleeper_sources.py
+      - sports_edge/models/sleeper_pipeline.py
       - sports_edge/models/prospective_capture.py
       - sports_edge/models/prospective_grade.py
       - .github/workflows/bounded_prospective_validation.yml
@@ -34,7 +38,7 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt pytest
       - name: Causality, immutable artifact, official grading and no-promotion tests
-        run: python -m pytest -q tests/test_prospective_capture.py tests/test_prospective_grade.py tests/test_prospective_promotion.py tests/test_prospective_review.py
+        run: python -m pytest -q tests/test_causal_market_starts.py tests/test_prospective_capture.py tests/test_prospective_grade.py tests/test_prospective_promotion.py tests/test_prospective_review.py
 
   snapshot:
     if: github.event_name != 'pull_request'
