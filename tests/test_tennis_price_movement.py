@@ -78,8 +78,23 @@ def test_price_watch_tickers_includes_unmodeled_cheap_matches():
 def test_lightweight_observer_persists_diagnostic_without_scores(monkeypatch,tmp_path):
     from scripts import tennis_price_only_worker as worker
     from sports_edge.models.tennis_prospective_store import ProspectiveResearchStore
+    from sports_edge.data.tennis_live import TennisLiveScoreState
+    from sports_edge.models.event_identity import canonical_event_id, canonical_participant
     m=market(ask=.12)
-    monkeypatch.setattr(worker,"fetch_open_tennis_match_markets",lambda strict: (m,))
+    second={**market(ticker="KX-W15-LAN",ask=.89,name="Xiran Lan"),
+            "event_ticker":m["event_ticker"]}
+    now_score=TennisLiveScoreState(
+        event_id=canonical_event_id("Tennis","Ziyan Zhang","Xiran Lan","2026-10-13"),
+        selection_key=canonical_participant("Tennis","Ziyan Zhang"),
+        player="Ziyan Zhang",opponent="Xiran Lan",tour="ITF-W",period=3,
+        player_sets=1,opponent_sets=1,player_games=3,opponent_games=0,
+        lost_first_set=True,won_latest_completed_set=True,
+        turnaround=True,deciding_set=True,current_set_lead=3,
+        score_label="1-6 6-3 3-0",fetched_at=NOW,
+        serving=True,net_break_advantage=1,score_sources=("Tennis365",),
+    )
+    monkeypatch.setattr(worker,"fetch_open_tennis_match_markets",lambda strict: (m,second))
+    monkeypatch.setattr(worker,"fetch_live_tennis_states",lambda: (now_score,))
     monkeypatch.setattr(
         worker,"fetch_tennis_candle_history",
         lambda tickers, **kwargs: {m["ticker"]:path([.68,.48,.19,.03,.05,.08,.12])}
@@ -92,9 +107,10 @@ def test_lightweight_observer_persists_diagnostic_without_scores(monkeypatch,tmp
     store=ProspectiveResearchStore(tmp_path/"research")
     result=worker.poll_once(store,now=NOW)
     assert result["healthy"]
-    assert result["open_contracts"]==1
+    assert result["open_contracts"]==2
     assert result["tracking_observations"]==1
     assert result["push_accepted"]==1
+    assert result["survivability_cleared"]==1
     assert len(seen)==1
     assert "UNVERIFIED" in seen[0].score
     assert (tmp_path/"research"/"latest_poll.json").exists()
