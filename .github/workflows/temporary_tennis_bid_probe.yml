@@ -1,0 +1,49 @@
+name: Temporary live Tennis bid-quality probe
+on:
+  push:
+    branches: [tennis-market-opportunity-ledger-20261014]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Inspect real public Kalshi bid availability without sending alerts
+        run: |
+          python - <<'PY'
+          from datetime import datetime,timedelta,timezone
+          from tempfile import TemporaryDirectory
+          from sports_edge.data.tennis_live import fetch_open_tennis_match_markets
+          from sports_edge.models.tennis_market_outcomes import sample_followthrough,save_opportunity_report
+          from sports_edge.models.tennis_prospective_store import ProspectiveResearchStore
+          rows=fetch_open_tennis_match_markets(strict=True)
+          print("OPEN MARKETS",len(rows))
+          valid=[m for m in rows if m.get("yes_bid_dollars") not in (None,"") and
+                        m.get("yes_ask_dollars") not in (None,"") and
+                        str(m.get("status")) in ("active","open")]
+          print("TWO-SIDED MARKET SNAPSHOTS",len(valid))
+          assert valid,"No 2-sided public Kalshi quotes; diagnostic source unavailable"
+          now=datetime.now(timezone.utc)
+          with TemporaryDirectory() as tmp:
+              store=ProspectiveResearchStore(tmp)
+              store.record_push_acceptance(
+                  alert_id="local-research-probe",ticker=valid[0]["ticker"],
+                  lane="PRICE RECOVERY — TRACKING ONLY",
+                  provider_id="local-no-notification",
+                  accepted_at=now-timedelta(minutes=3),
+                  entry_ask=.15,
+              )
+              result=sample_followthrough(store,valid,now=now)
+              report=save_opportunity_report(store)
+              print("LIVE BID SAMPLER",result)
+              print("LOCAL REPORT",{
+                  "with_samples":report["with_post_alert_bid_samples"],
+                  "missing_bid":report["without_post_alert_samples"],
+              })
+          print("LOCAL_TEST_ONLY_NO_ALERT_SENT")
+          PY
