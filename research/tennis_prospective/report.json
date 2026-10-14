@@ -1,5 +1,5 @@
 {
-  "already_moved_postmortems": 154,
+  "already_moved_postmortems": 155,
   "by_lane": {
     "DEEP REVERSAL": {
       "1-4c": {
@@ -79,8 +79,8 @@
       "hypothetical_gross_dollars_per_contract": 4.42,
       "losses": 89,
       "model_brier": 0.17875860349758182,
-      "observations": 111,
-      "pending": 1,
+      "observations": 112,
+      "pending": 2,
       "quote_brier": 0.15230181818181818,
       "second_half_win_rate": 0.2,
       "settled": 110,
@@ -217,42 +217,42 @@
       "wins": 74
     }
   },
-  "extreme_dip_quote_snapshots": 1004,
+  "extreme_dip_quote_snapshots": 1007,
   "last_worker_run": {
-    "confirmed_radar_signals": 5,
+    "confirmed_radar_signals": 2,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 288,
+    "model_sides": 286,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-14T14:37:21.222008+00:00",
-    "open_contracts": 360,
-    "pending_settlements": 6,
+    "observed_at": "2026-10-14T14:41:42.168727+00:00",
+    "open_contracts": 356,
+    "pending_settlements": 7,
     "post_surge_audits": 0,
-    "price_only_scanned": 65,
+    "price_only_scanned": 64,
     "price_only_watches": 4,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
       "stale_live_score": 10,
-      "unique_live_score_not_found": 350
+      "unique_live_score_not_found": 346
     },
     "quoted_snapshots_added": 3,
     "recovery_building": 0,
     "score_states": 14,
-    "settlement_checks_due": 0,
+    "settlement_checks_due": 2,
     "survivability_cleared": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 67,
-  "recorded_snapshots": 5510,
+  "recorded_snapshots": 5522,
   "recovery_building_quote_snapshots": 73,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 482,
-  "total_pending": 6,
+  "total_observations": 483,
+  "total_pending": 7,
   "total_settled": 476
 }
