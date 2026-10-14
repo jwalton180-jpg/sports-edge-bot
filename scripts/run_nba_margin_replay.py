@@ -114,6 +114,28 @@ def replay(games):
                 "model_classification_accuracy":sum((r["p"]>=.5)==bool(r["won"]) for r in rows)/len(rows),
                 "always_no_accuracy":1-sum(r["won"] for r in rows)/len(rows),
                 "mean_predicted_19plus":sum(r["p"] for r in rows)/len(rows)}
+    # Preregistered bins prevent the misleading "87% accuracy" argument:
+    # this rare tail requires reliability diagrams and positive-case support.
+    bands=(0.,.05,.10,.20,.30,.40,.60,1.000001)
+    calibration=[]
+    for lo,hi in zip(bands,bands[1:]):
+        subset=[r for r in records if lo <= r["p"] < hi]
+        if not subset:
+            calibration.append({"p_range":[lo,hi],"n":0})
+            continue
+        n=len(subset)
+        wins=sum(r["won"] for r in subset)
+        phat=wins/n
+        z=1.96
+        denominator=1+z*z/n
+        center=(phat+z*z/(2*n))/denominator
+        half=z*math.sqrt(phat*(1-phat)/n+z*z/(4*n*n))/denominator
+        calibration.append({"p_range":[lo,hi],"n":n,"wins":wins,
+                            "observed_hit_rate":phat,
+                            "mean_predicted":sum(r["p"] for r in subset)/n,
+                            "wilson_95_interval":[max(0,center-half),min(1,center+half)]})
+    ece=sum(r["n"]*abs(r["mean_predicted"]-r["observed_hit_rate"])
+            for r in calibration if r["n"])/max(1,len(records))
     # Date-clustered deterministic bootstrap; one game/day cluster per unit.
     per_date=defaultdict(list)
     for r in records:per_date[r["date"]].append(r)
@@ -134,6 +156,8 @@ def replay(games):
             "overall":stats(records),
             "home":stats([r for r in records if r["side"]=="HOME"]),
             "away":stats([r for r in records if r["side"]=="AWAY"]),
+            "probability_band_reliability":calibration,
+            "expected_calibration_error_by_fixed_bands":ece,
             "brier_advantage_date_bootstrap95":([uplift[10],uplift[389]] if len(uplift)==400 else None),
             "no_promotions":True,"qualified_for_live":False,
             "limitations":["ESPN scoreboard historical, not immutable future forecasts",
