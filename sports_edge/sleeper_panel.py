@@ -22,7 +22,8 @@ def render_sleeper_panel(markets, *, coverage_complete, scope, runner=None):
             except (KeyError, ValueError, TypeError):
                 unknown += 1
         complete = coverage_complete and unknown == 0
-        st.caption(f"{len(selected)} listed contracts near this date; actual starts are verified during the scan; {unknown} lack a verified start time. Catalog {'complete' if complete else 'incomplete'}.")
+        st.caption(f"{len(selected)} listed contracts near this date; {unknown} lack a listed occurrence timestamp. Independent game starts and model coverage are checked when each contract is analyzed. Catalog fetch {'complete' if complete else 'incomplete'}.")
+        st.caption(f"Analysis budget: {limit} of {len(selected)} listings per click. Unprocessed listings are not validated predictions.")
         key = "sleeper_report_"+scope+"_"+day.isoformat()
         if st.button("Run sleeper value scan", key="sleeper_scan_"+scope, use_container_width=True):
             with st.spinner("Checking independent history, both sides, rules and executable costs…"):
@@ -58,8 +59,20 @@ def render_sleeper_panel(markets, *, coverage_complete, scope, runner=None):
             from sports_edge.data.kalshi import KalshiPublicClient
             ledger=SleeperLedger(Path("research/sleeper_ledger.sqlite"))
             try:
-                st.json(ledger.grade_official(KalshiPublicClient()))
-                st.json(ledger.metrics())
+                grading = ledger.grade_official(KalshiPublicClient())
+                outcomes = ledger.metrics()
+                st.caption(
+                    f"Officially graded in this pass: {grading['graded']} · "
+                    f"Due model forecasts checked: {grading['checked']}/{grading['due_model_predictions']} · "
+                    f"Unmodeled placeholders excluded: {grading['unmodeled_placeholders_excluded']} · "
+                    f"Future predictions not yet due: {grading['future_model_predictions_not_due']}."
+                )
+                if not grading["capacity_complete"]:
+                    st.warning("Grading is bounded to 40 due forecasts per pass; an incomplete queue is not a model failure. You can run another bounded batch.")
+                if not outcomes["groups"]:
+                    st.info("No official model-performance groups yet. Listed contracts or records with no independent forecast cannot establish accuracy.")
+                st.json(grading)
+                st.json(outcomes)
                 if report is not None:
                     report["ledger_export"]=ledger.export_jsonl()
             finally:
