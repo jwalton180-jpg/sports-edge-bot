@@ -77,10 +77,20 @@ class SleeperSources:
         logs = []
         for season in (g["season"]-10001, g["season"]):
             raw = self.get(f"{NHL}/player/{pid}/game-log/{season}/2")
+            schedules={}
             for r in raw.get("gameLog", []):
+                played_for=r.get("teamAbbrev")
+                if not played_for:
+                    raise ValueError("historical_player_team_missing")
+                if played_for not in schedules:
+                    data=self.get(f"{NHL}/club-schedule-season/{played_for}/{season}")
+                    schedules[played_for]={str(item["id"]):item for item in data.get("games", [])}
+                scheduled=schedules[played_for].get(str(r["gameId"]))
+                if not scheduled or scheduled.get("gameState") not in {"OFF","FINAL"}:
+                    continue
                 mm, ss = str(r.get("toi", "0:00")).split(":")
                 item = {"source": "NHL", "player_id": pid, "game_id": str(r["gameId"]),
-                        "date": r["gameDate"], "toi_minutes": int(mm)+int(ss)/60,
+                        "date": r["gameDate"], "event_time":scheduled["startTimeUTC"], "toi_minutes": int(mm)+int(ss)/60,
                         "opponent": r.get("opponentAbbrev"), "started": r.get("gamesStarted") == 1}
                 for f in ("goals", "shots", "assists", "points"):
                     item[f] = r.get(f)

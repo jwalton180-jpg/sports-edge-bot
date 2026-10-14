@@ -171,7 +171,7 @@ def test_low_stake_ticket_defaults_to_strong_four_to_five_leg_core():
     from pathlib import Path
     source = Path("sports_edge/app.py").read_text()
     assert 'min_legs = 1' in source
-    assert 'max_legs = 30' in source
+    assert 'max_legs = None' in source
     assert 'default_legs = 6 if mode == "longshot" else 5' in source
     assert 'max_legs = 4' in source
     assert "returns fewer rather than adding weak filler" in source

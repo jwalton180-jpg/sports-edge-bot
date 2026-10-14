@@ -28,7 +28,7 @@ The existing on-demand Streamlit application exposes the same **Sleeper value â€
 
 ## Tickets
 
-**Qualified Value** and **Sleeper Value** rank positive net value without the favorite-probability floor or longshot price band. Best Available preserves the existing higher-probability core. NFL **2+ Touchdowns** is a dedicated focus. The multi-game leg target supports 1â€“30 legs; the established single-game four-leg maximum remains. The builder rejects opposite sides of a contract, redundant same-player thresholds and incompatible winner selections. Joint products are explicitly independence benchmarks with dependence-unrestricted probability bounds. Payout is **illustrative** unless an actual executable combo quote and costs exist. No create-combo, RFQ, wager or order endpoint is invoked.
+**Qualified Value** and **Sleeper Value** rank positive net value without the favorite-probability floor or longshot price band. Best Available preserves the existing higher-probability core. NFL **2+ Touchdowns** is a dedicated focus. The multi-game leg target is user-specified with no arbitrary maximum; the established single-game four-leg maximum remains. The builder rejects opposite sides of a contract, redundant same-player thresholds and incompatible winner selections. Joint products are explicitly independence benchmarks with dependence-unrestricted probability bounds. Payout is **illustrative** unless an actual executable combo quote and costs exist. No create-combo, RFQ, wager or order endpoint is invoked.
 
 ## Prospective records and promotion
 

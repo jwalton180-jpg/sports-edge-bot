@@ -165,6 +165,16 @@ def test_ticket_rejects_opposite_sides_redundant_ladders_and_winners():
     assert probability_bounds([.7,.8]) == pytest.approx((.5,.7))
 
 
+def test_value_mode_separates_return_from_highest_probability():
+    from sports_edge.models.parlay_intelligence import build_intelligent_parlay
+    sleeper=replace(leg(selection="Overlooked",fair=.4,price=.2),execution_audit_status="QUALIFIED_VALUE",entry_fee_per_contract=.01)
+    favorite=replace(leg(event_id="E2",selection="Favorite",fair=.8,price=.77),execution_audit_status="QUALIFIED_VALUE",entry_fee_per_contract=.01)
+    assert assess_leg(sleeper,"value").qualified
+    assert not assess_leg(sleeper,"best").qualified
+    result=build_intelligent_parlay([favorite,sleeper],mode="value",target_legs=1)
+    assert result.legs[0].leg.selection=="Overlooked"
+
+
 def test_ledger_preserves_rejections_and_prevents_edits(tmp_path):
     report=example_report()
     for r in report["records"]:
@@ -243,11 +253,19 @@ def test_bounded_grading_rotates_past_open_markets(tmp_path):
     ledger.close()
 
 
-def test_value_mode_separates_return_from_highest_probability():
-    from sports_edge.models.parlay_intelligence import build_intelligent_parlay
-    sleeper=replace(leg(selection="Overlooked",fair=.4,price=.2),execution_audit_status="QUALIFIED_VALUE",entry_fee_per_contract=.01)
-    favorite=replace(leg(event_id="E2",selection="Favorite",fair=.8,price=.77),execution_audit_status="QUALIFIED_VALUE",entry_fee_per_contract=.01)
-    assert assess_leg(sleeper,"value").qualified
-    assert not assess_leg(sleeper,"best").qualified
-    result=build_intelligent_parlay([favorite,sleeper],mode="value",target_legs=1)
-    assert result.legs[0].leg.selection=="Overlooked"
+def test_nhl_live_game_log_is_not_treated_as_completed_history():
+    from sports_edge.data.sleeper_sources import SleeperSources
+    sources=SleeperSources()
+    game={"id":1,"season":20262027,"startTimeUTC":market()["occurrence_datetime"],
+          "awayTeam":{"abbrev":"MTL"},"homeTeam":{"abbrev":"WSH"}}
+    sources.nhl_match=lambda m:game
+    def get(url,params=None):
+        if "/roster/MTL/" in url:
+            return {"forwards":[{"id":123,"firstName":{"default":"Alpha"},"lastName":{"default":"Player"}}]}
+        if "/roster/" in url:
+            return {}
+        if "/game-log/" in url:
+            return {"gameLog":[{"gameId":7,"gameDate":"2026-10-12","teamAbbrev":"MTL","toi":"18:00"}]}
+        return {"games":[{"id":7,"gameState":"LIVE","startTimeUTC":"2026-10-12T23:30:00Z"}]}
+    sources.get=get
+    assert sources.nhl_player(market(),"Alpha Player")["rows"] == []

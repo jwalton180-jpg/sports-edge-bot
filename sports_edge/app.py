@@ -1926,12 +1926,13 @@ elif view == "Parlay Generator":
         # not shrink Best Available below four merely to produce a ticket.
         min_legs = 1
         default_legs = 6 if mode == "longshot" else 5
-        max_legs = 30
-    target = st.slider(
+        max_legs = None
+    target = st.number_input(
         "Target legs",
         min_value=min_legs,
         max_value=max_legs,
         value=default_legs,
+        step=1,
         key=f"intel_target_v3_{mode}_{game_scope}",
     )
     if game_scope == "Single game":
