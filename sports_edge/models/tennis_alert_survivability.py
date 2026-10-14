@@ -71,7 +71,7 @@ def qualified_tickers(
     states: list[TennisLiveScoreState] | tuple[TennisLiveScoreState, ...],
     *,
     now: datetime,
-) -> tuple[set[str], dict[str, int]]:
+) -> tuple[dict[str, TennisLiveScoreState], dict[str, int]]:
     """Exact two-player event pairing; never infer match state from odds.
 
     Kalshi has one YES contract per player under a common event_ticker. Match
@@ -93,7 +93,7 @@ def qualified_tickers(
         if len(key)==2:
             state_pairs[key].append(state)
 
-    allowed=set()
+    allowed: dict[str, TennisLiveScoreState] = {}
     rejected: dict[str, int] = defaultdict(int)
     for market in markets:
         ticker=str(market.get("ticker") or "")
@@ -114,7 +114,7 @@ def qualified_tickers(
             continue
         reason=survivability_reason(matching[0],now=now)
         if reason=="eligible":
-            allowed.add(ticker)
+            allowed[ticker]=matching[0]
         else:
             rejected[reason]+=1
     return allowed,dict(rejected)
