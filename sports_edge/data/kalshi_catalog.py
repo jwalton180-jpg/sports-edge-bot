@@ -14,6 +14,13 @@ SUPPORTED_PREFIXES: tuple[tuple[str, str], ...] = (
     ("KXNBA", "NBA"),
     ("KXWNBA", "WNBA"),
     ("KXNFL", "NFL"),
+    ("KXNHL", "NHL"),
+    ("KXNCAAF", "NCAAF"),
+    ("KXCFB", "NCAAF"),
+    ("KXSOCCER", "Soccer"),
+    ("KXEPL", "Soccer"),
+    ("KXMLS", "Soccer"),
+    ("KXUCL", "Soccer"),
     ("KXATP", "Tennis"),
     ("KXWTA", "Tennis"),
     ("KXITF", "Tennis"),
@@ -74,6 +81,9 @@ PRODUCTION_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
         "KXNFLRECYDSH2H","KXNFLTEAMTO","KXNFLGAMETO","KXNFLTEAM1STDOWNS",
         "KXNFLINT","KXNFLTEAMFG","KXNFL2HTD","KXNFL1HTD","KXNFLSACK",
     ),
+    "NHL": ("KXNHLGAME", "KXNHLSPREAD", "KXNHLTOTAL", "KXNHLTEAMTOTAL", "KXNHLPLAYERGOALS", "KXNHLGOALSCORER", "KXNHLSHOTSONGOAL", "KXNHLPLAYERPOINTS"),
+    "NCAAF": ("KXNCAAFGAME", "KXNCAAFSPREAD", "KXNCAAFTOTAL", "KXCFBGAME", "KXCFBSPREAD", "KXCFBTOTAL"),
+    "Soccer": ("KXSOCCERGAME", "KXSOCCERTOTAL", "KXEPLGAME", "KXEPLTOTAL", "KXMLSGAME", "KXMLSTOTAL", "KXUCLGAME", "KXUCLTOTAL"),
     "Tennis": (
         "KXATPMATCH","KXATPCHALLENGERMATCH","KXWTAMATCH","KXITFMATCH",
         "KXITFWMATCH","KXWTACHALLENGERMATCH","KXATPSETWINNER",
@@ -88,6 +98,9 @@ PRODUCTION_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
 }
 
 OVERVIEW_SERIES_BY_SPORT: dict[str, tuple[str, ...]] = {
+    "NHL": ("KXNHLGAME", "KXNHLTOTAL", "KXNHLPLAYERGOALS"),
+    "NCAAF": ("KXNCAAFGAME", "KXNCAAFSPREAD", "KXCFBGAME"),
+    "Soccer": ("KXEPLGAME", "KXMLSGAME", "KXUCLGAME"),
     "MLB": ("KXMLBGAME","KXMLBSPREAD","KXMLBTOTAL"),
     "NBA": ("KXNBAGAME","KXNBASPREAD","KXNBATOTAL"),
     "WNBA": ("KXWNBAGAME","KXWNBASPREAD","KXWNBATOTAL"),
@@ -131,6 +144,12 @@ def _sport_for_series(row: dict[str, Any]) -> str | None:
         if ticker.startswith(prefix):
             return sport
 
+    if " nhl " in text or " national hockey league " in text:
+        return "NHL"
+    if " ncaaf " in text or " college football " in text:
+        return "NCAAF"
+    if " soccer " in text or " premier league " in text or " champions league " in text:
+        return "Soccer"
     if " wnba " in text or " women's national basketball association " in text:
         return "WNBA"
     if " major league baseball " in text or " mlb " in text:
@@ -223,6 +242,15 @@ def _series_is_actionable(row: dict[str, Any], sport: str) -> bool:
             or any(ticker.endswith(x) for x in exact_suffixes)
             or any(term in title for term in title_terms)
         )
+
+    if sport in {"NHL", "NCAAF", "Soccer"}:
+        tokens = ("GAME", "MATCH", "WINNER", "SPREAD", "TOTAL", "GOAL",
+                  "SHOTS", "POINTS", "BTTS", "HANDICAP", "PUCKLINE",
+                  "RUSH", "PASS", "REC", "TD", "1H", "2H", "1Q", "2Q")
+        title_terms = (" game", " match", "goal", "shots on goal", "points",
+                       "total", "spread", "handicap", "touchdown", "passing",
+                       "rushing", "receiving", "both teams to score")
+        return any(token in ticker for token in tokens) or any(term in title for term in title_terms)
 
     if sport == "NFL":
         if " most " in f" {title} " or " weekly " in f" {title} ":
