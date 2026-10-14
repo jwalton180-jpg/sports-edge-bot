@@ -37,6 +37,7 @@ from sports_edge.models.tennis_prospective_store import (
     verified_kalshi_settlement,
 )
 from sports_edge.models.tennis_push_dispatch import send_tennis_pushes
+from sports_edge.models.tennis_alert_survivability import qualified_tickers
 from sports_edge.models.tennis_price_movement import (
     build_price_movements, price_watch_tickers,
 )
@@ -93,6 +94,7 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
         "push_configured": False, "push_accepted": 0, "push_failed": 0,
     }
     price_for_push = ()
+    push_allowed = set()
     extreme_for_push = ()
     candidates_for_push = ()
     try:
@@ -104,6 +106,10 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
             raise RuntimeError("All six Tennis match series returned zero open markets")
         states = list(fetch_live_tennis_states())
         diagnostics["score_states"] = len(states)
+        qualified,rejection_reasons = qualified_tickers(markets,states,now=now)
+        push_allowed = set(qualified)
+        diagnostics["survivability_cleared"] = len(push_allowed)
+        diagnostics["push_rejection_reasons"] = rejection_reasons
         grouped = group_kalshi_sports(markets)
         candidates = [
             c for c in model_candidates_from_kalshi(grouped, sport_filter="Tennis")
@@ -294,8 +300,9 @@ def observe_once(store: ProspectiveResearchStore, *, now: datetime | None = None
     if diagnostics["healthy"]:
         push = send_tennis_pushes(
             store, now=now, extreme_observations=extreme_for_push,
-            price_observations=price_for_push,
+            price_observations=(),
             model_candidates=candidates_for_push,
+            allowed_tickers=push_allowed,
         )
         diagnostics["push_configured"] = push["configured"]
         diagnostics["push_accepted"] = push["accepted"]
