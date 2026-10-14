@@ -1,0 +1,84 @@
+name: Bounded prospective sport model validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - sports_edge/models/prospective_capture.py
+      - sports_edge/models/prospective_grade.py
+      - tests/test_prospective_capture.py
+      - tests/test_prospective_grade.py
+      - .github/workflows/bounded_prospective_validation.yml
+  push:
+    branches: [main]
+    paths:
+      - sports_edge/models/prospective_capture.py
+      - sports_edge/models/prospective_grade.py
+      - .github/workflows/bounded_prospective_validation.yml
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12,20 * * *'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sportedge-bounded-prospective
+  cancel-in-progress: false
+jobs:
+  causal-and-safety-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt pytest
+      - name: Causality, immutable artifact, official grading and no-promotion tests
+        run: python -m pytest -q tests/test_prospective_capture.py tests/test_prospective_grade.py tests/test_prospective_promotion.py tests/test_prospective_review.py
+
+  snapshot:
+    if: github.event_name != 'pull_request'
+    needs: causal-and-safety-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    steps:
+      - name: Time-limited research window (not a permanent observer)
+        id: window
+        shell: bash
+        run: |
+          if [ "$(date -u +%Y%m%d)" -le "20261214" ]; then
+            echo 'active=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.window.outputs.active == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.window.outputs.active == 'true'
+        with:
+          python-version: '3.12'
+      - if: steps.window.outputs.active == 'true'
+        run: pip install -r requirements.txt
+      - name: Freeze independent pre-event probabilities in a GitHub-hosted artifact
+        if: steps.window.outputs.active == 'true'
+        run: python -m sports_edge.models.prospective_capture --output-dir prospective-out
+      - uses: actions/upload-artifact@v4
+        if: steps.window.outputs.active == 'true' && always()
+        with:
+          name: sportsedge-live-research-snapshot-${{ github.run_id }}
+          path: prospective-out/
+          if-no-files-found: warn
+          retention-days: 85
+      - name: Grade prior archived observations against official results (read-only)
+        if: steps.window.outputs.active == 'true' && success()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python -m sports_edge.models.prospective_grade
+      - uses: actions/upload-artifact@v4
+        if: steps.window.outputs.active == 'true' && always()
+        with:
+          name: sportsedge-prospective-review-${{ github.run_id }}
+          path: prospective-grade/
+          if-no-files-found: warn
+          retention-days: 85
