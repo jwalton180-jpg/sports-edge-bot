@@ -112,3 +112,21 @@ def test_lightweight_observer_fails_closed_when_market_coverage_errors(monkeypat
     assert not result["healthy"]
     assert not result["push_accepted"]
     assert result["errors"]
+
+
+
+def test_single_minute_fast_recovery_is_tracked_only_with_large_fresh_bid_backed_move():
+    m=market(ask=.15)
+    rows=build_price_movements(
+        [m],{m["ticker"]:path([.50,.25,.05,.03,.03,.15])},now=NOW,
+    )
+    assert len(rows)==1
+    assert rows[0].lane=="PRICE RECOVERY — TRACKING ONLY"
+    assert rows[0].rebound_pp==12
+    assert rows[0].live_fair is None
+
+    slow=build_price_movements(
+        [market(ask=.08)],
+        {m["ticker"]:path([.50,.25,.05,.03,.03,.08])},now=NOW,
+    )
+    assert slow==()
