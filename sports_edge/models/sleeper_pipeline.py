@@ -275,7 +275,47 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
     current = now or datetime.now(timezone.utc)
     if type(limit) is not int or not 1 <= limit <= 200:
         raise ValueError("bounded positive scan limit required")
-    rows = [r for group in group_kalshi_sports(markets).values() for r in group]
+    # Limited scans must not consume all calls on the first sport's numerous
+    # unsupported families. Model-capable contracts get deterministic priority,
+    # then eligible sports are processed round-robin. Every unprocessed
+    # listing is still recorded with scan_limit_not_analyzed.
+    grouped = group_kalshi_sports(markets)
+    supported = {
+        "NHL": {"Player Goals","Shots on Goal","Player Points",
+                "Player Assists","Goalie Saves","Team Total"},
+        "NFL": {"Player Touchdowns"},
+        "NCAAF": {"Moneyline"},
+        "Soccer": {"Game Total","Team Total","Both Teams Score"},
+        "NBA": {"Spread","Points","Rebounds","Assists","Three-Pointers",
+                "Points + Rebounds + Assists"},
+        "WNBA": {"Points","Rebounds","Assists","Three-Pointers",
+                 "Points + Rebounds + Assists"},
+    }
+    def supported_scope(row):
+        if row.sport == "Soccer" and not str(row.market.get("ticker","")).startswith("KXEPL"):
+            return False
+        if row.sport == "NBA" and row.family == "Spread":
+            try:
+                return (float(row.market["floor_strike"]) == 18.5 and
+                        row.market.get("strike_type") == "greater")
+            except (KeyError,TypeError,ValueError):
+                return False
+        return row.family in supported.get(row.sport,())
+    buckets = {}
+    for sport, group in grouped.items():
+        ordered = sorted(group, key=lambda row:(
+            not supported_scope(row),
+            not contract_spec(row).rules_supported,
+            str(row.market.get("ticker") or "")))
+        if ordered:
+            buckets[sport] = ordered
+    rows = []
+    index = 0
+    while any(index < len(group) for group in buckets.values()):
+        for sport in buckets:
+            if index < len(buckets[sport]):
+                rows.append(buckets[sport][index])
+        index += 1
     series_cache, records, analyzed = {}, [], 0
     legacy = {(c.kalshi_ticker,c.kalshi_side):c for c in legacy_candidates}
     for row in rows:
