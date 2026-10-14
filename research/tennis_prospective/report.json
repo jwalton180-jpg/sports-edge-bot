@@ -19,7 +19,7 @@
         "wins": 1
       },
       "4-10c": {
-        "settled": 1,
+        "settled": 2,
         "wins": 0
       },
       "causal_forward": {
@@ -33,15 +33,15 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.0,
-      "hypothetical_gross_dollars_per_contract": -0.07,
-      "losses": 5,
-      "model_brier": 0.2339902515861667,
+      "hypothetical_gross_dollars_per_contract": -0.16,
+      "losses": 6,
+      "model_brier": 0.21039834961228576,
       "observations": 7,
-      "pending": 1,
-      "quote_brier": 0.12751666666666667,
-      "second_half_win_rate": 0.3333333333333333,
-      "settled": 6,
-      "win_rate": 0.16666666666666666,
+      "pending": 0,
+      "quote_brier": 0.11045714285714286,
+      "second_half_win_rate": 0.25,
+      "settled": 7,
+      "win_rate": 0.14285714285714285,
       "wins": 1
     },
     "EARLY WATCH \u2014 RESEARCH": {
@@ -62,29 +62,29 @@
         "wins": 6
       },
       "4-10c": {
-        "settled": 12,
+        "settled": 13,
         "wins": 1
       },
       "causal_forward": {
-        "evaluated": 84,
+        "evaluated": 85,
         "minimum_prior_verified": 30,
-        "model_brier": 0.199393,
-        "quote_brier": 0.162324,
+        "model_brier": 0.197401,
+        "quote_brier": 0.160472,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.19298245614035087,
-      "hypothetical_gross_dollars_per_contract": 4.63,
-      "losses": 93,
-      "model_brier": 0.18092132003632175,
+      "first_half_win_rate": 0.1896551724137931,
+      "hypothetical_gross_dollars_per_contract": 4.56,
+      "losses": 94,
+      "model_brier": 0.1796205367933276,
       "observations": 116,
-      "pending": 1,
-      "quote_brier": 0.15288782608695653,
+      "pending": 0,
+      "quote_brier": 0.15161206896551724,
       "second_half_win_rate": 0.1896551724137931,
-      "settled": 115,
-      "win_rate": 0.19130434782608696,
+      "settled": 116,
+      "win_rate": 0.1896551724137931,
       "wins": 22
     },
     "RECOVERY BUILDING \u2014 RESEARCH": {
@@ -105,7 +105,7 @@
         "wins": 0
       },
       "4-10c": {
-        "settled": 12,
+        "settled": 13,
         "wins": 1
       },
       "causal_forward": {
@@ -119,15 +119,15 @@
       "chronological_out_of_sample_ready": false,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.0,
-      "hypothetical_gross_dollars_per_contract": -0.11,
-      "losses": 18,
-      "model_brier": 0.12315143849980001,
+      "hypothetical_gross_dollars_per_contract": -0.18,
+      "losses": 19,
+      "model_brier": 0.11871710637357143,
       "observations": 21,
-      "pending": 1,
-      "quote_brier": 0.089515,
-      "second_half_win_rate": 0.2,
-      "settled": 20,
-      "win_rate": 0.1,
+      "pending": 0,
+      "quote_brier": 0.08548571428571429,
+      "second_half_win_rate": 0.18181818181818182,
+      "settled": 21,
+      "win_rate": 0.09523809523809523,
       "wins": 2
     },
     "REVERSAL SIGNAL": {
@@ -148,29 +148,29 @@
         "wins": 10
       },
       "4-10c": {
-        "settled": 4,
+        "settled": 5,
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 81,
+        "evaluated": 82,
         "minimum_prior_verified": 30,
-        "model_brier": 0.240836,
-        "quote_brier": 0.230212,
+        "model_brier": 0.238266,
+        "quote_brier": 0.227465,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.4107142857142857,
-      "hypothetical_gross_dollars_per_contract": 9.92,
-      "losses": 71,
-      "model_brier": 0.22871894617314287,
+      "hypothetical_gross_dollars_per_contract": 9.85,
+      "losses": 72,
+      "model_brier": 0.22696064101983185,
       "observations": 113,
-      "pending": 1,
-      "quote_brier": 0.22516785714285714,
-      "second_half_win_rate": 0.32142857142857145,
-      "settled": 112,
-      "win_rate": 0.36607142857142855,
+      "pending": 0,
+      "quote_brier": 0.22321858407079648,
+      "second_half_win_rate": 0.3157894736842105,
+      "settled": 113,
+      "win_rate": 0.36283185840707965,
       "wins": 41
     },
     "WATCH": {
@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 1020,
   "last_worker_run": {
-    "confirmed_radar_signals": 2,
+    "confirmed_radar_signals": 1,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,12 +227,12 @@
     "model_sides": 322,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-14T20:04:12.642407+00:00",
+    "observed_at": "2026-10-14T20:08:34.348738+00:00",
     "open_contracts": 406,
-    "pending_settlements": 5,
+    "pending_settlements": 1,
     "post_surge_audits": 0,
-    "price_only_scanned": 74,
-    "price_only_watches": 5,
+    "price_only_scanned": 77,
+    "price_only_watches": 4,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 496,
-  "total_pending": 5,
-  "total_settled": 491
+  "total_pending": 1,
+  "total_settled": 495
 }
