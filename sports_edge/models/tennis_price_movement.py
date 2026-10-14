@@ -47,7 +47,7 @@ def price_watch_tickers(markets: list[dict] | tuple[dict, ...]) -> tuple[str, ..
         str(m["ticker"])
         for m in markets
         if m.get("ticker") and m.get("yes_sub_title")
-        and str(m.get("status") or "open").lower() == "open"
+        and str(m.get("status") or "").lower() in {"open", "active"}
         and (price := _ask(m)) is not None and price <= .23
     ))
 
@@ -71,7 +71,7 @@ def build_price_movements(
         if ticker in seen or not ticker or not market.get("yes_sub_title"):
             continue
         seen.add(ticker)
-        if str(market.get("status") or "open").lower() != "open":
+        if str(market.get("status") or "").lower() not in {"open", "active"}:
             continue
         current_market_ask=_ask(market)
         if current_market_ask is None or current_market_ask > .23:
