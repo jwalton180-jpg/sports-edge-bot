@@ -198,3 +198,26 @@ def test_settlements_before_event_are_rejected(tmp_path):
         ledger.settle(scan_id=key,ticker=market()["ticker"],result="yes",source_url="https://kalshi.com/market",settled_at="2026-10-14T18:01:00Z")
     assert ledger.metrics()["groups"] == []
     ledger.close()
+
+
+def test_official_finalized_status_grades_and_fair_price_does_not(tmp_path):
+    from types import SimpleNamespace
+    ledger=SleeperLedger(tmp_path/"official.sqlite")
+    report=example_report()
+    for r in report["records"]:
+        r["observed_at"]="2026-10-13T18:00:00Z"
+        r["event_time"]="2026-10-13T23:30:00Z"
+    ledger.append_scan(report)
+    class Official:
+        base="https://external-api.kalshi.com/trade-api/v2"
+        value="0.50"
+        def market(self,ticker):
+            return SimpleNamespace(data={"market":{"ticker":ticker,"status":"finalized","result":"yes",
+                                    "settlement_value_dollars":self.value,"settlement_ts":"2026-10-14T01:00:00Z"}})
+    client=Official()
+    assert ledger.grade_official(client)["graded"] == 0
+    client.value="1.00"
+    assert ledger.grade_official(client)["graded"] == 1
+    assert len(ledger.metrics()["groups"]) == 2
+    assert ledger.metrics()["realized_returns"] is None
+    ledger.close()

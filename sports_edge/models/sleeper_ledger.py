@@ -58,7 +58,10 @@ class SleeperLedger:
                 if ticker not in cache:
                     cache[ticker]=client.market(ticker).data["market"]
                 m=cache[ticker]
-                if m.get("ticker")!=ticker or m.get("status")!="settled" or m.get("result") not in {"yes","no"}:
+                if m.get("ticker")!=ticker or m.get("status") not in {"settled","finalized"} or m.get("result") not in {"yes","no"}:
+                    continue
+                if float(m.get("settlement_value_dollars", "nan")) != int(m["result"] == "yes"):
+                    # Fair-price resolutions and voids are not binary wins.
                     continue
                 settled=m.get("settlement_ts") or m.get("settlement_time")
                 if not settled:

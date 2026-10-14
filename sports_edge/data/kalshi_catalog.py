@@ -574,7 +574,7 @@ def fetch_current_sport_catalog(
             for raw in payload.get("markets", []) or []:
                 if not isinstance(raw, dict):
                     continue
-                if str(raw.get("status") or "").lower() != "open":
+                if str(raw.get("status") or "").lower() not in {"open", "active"}:
                     continue
                 ticker = str(raw.get("ticker") or "").strip()
                 if not ticker:

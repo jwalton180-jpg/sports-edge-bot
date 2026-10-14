@@ -971,7 +971,7 @@ def project_nfl_touchdowns(
     event_date,
     event_ticker: str | None = None,
 ) -> NFLPropProjection | None:
-    if milestone_tds not in {1, 2, 3}:
+    if milestone_tds not in {1, 2, 3, 4}:
         return None
     ctx = _context(player_name, event_date, event_ticker)
     if ctx is None or ctx.position.upper() not in {"QB", "RB", "WR", "TE", "FB"}:
