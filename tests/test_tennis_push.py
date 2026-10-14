@@ -178,3 +178,53 @@ def test_priority_alert_payload_has_public_market_context_only():
     assert "KXWTAMATCH-SHI" in payload["message"]
     assert headers["Authorization"]=="Bearer secret-token"
     assert "secret-token" not in str(payload)
+
+
+
+def test_unverified_price_tracking_push_without_score_or_model(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    client=FakeClient()
+    notice=SimpleNamespace(
+        lane="PRICE RECOVERY — TRACKING ONLY",
+        current_ask=.12,live_fair=None,ticker="KX-W15-ZHANG",
+        selection="Ziyan Zhang",
+        score="Live score UNVERIFIED — market quote movement only",
+    )
+    env={"SPORTSEDGE_NTFY_TOPIC":TOPIC}
+    result=send_tennis_pushes(
+        store,now=NOW,price_observations=[notice],environ=env,session=client
+    )
+    assert result["configured"] and result["accepted"]==1
+    payload=client.calls[0][1]
+    assert "TRACK ONLY" in payload["title"]
+    assert "not a bet" in payload["message"]
+    assert "UNVERIFIED" in payload["message"]
+    assert "not available" in payload["message"]
+    assert store.signals==[]
+    again=send_tennis_pushes(
+        ProspectiveResearchStore(tmp_path/"research"),
+        now=NOW+timedelta(minutes=1),price_observations=[notice],
+        environ=env,session=client,
+    )
+    assert again["accepted"]==0
+
+
+def test_price_only_recovery_does_not_block_later_model_confirmed_alert(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    env={"SPORTSEDGE_NTFY_TOPIC":TOPIC}
+    client=FakeClient()
+    notice=SimpleNamespace(
+        lane="PRICE RECOVERY — TRACKING ONLY",
+        current_ask=.12,live_fair=None,ticker="KXWTAMATCH-SHI",
+        selection="Han Shi",
+        score="Live score UNVERIFIED",
+    )
+    first=send_tennis_pushes(store,now=NOW,price_observations=[notice],
+                              environ=env,session=client)
+    assert first["accepted"]==1
+    store.add_signal(_signal(lane="REVERSAL SIGNAL",price=.15,fair=.39,
+                             when=NOW+timedelta(seconds=30)))
+    stronger=send_tennis_pushes(store,now=NOW+timedelta(seconds=30),
+                                 environ=env,session=client)
+    assert stronger["accepted"]==1
+    assert len(store.notifications)==2
