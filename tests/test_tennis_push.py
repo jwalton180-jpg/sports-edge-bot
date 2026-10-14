@@ -247,3 +247,40 @@ def test_tracking_alert_includes_quote_trough_rebound_and_spread():
     assert "bid/ask spread 1.5pp" in message
     assert "TRACKING ONLY" in message
     assert "model live fair not available" in message
+
+
+
+def test_push_final_scorer_veto_blocks_late_doomed_and_unknown_matches(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    client=FakeClient()
+    env={"SPORTSEDGE_NTFY_TOPIC":TOPIC}
+    observation=SimpleNamespace(
+        lane="PRICE RECOVERY — TRACKING ONLY",current_ask=.13,
+        live_fair=None,ticker="KXITFW-LATE",selection="ITF underdog",
+        score="score not available",
+    )
+    blocked=send_tennis_pushes(
+        store,now=NOW,environ=env,session=client,
+        price_observations=[observation],allowed_tickers=set(),
+    )
+    assert blocked["accepted"]==0
+    assert client.calls==[]
+    assert store.notifications==[]
+    approved=send_tennis_pushes(
+        store,now=NOW,environ=env,session=client,
+        price_observations=[observation],allowed_tickers={"KXITFW-LATE"},
+    )
+    assert approved["accepted"]==1
+
+
+def test_model_watch_also_requires_last_second_approved_score(tmp_path):
+    store=ProspectiveResearchStore(tmp_path/"research")
+    store.add_signal(_signal())
+    env={"SPORTSEDGE_NTFY_TOPIC":TOPIC}
+    client=FakeClient()
+    blocked=send_tennis_pushes(store,now=NOW,environ=env,session=client,
+                               allowed_tickers=set())
+    assert blocked["accepted"]==0
+    allowed=send_tennis_pushes(store,now=NOW,environ=env,session=client,
+                               allowed_tickers={"KXWTAMATCH-SHI"})
+    assert allowed["accepted"]==1
