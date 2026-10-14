@@ -103,7 +103,7 @@ def test_worker_rejects_trading_enabled(monkeypatch,tmp_path):
     monkeypatch.setenv("SPORTSEDGE_NTFY_TOPIC","A"*28)
     monkeypatch.setenv("LIVE_TRADING","true")
     try:
-        mod.main()
+        mod.main(["--cycles","0"])
         assert False, "must fail closed"
     except RuntimeError as exc:
         assert "Trading" in str(exc)
