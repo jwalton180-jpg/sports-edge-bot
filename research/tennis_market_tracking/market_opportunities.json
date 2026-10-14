@@ -144,15 +144,15 @@
       "accepted_at": "2026-10-14T05:17:06.200580+00:00",
       "alert_ask": 0.15,
       "alert_id": "c0b3caf386abf208b2f43ab9a3e6ccc0feee82c45077982d9790d28fcf51fcbb",
-      "best_observed_bid": null,
-      "first_sample_delay_min": null,
+      "best_observed_bid": 0.13,
+      "first_sample_delay_min": 33.14,
       "lane": "PRICE RECOVERY \u2014 TRACKING ONLY",
-      "max_observed_gross_return_pct": null,
-      "max_observed_quote_improvement_pp": null,
-      "post_alert_sample_count": 0,
-      "status": "not_observed_after_alert",
+      "max_observed_gross_return_pct": -13.33,
+      "max_observed_quote_improvement_pp": -2.0,
+      "post_alert_sample_count": 1,
+      "status": "sampled",
       "ticker": "KXWTAMATCH-26OCT13JOVYAS-YAS",
-      "worst_observed_bid": null
+      "worst_observed_bid": 0.13
     },
     {
       "accepted_at": "2026-10-14T05:17:06.200580+00:00",
@@ -198,13 +198,13 @@
     }
   ],
   "entry_price_recorded": 7,
-  "median_first_sample_delay_min": 12.62,
+  "median_first_sample_delay_min": 22.88,
   "notification_count": 14,
   "older_unpriced_receipts": 7,
   "sampled_opportunities": 0,
   "schema_version": 1,
   "type": "non_executable_quote_observations",
   "warning": "Observed later quoted BIDs are not fills, fees, liquidation offers, settled wins, or actual user returns. Missing polling windows can miss extrema.",
-  "with_post_alert_bid_samples": 1,
-  "without_post_alert_samples": 6
+  "with_post_alert_bid_samples": 2,
+  "without_post_alert_samples": 5
 }
