@@ -77,7 +77,8 @@ def nhl_player_goal_log(player_id: int, season: int) -> tuple[dict, ...]:
             if goals < 0 or len(day) != 10:
                 continue
             rows.append({"source": "NHL", "player_id": player_id,
-                         "game_id": str(item["gameId"]), "date": day, "goals": goals})
+                         "game_id": str(item["gameId"]), "date": day, "goals": goals,
+                         "shots": int(item["shots"]) if item.get("shots") is not None else None})
         except (KeyError, TypeError, ValueError):
             continue
     return tuple(rows)
