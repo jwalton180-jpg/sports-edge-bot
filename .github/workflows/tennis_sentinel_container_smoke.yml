@@ -1,0 +1,50 @@
+name: Tennis Sentinel container smoke
+
+on:
+  pull_request:
+    paths:
+      - deploy/tennis_sentinel/**
+      - scripts/tennis_realtime_sentinel.py
+      - .github/workflows/tennis_sentinel_container_smoke.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/tennis_sentinel/**
+      - scripts/tennis_realtime_sentinel.py
+      - .github/workflows/tennis_sentinel_container_smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dedicated cloud worker image
+        run: docker build -f deploy/tennis_sentinel/Dockerfile -t sportsedge-tennis-sentinel:smoke .
+      - name: Verify volume ownership and fail-closed trading safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sentinel-volume"
+          set +e
+          docker run --rm \
+            -v "$RUNNER_TEMP/sentinel-volume:/data" \
+            -e SPORTSEDGE_SENTINEL_DATA_DIR=/data/tennis \
+            -e SPORTSEDGE_NTFY_TOPIC=observation-only-test-topic-73649731 \
+            -e LIVE_TRADING=true \
+            -e ORDER_SUBMISSION_ENABLED=false \
+            -e READ_ONLY_KALSHI=true \
+            sportsedge-tennis-sentinel:smoke > "$RUNNER_TEMP/output" 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "FAIL: trading-enabled worker started unexpectedly"
+            exit 1
+          fi
+          grep -q "Trading must remain disabled" "$RUNNER_TEMP/output"
+          owner="$(stat -c %u "$RUNNER_TEMP/sentinel-volume/tennis")"
+          test "$owner" = 10001
+          echo "PASS: worker runs unprivileged and refuses enabled trading"

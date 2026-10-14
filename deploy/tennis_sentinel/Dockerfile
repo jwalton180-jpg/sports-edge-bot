@@ -6,5 +6,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY sports_edge /app/sports_edge
 COPY scripts /app/scripts
 RUN useradd -m --uid 10001 observer
-USER observer
-CMD ["python", "-m", "scripts.tennis_realtime_sentinel"]
+# Cloud volumes mount after image build, often owned by root; create and
+# assign only the dedicated worker ledger directory on startup.
+COPY deploy/tennis_sentinel/start.sh /app/start.sh
+RUN chmod 755 /app/start.sh
+ENTRYPOINT ["/app/start.sh"]

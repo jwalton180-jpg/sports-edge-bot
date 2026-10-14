@@ -1,0 +1,9 @@
+# This repository's Railway project is the isolated Tennis Sentinel.
+# The Streamlit UI is hosted elsewhere. Railway auto-reads this root file.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/tennis_sentinel/Dockerfile"
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
