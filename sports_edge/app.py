@@ -2772,6 +2772,25 @@ elif view == "Live Feed":
                             f"Last poll gap: {gap} minutes "
                             + ("(delayed monitoring)" if market_poll.get("late_poll_gap") else "")
                         )
+                    st.caption(
+                        f"Research price movements: {market_poll.get('tracking_observations', 0)} · "
+                        f"score-confirmed eligible markets: {market_poll.get('survivability_cleared', 0)} · "
+                        f"poor/unverified score moves suppressed: "
+                        f"{market_poll.get('suppressed_unverified_or_late', 0)}"
+                    )
+                    if market_poll.get("live_score_states", 0) == 0:
+                        st.warning(
+                            "Independent live Tennis scores unavailable for this scan. "
+                            "Market-only movements remain research observations; phone "
+                            "reversal alerts are suppressed rather than suggesting "
+                            "late or losing-straight-set players."
+                        )
+                    rejected = market_poll.get("suppression_reasons") or {}
+                    if rejected:
+                        st.caption(
+                            "Score-quality rejection counts: "
+                            + ", ".join(f"{k}: {v}" for k,v in sorted(rejected.items()))
+                        )
                 rows = [
                     {
                         "Market": row.get("ticker", ""),
