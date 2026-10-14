@@ -70,7 +70,7 @@ class SleeperSources:
                 # occurrence. Never treat the latter as the pregame cutoff.
                 delay = (expiry-game_start).total_seconds()
                 if (any(p in ticker for p in pairs)
-                    and g.get("gameDate") == game_day.isoformat()
+                    and week.get("date") == game_day.isoformat()
                     and 0 <= delay <= 8*3600):
                     matches.append(g)
         if len(matches) != 1:
@@ -207,7 +207,11 @@ class SleeperSources:
                     row = self.espn_result(past, sport)
                     if row:
                         collected[row["event_id"]] = row
+        def aliases(team):
+            info = team["team"]
+            return [info[k] for k in ("displayName", "shortDisplayName", "abbreviation", "location") if info.get(k)]
         return {"event_id": str(e["id"]), "start": e["date"], "home_id": str(home["id"]),
+                "home_aliases": aliases(home), "away_aliases": aliases(away),
                 "away_id": str(away["id"]), "home_name": home["team"]["displayName"],
                 "away_name": away["team"]["displayName"], "rows": sorted(collected.values(), key=lambda r:r["event_time"]),
                 "missing": ["confirmed_lineups", "weather", "injuries"], "deployment_verified": False}

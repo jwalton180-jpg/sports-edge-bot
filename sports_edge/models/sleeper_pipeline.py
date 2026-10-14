@@ -215,10 +215,14 @@ def research_projection(row, spec, sources):
         context = sources.espn_match_history(m, "NCAAF")
         projection = ncaaf_opponent_challenger(context["rows"], home_id=context["home_id"], away_id=context["away_id"], before_time=context["start"])
         selected = name(m.get("yes_sub_title", ""))
-        if selected == name(context["away_name"]) and projection.probability is not None:
-            projection = replace(projection, probability=1-projection.probability)
-        elif selected != name(context["home_name"]):
+        home_aliases = {name(x) for x in context.get("home_aliases", [context["home_name"]])}
+        away_aliases = {name(x) for x in context.get("away_aliases", [context["away_name"]])}
+        home_selected = selected in home_aliases
+        away_selected = selected in away_aliases
+        if home_selected == away_selected:
             raise ValueError("ncaaf_selection_identity_unresolved")
+        if away_selected and projection.probability is not None:
+            projection = replace(projection, probability=1-projection.probability)
         context["upset_review"] = asdict(review_upset({}, event_id=context["event_id"], now=datetime.now(timezone.utc).isoformat()))
         return projection, context
     return None, {}
