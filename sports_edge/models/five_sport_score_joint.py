@@ -6,7 +6,7 @@ hypotheses, not validated or settlement-rule equivalent Kalshi prices.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from math import isfinite
 from random import Random
@@ -181,8 +181,10 @@ def historical_score_holdout(games, *, sport, holdout_start, line=None,
     for game in ordered:
         t=utc(game["event_time"])
         if t<cutoff:continue
-        # Freeze before the *whole calendar day*; no same-day outcome leakage.
-        observed=t.replace(hour=0,minute=0,second=0,microsecond=0)
+        # Freeze at PREVIOUS UTC midnight. Some real sports kickoffs are
+        # exactly at 00:00 UTC, so same-day midnight is *not* pregame.
+        # The extra full-day embargo also excludes same-day late final scores.
+        observed=t.replace(hour=0,minute=0,second=0,microsecond=0)-timedelta(days=1)
         prior=[r for r in ordered if utc(r["event_time"]).date()<t.date()]
         if len(prior)<max(MIN_LEAGUE,min_train):continue
         scen=simulate_paired_scores(ordered,target=game,as_of=observed.isoformat(),
