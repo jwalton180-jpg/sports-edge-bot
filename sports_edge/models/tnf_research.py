@@ -112,7 +112,7 @@ def thursday_research_board(candidates, *, local_date: date, now: datetime, max_
         if aud!="QUALIFIED_VALUE":
             reasons+=("independent_model_prospective_or_execution_gate_not_qualified",)
         validated=False
-        if before_kickoff and prob is not None and 0<ask<1 if ask is not None else False:
+        if before_kickoff and prob is not None and ask is not None and 0 < ask < 1:
             if aud=="QUALIFIED_VALUE" and fee is not None:
                 assessment=assess_leg(leg,"best")
                 validated=bool(assessment.qualified)
