@@ -1,4 +1,4 @@
-"""NBA full-game alternate spread: team wins by >18.5 (at least 19).
+"""NBA full-game alternate spread: team wins by 19+, 20+ or 31+.
 Research-only. Prices do not enter the predictor; no confidence is certified.
 """
 from __future__ import annotations
@@ -8,7 +8,7 @@ from math import erf, isfinite, sqrt
 from statistics import mean, pvariance
 from sports_edge.models.sleeper_counts import CountEstimate, utc
 
-MODEL = "nba_full_game_margin_19plus_v1"
+MODEL = "nba_full_game_margin_tail_v2"
 MIN_TEAM_GAMES = 24
 
 
@@ -32,7 +32,7 @@ def nba_margin_tail(games, *, home_id: str, away_id: str, selected_id: str,
         cutoff = utc(before_time)
         if season_type != "regular" or home_id == away_id or selected_id not in (home_id, away_id):
             return rejected("unsupported_season_or_team_identity")
-        if not isinstance(line, (float, int)) or not isfinite(line) or line < 0 or line % 1 != .5:
+        if type(line) not in (float, int) or not isfinite(line) or line not in (18.5,19.5,30.5):
             return rejected("not_exact_half_point_full_game_spread")
     except (TypeError, ValueError):
         return rejected("invalid_start_or_spread")
