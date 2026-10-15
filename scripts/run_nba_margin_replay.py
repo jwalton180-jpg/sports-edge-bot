@@ -1,4 +1,4 @@
-"""Chronological NBA 19+ final-margin historical population study.
+"""Chronological NBA 19+, 20+, 31+ final-margin historical population study.
 
 Collect official-final ESPN games for 2024-25 and 2025-26, freeze a
 2025-26 holdout, never use target-day outcomes/features or market prices.
@@ -76,7 +76,10 @@ def fetch_population():
 
 def brier(p,y):return (p-y)**2
 
-def replay(games):
+def replay(games, *, line=18.5):
+    if line not in (18.5,19.5,30.5):
+        raise ValueError("line outside pre-registered NBA tail set")
+    threshold=int(line)+1
     if not games:return {"status":"NO_DATA"}
     records=[];all_prior=[]
     for game in games:
@@ -88,16 +91,16 @@ def replay(games):
         prev=[x for x in all_prior if x["event_time"] < start]
         for selected,side in ((game["home_id"],"HOME"),(game["away_id"],"AWAY")):
             model=nba_margin_tail(prev,home_id=game["home_id"],away_id=game["away_id"],
-                                  selected_id=selected,before_time=start)
+                                  selected_id=selected,before_time=start,line=line)
             if model.probability is None:
                 continue
             y=int((game["home_score"]-game["away_score"] if side=="HOME"
-                   else game["away_score"]-game["home_score"])>=19)
+                   else game["away_score"]-game["home_score"])>=threshold)
             ref=[x for x in prev if x["event_time"] < start and
                  x["event_time"][:10]<start[:10]]
-            p_ref=(2+sum((x["home_score"]-x["away_score"]>=19) if side=="HOME"
-                         else (x["away_score"]-x["home_score"]>=19) for x in ref))/(len(ref)+16)
-            records.append({"event_id":game["event_id"],"date":start[:10],"side":side,
+            p_ref=(2+sum((x["home_score"]-x["away_score"]>=threshold) if side=="HOME"
+                         else (x["away_score"]-x["home_score"]>=threshold) for x in ref))/(len(ref)+16)
+            records.append({"event_id":game["event_id"],"date":start[:10],"side":side,"threshold":threshold,
                             "p":model.probability,"baseline":p_ref,"won":y,
                             "model_mean_margin":model.mean,
                             "sensitivity_range":[model.lower,model.upper]})
@@ -108,12 +111,12 @@ def replay(games):
         base=sum(brier(r["baseline"],r["won"]) for r in rows)/len(rows)
         return {"n":len(rows),"unique_games":len({r["event_id"] for r in rows}),
                 "unique_dates":len({r["date"] for r in rows}),
-                "realized_19plus_rate":sum(r["won"] for r in rows)/len(rows),
+                "realized_margin_rate":sum(r["won"] for r in rows)/len(rows),
                 "model_brier":bs,"baseline_brier":base,
                 "model_minus_baseline_brier":bs-base,
                 "model_classification_accuracy":sum((r["p"]>=.5)==bool(r["won"]) for r in rows)/len(rows),
                 "always_no_accuracy":1-sum(r["won"] for r in rows)/len(rows),
-                "mean_predicted_19plus":sum(r["p"] for r in rows)/len(rows)}
+                "mean_predicted_margin":sum(r["p"] for r in rows)/len(rows)}
     # Preregistered bins prevent the misleading "87% accuracy" argument:
     # this rare tail requires reliability diagrams and positive-case support.
     bands=(0.,.05,.10,.20,.30,.40,.60,1.000001)
@@ -148,9 +151,10 @@ def replay(games):
             uplift.append(sum(brier(r["baseline"],r["won"])-brier(r["p"],r["won"]) for r in chosen)/len(chosen))
         uplift.sort()
     report={"evaluation_kind":"retrospective_chronological_holdout",
-            "model":"nba_full_game_margin_19plus_v1",
+            "model":"nba_full_game_margin_tail_v2",
+            "margin_line":line,"required_margin":threshold,
             "holdout_start":HOLDOUT,
-            "outcome":"full_game_including_overtime_margin_at_least_19",
+            "outcome":f"full_game_including_overtime_margin_at_least_{threshold}",
             "observations":len(records),
             "official_completed_games_fetched":len(games),
             "overall":stats(records),
@@ -175,14 +179,24 @@ def replay(games):
 
 def main():
     rows,sources=fetch_population()
-    report,records=replay(rows)
     out=Path("nba-margin-historical-evidence")
     out.mkdir(exist_ok=True)
-    (out/"metrics.json").write_text(json.dumps({**report,"sources":sources},indent=2))
-    (out/"predictions.jsonl").write_text("".join(json.dumps(x,sort_keys=True)+"\n" for x in records))
+    reports={}
+    observations=[]
+    for line in (18.5,19.5,30.5):
+        report,records=replay(rows,line=line)
+        reports[str(line)]=report
+        observations.extend(records)
+        print(json.dumps({"line":line,"status":report["status"],
+                          "overall":report["overall"],
+                          "bootstrap_95":report["brier_advantage_date_bootstrap95"],
+                          "ece":report["expected_calibration_error_by_fixed_bands"]},sort_keys=True))
+    (out/"metrics.json").write_text(json.dumps({"evaluation_kind":"historical_multi_threshold_holdout",
+        "pre_registered_lines":[18.5,19.5,30.5],"reports":reports,
+        "sources":sources,"qualified_for_live":False},indent=2))
+    (out/"predictions.jsonl").write_text("".join(json.dumps(x,sort_keys=True)+"\n" for x in observations))
     (out/"completed_games.jsonl").write_text("".join(json.dumps(x,sort_keys=True)+"\n" for x in rows))
-    print(json.dumps({k:v for k,v in report.items() if k not in ("limitations",)},indent=2))
-    if report["status"]=="INSUFFICIENT_RETROSPECTIVE_HOLDOUT":
+    if any(r["status"]=="INSUFFICIENT_RETROSPECTIVE_HOLDOUT" for r in reports.values()):
         raise SystemExit("Not enough honest independent holdout observations")
 
 if __name__=="__main__":
