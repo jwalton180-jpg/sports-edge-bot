@@ -255,3 +255,21 @@ def test_combined_five_sport_report_uses_separate_season_cutoffs(tmp_path,monkey
                "HISTORICAL_HOLDOUT_RESEARCH_ONLY" for sp in all_sports)
     assert report["qualified_for_live"] is False
     with pytest.raises(FileExistsError):main()
+
+
+def test_full_ncaaf_saturday_60_games_do_not_truncate_or_fake_missing_models():
+    fixtures=future_document(("NCAAF",))
+    fixtures["fixtures"]=[fixture("NCAAF",index=str(i)) for i in range(60)]
+    # An old only-2025 archive must still fail as stale, but every one of
+    # the 60 independent fixtures must receive its own explicit blocked row.
+    frozen=make_frozen_calls(archive(("NCAAF",)),fixtures,
+                             as_of="2026-10-15T10:01:00Z")
+    assert len(frozen["calls"])==60
+    assert all(x["joint_p"] is None for x in frozen["calls"])
+    assert len({x["event_id"] for x in frozen["calls"]})==60
+    fixtures["fixtures"]=fixtures["fixtures"]+[
+        fixture("NCAAF",index=str(i)) for i in range(60,201)
+    ]
+    with pytest.raises(ValueError,match="unbounded"):
+        make_frozen_calls(archive(("NCAAF",)),fixtures,
+                          as_of="2026-10-15T10:01:00Z")
