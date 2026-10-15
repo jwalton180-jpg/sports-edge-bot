@@ -1,4 +1,4 @@
-name: NBA 19+ margin historical holdout
+name: NBA margin and high-total historical holdouts
 on:
   pull_request:
     paths:
@@ -7,6 +7,9 @@ on:
       - "sports_edge/models/sleeper_pipeline.py"
       - "scripts/run_nba_margin_replay.py"
       - "tests/test_nba_margin_sleeper.py"
+      - "sports_edge/models/nba_high_total.py"
+      - "scripts/run_nba_high_total_replay.py"
+      - "tests/test_nba_high_total.py"
       - ".github/workflows/nba_margin_historical_holdout.yml"
   push:
     branches: [main]
@@ -16,6 +19,9 @@ on:
       - "sports_edge/models/sleeper_pipeline.py"
       - "scripts/run_nba_margin_replay.py"
       - "tests/test_nba_margin_sleeper.py"
+      - "sports_edge/models/nba_high_total.py"
+      - "scripts/run_nba_high_total_replay.py"
+      - "tests/test_nba_high_total.py"
       - ".github/workflows/nba_margin_historical_holdout.yml"
   workflow_dispatch:
 permissions:
@@ -31,7 +37,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install requests pytest
       - name: Exact market rules, no leakage, both sides and fail-closed tests
-        run: python -m pytest -q tests/test_nba_margin_sleeper.py
+        run: python -m pytest -q tests/test_nba_margin_sleeper.py tests/test_nba_high_total.py
       - name: Chronological 2025-26 independent ESPN holdout (not promotion)
         run: python -m scripts.run_nba_margin_replay
       - uses: actions/upload-artifact@v4
@@ -39,5 +45,15 @@ jobs:
         with:
           name: nba-19plus-immutable-historical-evidence
           path: nba-margin-historical-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: NBA high-total YES/NO chrono holdout (no promotion)
+        run: python -m scripts.run_nba_high_total_replay
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nba-high-total-immutable-historical-evidence
+          path: nba-high-total-historical-evidence/
           if-no-files-found: warn
           retention-days: 30
