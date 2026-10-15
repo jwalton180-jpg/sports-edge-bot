@@ -2435,6 +2435,8 @@ elif view == "Parlay Generator":
                     "chronologically calibrated, and early cash-out odds "
                     "require recorded exact combo bid paths. No auto orders."
                 )
+                from sports_edge.joint_score_evidence_panel import render_five_sport_joint_research_reports
+                render_five_sport_joint_research_reports()
         if ticket_local_date.weekday() == 3 and sport_filter in {"NFL", "All"}:
             from sports_edge.models.tnf_research import thursday_research_board
             tnf_board = thursday_research_board(
