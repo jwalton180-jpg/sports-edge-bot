@@ -53,7 +53,7 @@ def make_frozen_calls(archive, fixture_doc, *, as_of):
     if not fixture_doc.get("provenance") or fixture_doc.get("no_kalshi_prices") is not True:
         raise ValueError("fixture_provenance_or_market_separation_missing")
     fixtures=fixture_doc.get("fixtures")
-    if not isinstance(fixtures,list) or len(fixtures)>50:
+    if not isinstance(fixtures,list) or len(fixtures)>200:
         raise ValueError("unbounded_fixtures")
     now=utc(as_of)
     if utc(fixture_doc.get("captured_at_utc"))>now:
