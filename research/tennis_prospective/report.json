@@ -195,31 +195,31 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 198,
+        "evaluated": 199,
         "minimum_prior_verified": 30,
-        "model_brier": 0.20136,
-        "quote_brier": 0.201684,
+        "model_brier": 0.201628,
+        "quote_brier": 0.202361,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.35294117647058826,
-      "hypothetical_gross_dollars_per_contract": 5.27,
+      "first_half_win_rate": 0.35,
+      "hypothetical_gross_dollars_per_contract": 5.85,
       "losses": 163,
-      "model_brier": 0.203222443497841,
-      "observations": 245,
+      "model_brier": 0.20343632310030416,
+      "observations": 246,
       "pending": 6,
-      "quote_brier": 0.20571255230125524,
-      "second_half_win_rate": 0.2833333333333333,
-      "settled": 239,
-      "win_rate": 0.3179916317991632,
-      "wins": 76
+      "quote_brier": 0.20625708333333334,
+      "second_half_win_rate": 0.2916666666666667,
+      "settled": 240,
+      "win_rate": 0.32083333333333336,
+      "wins": 77
     }
   },
   "extreme_dip_quote_snapshots": 1021,
   "last_worker_run": {
-    "confirmed_radar_signals": 3,
+    "confirmed_radar_signals": 4,
     "early_watches": 1,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,7 +227,7 @@
     "model_sides": 202,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-15T14:17:18.385397+00:00",
+    "observed_at": "2026-10-15T14:21:46.901725+00:00",
     "open_contracts": 244,
     "pending_settlements": 9,
     "post_surge_audits": 0,
@@ -248,11 +248,11 @@
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 67,
-  "recorded_snapshots": 5650,
+  "recorded_snapshots": 5658,
   "recovery_building_quote_snapshots": 90,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 505,
+  "total_observations": 506,
   "total_pending": 9,
-  "total_settled": 496
+  "total_settled": 497
 }
