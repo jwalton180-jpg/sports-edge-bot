@@ -34,14 +34,17 @@ def test_canonical_hash_and_expiration():
     assert END_UTC>NOW
 
 
-def test_nba_research_sampling_only_exact_18_5_and_bounded():
+def test_nba_19_20_31_margin_sampling_is_price_blind_and_stratified():
     from sports_edge.models.prospective_capture import model_family_supported
-    rows=[dict(market(f"KXNBASPREAD-{i}","NBA",24),
-               floor_strike=18.5,strike_type="greater") for i in range(15)]
+    rows=[dict(market(f"KXNBASPREAD-{line}-{i}","NBA",24),
+               floor_strike=line,strike_type="greater") for line in (18.5,19.5,30.5) for i in range(15)]
     wrong=[dict(rows[0],ticker="KXNBASPREAD-wrong",floor_strike=16.5)]
-    assert model_family_supported(rows[0],"NBA")
+    assert all(model_family_supported(r,"NBA") for r in rows)
     assert not model_family_supported(wrong[0],"NBA")
     chosen,meta=select_markets(rows+wrong,now=NOW)
-    assert len(chosen)==6
-    assert all(m["floor_strike"]==18.5 for m in chosen)
-    assert meta["sample_by_sport"]["NBA"]==6
+    repriced=[dict(r,yes_ask_dollars=".99") for r in reversed(rows)]
+    chosen_again,_=select_markets(repriced,now=NOW)
+    assert len(chosen)==6 and meta["sample_by_sport"]["NBA"]==6
+    assert sorted(m["floor_strike"] for m in chosen)==[18.5,18.5,19.5,19.5,30.5,30.5]
+    assert {m["ticker"] for m in chosen}=={m["ticker"] for m in chosen_again}
+

@@ -19,6 +19,7 @@ def parlay_evidence_diagnostics(candidates, *, max_preview: int = 16):
     modeled = 0
     priced = 0
     eligible_quote = 0
+    from sports_edge.models.combo_archetypes import combo_pattern
     for c in candidates:
         sport = str(c.sport or "Unknown")
         sport_counts[sport] += 1
@@ -55,7 +56,7 @@ def parlay_evidence_diagnostics(candidates, *, max_preview: int = 16):
             net_edge = None
         if model_available and price_available:
             preview.append({
-                "Sport":sport, "Match / contract":str(c.event_title or c.kalshi_ticker),
+                "Sport":sport, "Pattern hypothesis":combo_pattern(sport,c.market_key,c.selection,c.market_label), "Match / contract":str(c.event_title or c.kalshi_ticker),
                 "Market":str(c.market_label or c.market_key), "Selection":str(c.selection),
                 "Ticker":str(c.kalshi_ticker),"Model P":round(float(p),4),
                 "Kalshi ask":round(ask,4), "Entry fee":round(float(fee),4) if fee_ok else None,

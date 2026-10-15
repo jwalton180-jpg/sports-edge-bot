@@ -417,6 +417,23 @@ def build_intelligent_parlay(
             "Joint probability is an independence benchmark; same-sport/long-ticket dependence is not fully calibrated"
         )
 
+    # Same-player prop thresholds often co-move. The joint fair probability
+    # cannot be inferred by multiplying individual probabilities, even when
+    # both legs separately pass validation and quote rules.
+    from sports_edge.models.ticket_dependencies import same_player_cross_market_dependence
+    cross_player = [
+        (left.leg.selection,right.leg.selection)
+        for i,left in enumerate(selected) for right in selected[i+1:]
+        if same_player_cross_market_dependence(left.leg,right.leg)
+    ]
+    if cross_player:
+        correlation = "HIGH"
+        warnings.append(
+            f"{len(cross_player)} same-player, cross-market pair(s) have strong "
+            "unmodeled dependence; no validated joint win rate or executable "
+            "combo edge is available from independent leg probabilities."
+        )
+
     if payout_multiple >= 50.0:
         risk_label = "VERY LOW-PROBABILITY LONG SHOT"
     elif payout_multiple >= 20.0:
