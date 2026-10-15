@@ -128,3 +128,45 @@ def test_real_kalshi_shorthand_names_are_exact_official_aliases():
     ctx=source.nba_margin_context(m)
     assert "la lakers" in ctx["home_aliases"]
     assert "gs warriors" in ctx["away_aliases"]
+
+
+def test_exact_20_and_31_point_margin_contracts_and_sides():
+    for line,required in ((19.5,20),(30.5,31)):
+        x=dict(market(),floor_strike=line,
+               title=f"Home Team win by over {line} points",
+               yes_sub_title=f"Home Team win by over {line} points",
+               rules_primary=f"If Home Team wins by more than {line} points in the Home vs Away Pro Basketball game, resolves Yes.")
+        spec=contract_spec(KalshiSportMarket("NBA","Spread",x))
+        assert spec.rules_supported and spec.threshold==required
+        class QuoteClient(FakeClient):
+            def market(self,ticker):
+                return SimpleNamespace(data={"market":x},received_at=NOW)
+        scan=scan_sleeper_markets([x],coverage_complete=True,client=QuoteClient(),sources=FakeSources(),now=NOW)
+        assert {r["side"] for r in scan["records"]}=={"YES","NO"}
+        assert all(r["probability"] is not None and r["model"]=="nba_full_game_margin_tail_v2" for r in scan["records"])
+        assert abs(sum(r["probability"] for r in scan["records"])-1)<1e-9
+        assert all(r["status"]!="QUALIFIED_VALUE" for r in scan["records"])
+        bad=dict(x,rules_primary="If Home Team wins by more than 18.5 points, resolves Yes.")
+        assert not contract_spec(KalshiSportMarket("NBA","Spread",bad)).rules_supported
+
+
+def test_nba_tail_probability_monotone_between_19_20_31():
+    a=[nba_margin_tail(history(),home_id="H",away_id="A",selected_id="H",
+                       before_time=NOW.isoformat(),line=line) for line in (18.5,19.5,30.5)]
+    assert a[0].probability > a[1].probability > a[2].probability > 0
+    assert all(m.status=="UNVALIDATED_RESEARCH" for m in a)
+    assert nba_margin_tail(history(),home_id="H",away_id="A",selected_id="H",
+                           before_time=NOW.isoformat(),line=25.5).probability is None
+
+
+def test_historical_nba_tail_replay_has_distinct_threshold_labels():
+    from scripts.run_nba_margin_replay import replay
+    from datetime import timedelta
+    # Synthetic history is intentionally insufficient for statistical promotion.
+    past=history()
+    for line,threshold in ((18.5,19),(19.5,20),(30.5,31)):
+        report,records=replay(past,line=line)
+        assert report["required_margin"]==threshold
+        assert report["qualified_for_live"] is False
+        assert report["no_promotions"] is True
+        assert all(r["threshold"]==threshold for r in records)
