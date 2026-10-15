@@ -159,6 +159,18 @@ def test_future_fixture_scrub_and_capture_grade_identity_sealed(tmp_path):
     sports=("NFL","NCAAF","NBA","NHL","MLB")
     raw=archive(sports)
     fixture_doc=future_document(sports)
+    # A prior-season-only archive is too stale for prospective predictions.
+    stale=make_frozen_calls(raw,fixture_doc,as_of="2026-10-15T10:01:00Z")
+    assert all(r["joint_p"] is None and
+               r["status"]=="STALE_SPORT_HISTORY_FOR_FUTURE_PREDICTION"
+               for r in stale["calls"])
+    # Add a causally earlier recent season with the same verified score fields.
+    # Only these recent records can support an October 2026 future paper call.
+    for sp in sports:
+        for i,r in enumerate(history(sp)):
+            raw["games"].append(dict(r,event_id=r["event_id"]+"-2026",
+                event_time=(datetime(2026,5,20,12,tzinfo=timezone.utc)+
+                            timedelta(days=i)).isoformat()))
     frozen=make_frozen_calls(raw,fixture_doc,as_of="2026-10-15T10:01:00Z")
     assert frozen["qualified_for_live"] is False
     assert len(frozen["calls"])==5
