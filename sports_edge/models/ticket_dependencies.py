@@ -21,3 +21,34 @@ def incompatible(a, b):
 def probability_bounds(probabilities):
     p = list(probabilities)
     return (max(0.,sum(p)-len(p)+1), min(p)) if p else (0.,0.)
+
+
+def same_player_cross_market_dependence(a, b):
+    """Flag strong but uncalibrated same-player cross-stat correlation.
+
+    This is a risk label, not an exclusion or a fabricated joint probability.
+    A 3+ receptions and 40+ yards combo may have both legs independently
+    correct but its likelihood is not their simple product.
+    """
+    if not a.event_id or a.event_id != b.event_id or a.sport != b.sport:
+        return False
+    if a.market_key == b.market_key:
+        return False
+    def is_player_market(leg):
+        key=str(leg.market_key or "").lower()
+        return key.startswith(("player_","batter_","pitcher_")) or key in (
+            "player_anytime_td","rushing_yards","receiving_yards",
+            "passing_yards","receptions")
+    if not (is_player_market(a) and is_player_market(b)):
+        return False
+    def athlete(selection):
+        s=str(selection or "").strip()
+        colon=re.match(r"^(.+?):\s*(?:over|under|\d)",s,re.I)
+        if colon:
+            return re.sub(r"[^a-z0-9]","",colon.group(1).casefold())
+        prefix=re.match(r"^(.+?)\s+(?:over|under)\s+\d",s,re.I)
+        if prefix:
+            return re.sub(r"[^a-z0-9]","",prefix.group(1).casefold())
+        return ""
+    x,y=athlete(a.selection),athlete(b.selection)
+    return bool(x and x==y)
