@@ -71,21 +71,21 @@ def contract_spec(row):
         if not str(m.get("ticker","")).startswith("KXNBASPREAD-"):
             problems.append("unsupported_nba_spread_series")
         selection=str(m.get("yes_sub_title") or title)
-        choice=re.fullmatch(r"(.+?)\s+wins?\s+by\s+(?:over|more than)\s+18\.5\s+points?",selection.strip(),re.I)
+        choice=re.fullmatch(r"(.+?)\s+wins?\s+by\s+(?:over|more than)\s+(18\.5|19\.5|30\.5)\s+points?",selection.strip(),re.I)
         if choice is None:
             problems.append("not_exact_nba_19plus_yes_selection")
         else:
             participant=choice.group(1).strip()
         try:
-            if float(m["floor_strike"]) != 18.5 or str(m.get("strike_type")) != "greater":
+            if float(m["floor_strike"]) not in (18.5,19.5,30.5) or str(m.get("strike_type")) != "greater" or choice is None or float(choice.group(2)) != float(m["floor_strike"]):
                 raise ValueError("strike mismatch")
         except (KeyError,TypeError,ValueError):
             problems.append("nba_margin_half_point_strike_unverified")
-        if not re.search(r"\b(?:over|more than)\s+18\.5\s+points?",primary,re.I):
+        if choice is None or not re.search(r"\b(?:over|more than)\s+"+re.escape(choice.group(2))+r"\s+points?",primary,re.I):
             problems.append("nba_margin_rules_threshold_mismatch")
         if re.search(r"\b(first half|second half|quarter|regulation only|excluding overtime)\b",rules,re.I):
             problems.append("nba_margin_not_entire_game_including_overtime")
-        threshold=19
+        threshold=floor(float(m["floor_strike"]))+1 if choice is not None and m.get("floor_strike") is not None and str(m.get("strike_type"))=="greater" and str(m["floor_strike"])==choice.group(2) else None
     if row.family == "Team Total":
         match = re.match(r"^(.+?)\s+(?:over|under)\s+[0-9.]+",title,re.I)
         if match:
@@ -188,7 +188,7 @@ def research_projection(row, spec, sources):
     m = row.market
     if not spec.rules_supported:
         return None, {}
-    if row.sport == "NBA" and row.family == "Spread" and spec.threshold == 19:
+    if row.sport == "NBA" and row.family == "Spread" and spec.threshold in {19,20,31}:
         from sports_edge.models.nba_margin_sleeper import nba_margin_tail
         context = sources.nba_margin_context(m)
         selected=name(spec.participant)
@@ -199,8 +199,8 @@ def research_projection(row, spec, sources):
         projection=nba_margin_tail(context["rows"],home_id=context["home_id"],
             away_id=context["away_id"],
             selected_id=context["home_id"] if home_match else context["away_id"],
-            before_time=context["start"],line=18.5,season_type=context["season_type"])
-        context["focus_market"]="NBA team wins by 19+ points"
+            before_time=context["start"],line=spec.threshold-.5,season_type=context["season_type"])
+        context["focus_market"]=f"NBA team wins by {spec.threshold}+ points"
         return projection,context
     if row.sport in {"NBA", "WNBA"} and row.family in {"Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"}:
         from sports_edge.models.basketball_sleeper import basketball_sleeper
@@ -296,7 +296,7 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
             return False
         if row.sport == "NBA" and row.family == "Spread":
             try:
-                return (float(row.market["floor_strike"]) == 18.5 and
+                return (float(row.market["floor_strike"]) in {18.5,19.5,30.5} and
                         row.market.get("strike_type") == "greater")
             except (KeyError,TypeError,ValueError):
                 return False
