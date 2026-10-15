@@ -126,7 +126,7 @@ def test_exact_combo_quote_fees_and_staleness():
     assert res["joint_market_cost"]==.54
     assert res["model_minus_exact_combo_cost"]==.06
     assert res["qualified_for_live"] is False
-    for value in [{"source":"LEG_PRICE_PRODUCT",**quote},
+    for value in [{**quote,"source":"LEG_PRICE_PRODUCT"},
                   {**quote,"constituent_contract_sides":["WRONG|YES",f"{b.kalshi_ticker}|YES"]},
                   {**quote,"observed_at_utc":(NOW-timedelta(minutes=2)).isoformat()},
                   {**quote,"entry_fee_per_contract":None}]:
