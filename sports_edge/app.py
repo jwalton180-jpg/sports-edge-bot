@@ -2360,6 +2360,81 @@ elif view == "Parlay Generator":
     state = st.session_state.get("intel_parlay_v3")
     if state_matches:
         result = state["result"]
+        # Across ALL matchups, not only Thursday NFL. Research board consumes
+        # the already scanned independent-model candidates; it never creates
+        # Kalshi quotes, future cash-out prices or missing games.
+        if sport_filter in {"All", "NFL", "NCAAF", "NBA", "NHL", "MLB"}:
+            from sports_edge.models.all_game_joint_research import (
+                SPORTS as _FIVE_SPORTS, all_game_research_board,
+            )
+            _all_game_board = all_game_research_board(
+                state.get("model_candidate_rows") or (),
+                now=datetime.now(timezone.utc),
+                sports=_FIVE_SPORTS if sport_filter == "All" else (sport_filter,),
+                max_preview=50,
+            )
+            with st.expander(
+                "All-game parlay research · NFL / NCAAF / NBA / NHL / MLB",
+                expanded=True,
+            ):
+                st.caption(
+                    "Every analyzed matchup in the selected candidate pool, "
+                    "not just TNF. An unscanned game is NOT claimed covered. "
+                    "Only independent, audited and pre-kickoff legs can "
+                    "pass their original policy. The combined probability "
+                    "is UNKNOWN without validated independent joint scenarios; "
+                    "individual Kalshi asks never imply an executable combo ask."
+                )
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Scanned sport candidates", _all_game_board["total"])
+                m2.metric("Pregame leg-qualified", _all_game_board["qualified_pregame"])
+                m3.metric("Research / blocked", _all_game_board["blocked"])
+                st.dataframe(
+                    [
+                        {
+                            "Sport": _sp,
+                            "Scanned events": _v["games"],
+                            "Candidates": _v["candidates"],
+                            "Pregame qualified": _v["qualified_pregame"],
+                            "Blocked": _v["blocked"],
+                        }
+                        for _sp, _v in _all_game_board["sports"].items()
+                    ],
+                    use_container_width=True, hide_index=True,
+                )
+                if _all_game_board["same_game_risks"]:
+                    st.warning(
+                        "Same-game legs share game script, usage, and/or athlete "
+                        "exposure; multiplying leg percentages is ONLY an "
+                        "independence benchmark, not a joint probability."
+                    )
+                    st.dataframe(
+                        _all_game_board["same_game_risks"],
+                        use_container_width=True, hide_index=True,
+                    )
+                if _all_game_board["rows"]:
+                    st.dataframe(
+                        _all_game_board["rows"],
+                        use_container_width=True, hide_index=True,
+                    )
+                else:
+                    st.caption(
+                        "No five-sport independent candidates found in this scan. "
+                        "Select a sport/date and request a scan; missing evidence "
+                        "is never replaced with a social pick or a guess."
+                    )
+                if _all_game_board["common_blockers"]:
+                    st.caption(
+                        "Top blockers: " + " · ".join(
+                            f"{r}: {n}"
+                            for r, n in _all_game_board["common_blockers"][:5]
+                        )
+                    )
+                st.caption(
+                    "Joint scenario evaluation is RESEARCH ONLY until "
+                    "chronologically calibrated, and early cash-out odds "
+                    "require recorded exact combo bid paths. No auto orders."
+                )
         if ticket_local_date.weekday() == 3 and sport_filter in {"NFL", "All"}:
             from sports_edge.models.tnf_research import thursday_research_board
             tnf_board = thursday_research_board(
