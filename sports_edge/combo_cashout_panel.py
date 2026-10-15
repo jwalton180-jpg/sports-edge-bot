@@ -97,3 +97,7 @@ def render_combo_cashout_lab():
                         "is not a fill. No orders are placed.")
                     for warning in result.caveats:
                         st.caption("• "+warning)
+
+    # Opt-in: only validated public market snapshots are imported here.
+    from sports_edge.combo_quote_panel import render_imported_combo_snapshots
+    render_imported_combo_snapshots()

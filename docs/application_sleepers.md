@@ -101,3 +101,39 @@ The on-demand **Combo cash-out lab** inside the parlay tab has two explicit mode
 Research-only forward replays identify the **first** chronological fresh full-size combo bid that crossed a precommitted net ROI target; they never optimize entry/exit using a known future maximum bid or claim fills based on quotes. An observed full-size price is still only a paper opportunity until exchange fill authentication and actual sale proceeds. Prospective performance requires pre-registered frozen entry, exchange-collected combo bid/depth snapshots, explicit time and cost, actual fill audit or conservative fill model, all candidates including losing/censored positions, and independent test windows.
 
 **Core distinction:** terminal all-legs joint probability is not the probability of an actionable profitable sale *before* settlement. Strong tennis momentum and NFL usage/volume legs may reprice the combo before the eventual games finish, but unless a prospective path study proves enough bid liquidity, appreciation and net proceeds, those mechanisms are only hypotheses.
+
+
+## User-authorized public combo quote snapshots (October 2026)
+
+Kalshi exposes GET /trade-api/v2/markets/{ticker} and GET
+/trade-api/v2/markets/{ticker}/orderbook, which returns YES/NO bids with
+fixed-point quantities, not asks, private RFQs, executable guarantees, or
+user fills. Missing exact COMBO bid depth must never be substituted by
+a product of prices of the component legs.
+
+An isolated one-shot Mac utility (NOT deployed in this repository) captures
+up to twelve requested KXMVE combo markets per invocation. Optionally it
+can fetch only CURRENT open combo market tickers from one authenticated
+GET /portfolio/positions. The actual account-history export, credential
+configuration, API key, entry/exit fills, balances and user identity all
+remain private on the user's Mac; none are stored in these public-market
+JSON snapshots or uploaded to GitHub.
+
+In the Streamlit cash-out tab, the user may voluntarily import a sanitized
+SPORTEDGE-COMBO-QUOTE-SNAPSHOT-V1 file with no account-record fields.
+The validator limits file sizes (512 kB), market count (12), snapshot
+count (100), timestamps, price/quantity domains and exact ticker shape.
+The UI discards any unrecognized keys, never obtains API credentials or
+calls trading endpoints, and explicitly warns that hosted-file upload
+transfers even sanitized market data to the Streamlit host.
+
+The paper valuation walks quoted YES/NO combo bid levels with fractional
+quantities and user-provided entry costs/exit fees. It labels partial
+depth, missing bid, stale snapshot, and no currently valid market.
+Even a full-size bid observation is not an executed sale. An optional
+first-target replay uses only chronological post-entry observations
+ahead of the explicitly provided settlement timestamp. Unobserved gaps,
+private RFQs and unfillable bids must not be called successful exits.
+
+There is no live trading, no 24/7 monitoring, no Railway runtime, no
+historical quote backfill, and no calibrated future cash-out probability.
