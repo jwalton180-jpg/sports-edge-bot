@@ -229,3 +229,29 @@ def test_exact_midnight_utc_kickoffs_require_previous_day_freeze(sport):
     assert all((datetime.fromisoformat(r["event_time"])-
                datetime.fromisoformat(r["predicted_at"])).days>=1
                for r in predictions)
+
+
+def test_combined_five_sport_report_uses_separate_season_cutoffs(tmp_path,monkeypatch):
+    from scripts.five_sport_joint_research import main
+    from pathlib import Path
+    import sys
+    all_sports=tuple(PATHS)
+    src=tmp_path/"archive.json"
+    cutoffs=tmp_path/"cutoffs.json"
+    result=tmp_path/"complete-five-sports.json"
+    src.write_text(json.dumps(archive(all_sports)))
+    mapping={sp:("2025-04-14T00:00:00Z" if sp=="NFL" else
+                 "2025-04-15T00:00:00Z") for sp in all_sports}
+    cutoffs.write_text(json.dumps(mapping))
+    monkeypatch.setattr(sys,"argv",[
+        "five_sport_joint_research.py","backtest",
+        "--archive",str(src),"--cutoffs-file",str(cutoffs),
+        "--output",str(result)])
+    main()
+    report=json.loads(result.read_text())
+    assert report["cutoffs_utc"]==mapping
+    assert set(report["results"])==set(all_sports)
+    assert all(report["results"][sp]["report"]["status"]==
+               "HISTORICAL_HOLDOUT_RESEARCH_ONLY" for sp in all_sports)
+    assert report["qualified_for_live"] is False
+    with pytest.raises(FileExistsError):main()
