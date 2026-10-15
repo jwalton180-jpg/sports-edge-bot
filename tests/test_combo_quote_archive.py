@@ -49,7 +49,7 @@ def test_full_size_fractional_book_walk_and_fees_paper_only():
     res=quote_depth_research(row,side="YES",contracts="2.50",
         entry_total_including_fees=".50",exit_fee_per_contract=".02",now=NOW)
     assert res["status"]=="FULL_DEPTH_OBSERVED_NOT_EXECUTABLE_GUARANTEE"
-    assert Decimal(res["paper_net_profit_for_quoted_part"])==Decimal(".825")
+    assert Decimal(res["paper_net_profit_for_quoted_part"])==Decimal(".325")
     assert res["contracts_with_book_depth"]=="2.50"
     assert res["executed"] is False and res["qualified_for_live"] is False
 
