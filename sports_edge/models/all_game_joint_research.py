@@ -284,6 +284,13 @@ def evaluate_joint_scenarios(legs: Iterable, *, bundle: dict,
         ask=_prob(combo_quote.get("executable_ask_dollars"))
         fee=_prob(combo_quote.get("entry_fee_per_contract"))
         quote_at=_aware(combo_quote.get("observed_at_utc"))
+        # Exact combo identity must include the contract and side for
+        # every leg, not merely a plausible looking KXMVE ticker.
+        components=combo_quote.get("constituent_contract_sides")
+        if (not isinstance(components,list) or
+            any(not isinstance(x,str) for x in components) or
+            len(components)!=len(keys) or set(components)!=set(keys)):
+            raise ValueError("exact_combo_constituents_not_verified")
         if (not combo_quote.get("exact_combo_ticker") or
             combo_quote.get("source")!="KALSHI_EXACT_COMBO_EXECUTABLE_ASK" or
             quote_at is None or quote_at>current or (current-quote_at).total_seconds()>60 or
