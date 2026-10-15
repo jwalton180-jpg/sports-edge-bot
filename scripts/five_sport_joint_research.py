@@ -144,7 +144,8 @@ def main():
     merge.add_argument("--output",required=True)
     bt=cmd.add_parser("backtest")
     bt.add_argument("--archive",required=True)
-    bt.add_argument("--holdout-start",required=True)
+    bt.add_argument("--holdout-start",help="One UTC split for all requested sports")
+    bt.add_argument("--cutoffs-file",help="Local JSON sport-to-UTC-cutoff mapping")
     bt.add_argument("--output",required=True)
     sl=cmd.add_parser("fixtures")
     sl.add_argument("--sport",choices=sorted(PATHS),required=True)
@@ -165,15 +166,25 @@ def main():
     elif args.cmd=="merge":
         doc=merge_archives([read_json(s) for s in args.archive])
     elif args.cmd=="backtest":
-        doc=read_json(args.archive)
-        games=validate_archive(doc)
+        if bool(args.holdout_start)==bool(args.cutoffs_file):
+            raise ValueError("supply_exactly_one_global_cutoff_or_sport_cutoffs_file")
+        archive=read_json(args.archive)
+        games=validate_archive(archive)
+        if args.cutoffs_file:
+            cutoffs=read_json(args.cutoffs_file)
+            if not isinstance(cutoffs,dict) or set(cutoffs)!=set(PATHS) or (
+                any(not isinstance(v,str) for v in cutoffs.values())):
+                raise ValueError("five_sport_cutoffs_mapping_required")
+        else:
+            cutoffs={sport:args.holdout_start for sport in PATHS}
         reports={}
         for sport in PATHS:
             report,records=historical_score_holdout(games,sport=sport,
-                      holdout_start=args.holdout_start)
+                      holdout_start=cutoffs[sport])
             reports[sport]={"report":report,"prediction_rows":records}
         doc={"schema":"SPORTEDGE-FIVE-SPORT-SCORE-BACKTEST-V1","results":reports,
-             "archive_sha256":digest(doc),"qualified_for_live":False,
+             "archive_sha256":digest(archive),"cutoffs_utc":cutoffs,
+             "qualified_for_live":False,
              "historical_only":True}
     elif args.cmd=="fixtures":
         doc=scheduled_day(args.sport,date.fromisoformat(args.day),
