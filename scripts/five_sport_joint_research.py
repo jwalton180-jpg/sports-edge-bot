@@ -68,7 +68,8 @@ def make_frozen_calls(archive, fixture_doc, *, as_of):
         if key in seen:raise ValueError("duplicate_event_in_slate")
         seen.add(key)
         scenarios=simulate_paired_scores(games,target=event,
-                                         as_of=now.isoformat(),draws=1000)
+                                         as_of=now.isoformat(),draws=1000,
+                                         max_history_age_days=45)
         if scenarios["status"]!="UNVALIDATED_HISTORICAL_SCORE_SCENARIOS":
             rows.append({"sport":event["sport"],"event_id":event["event_id"],
                          "event_time":event["event_time"],"status":scenarios["status"],
