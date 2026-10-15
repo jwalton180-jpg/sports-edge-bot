@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sports_edge.models.sleeper_counts import utc
 
-PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V4-20261014"
+PROTOCOL = "SPORTSEDGE-PROSPECTIVE-V5-20261014"
 SPORTS = ("NHL", "NCAAF", "Soccer", "NBA")
 END_UTC = datetime(2026, 12, 15, tzinfo=timezone.utc)
 
@@ -37,7 +37,7 @@ def model_family_supported(market, sport):
         return False
     if sport == "NBA":
         try:
-            return float(market["floor_strike"]) == 18.5 and market.get("strike_type") == "greater"
+            return float(market["floor_strike"]) in (18.5,19.5,30.5) and market.get("strike_type") == "greater"
         except (KeyError,ValueError,TypeError):
             return False
     return True
@@ -78,11 +78,18 @@ def select_markets(markets, *, now: datetime, per_sport: int = 14,
         ranked = sorted(unique.values(), key=lambda m: (
             hashlib.sha256((PROTOCOL + "|" + m["ticker"]).encode()).hexdigest(),
             m["ticker"]))
-        picked.extend(ranked[:min(per_sport, 6) if sport == "NBA" else per_sport])
+        if sport == "NBA":
+            # Fixed stratified draw: up to two contracts per preregistered line.
+            # No selection by payoff, model probability, winner, or price.
+            for line in (18.5,19.5,30.5):
+                cohort=[m for m in ranked if float(m["floor_strike"])==line]
+                picked.extend(cohort[:2])
+        else:
+            picked.extend(ranked[:per_sport])
     return picked, {"inventory_by_sport": inventory,
                     "eligible_by_sport": {s:len({m["ticker"] for m in by_sport[s]}) for s in SPORTS},
                     "sample_by_sport": {s:sum(m["sports_edge_sport"] == s for m in picked) for s in SPORTS},
-                    "sampling": "SHA256(protocol|ticker), up to 14 per sport and 6 NBA 18.5 spreads; prices not sampled",
+                    "sampling": "SHA256(protocol|ticker), up to 14 per sport plus 2 NBA contracts each at 18.5, 19.5, 30.5; price-blind",
                     "subset_not_full_market_coverage": True,
                     "protocol": PROTOCOL}
 
