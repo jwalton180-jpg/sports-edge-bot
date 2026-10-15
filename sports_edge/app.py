@@ -1858,6 +1858,14 @@ elif view == "Parlay Generator":
         help="Parlay markets are scoped to this calendar date in Hawaiʻi time.",
         key=f"intel_ticket_date_v4_{sport_filter}",
     )
+    if ticket_local_date.weekday() == 3 and sport_filter in {"NFL", "All"}:
+        st.info(
+            "THURSDAY NIGHT FOOTBALL SPOTLIGHT — use NFL + Single game to investigate "
+            "the exact matchup, with a maximum of four independently qualified legs. "
+            "Review player status near kickoff. Two-TD tails, same-player prop "
+            "correlation, executable asks/fees and exit liquidity require extra caution. "
+            "Never fill missing legs just to raise payout."
+        )
     parlay_markets, parlay_catalog_error, parlay_catalog_complete, parlay_catalog_incomplete = get_parlay_kalshi_markets(sport_filter)
     parlay_grouped = group_kalshi_sports(parlay_markets)
     parlay_events_by_ticker, parlay_events_error = get_parlay_kalshi_events()
@@ -2352,6 +2360,60 @@ elif view == "Parlay Generator":
     state = st.session_state.get("intel_parlay_v3")
     if state_matches:
         result = state["result"]
+        if ticket_local_date.weekday() == 3 and sport_filter in {"NFL", "All"}:
+            from sports_edge.models.tnf_research import thursday_research_board
+            tnf_board = thursday_research_board(
+                state.get("model_candidate_rows") or (),
+                local_date=ticket_local_date,
+                now=datetime.now(timezone.utc),
+            )
+            with st.expander("TNF spotlight · independently modeled candidates and blockers", expanded=True):
+                st.caption(
+                    "Thursday kickoff verified in Eastern time. Pre-game model "
+                    "probabilities are NOT predicted cash-out odds. Model-ask-fee edge "
+                    "is indicative; only fully reviewed candidates clear the original "
+                    "Sports Edge leg qualification. No automatic combo orders."
+                )
+                x, y, z = st.columns(3)
+                x.metric("Thursday candidates", tnf_board["total"])
+                y.metric("Pregame qualified", tnf_board["qualified"])
+                z.metric("Blocked / research", tnf_board["blocked"])
+                if tnf_board["kickoff_unverified"]:
+                    st.warning(
+                        f'{tnf_board["kickoff_unverified"]} candidate(s) have no '
+                        'independently verified kickoff; they cannot qualify.'
+                    )
+                if tnf_board["role_uncertain"]:
+                    st.warning(
+                        f'{tnf_board["role_uncertain"]} candidate(s) still require '
+                        'role/injury/starter evidence. Recheck close to kickoff.'
+                    )
+                if tnf_board["dependence_pairs"]:
+                    st.warning(
+                        f'{tnf_board["dependence_pairs"]} same-player cross-stat '
+                        'pair(s) depend on the same on-field workload. '
+                        'Multiplying individual leg probabilities is NOT '
+                        'a calibrated same-game parlay probability.'
+                    )
+                if tnf_board["research"]:
+                    st.dataframe(tnf_board["research"], use_container_width=True, hide_index=True)
+                else:
+                    st.caption(
+                        "No Thursday NFL model candidates for this exact slate. "
+                        "Select NFL, the Thursday date, and build the ticket; "
+                        "do not substitute Kalshi-only or social picks."
+                    )
+                if tnf_board["common_blockers"]:
+                    st.caption(
+                        "Main blockers: " + " · ".join(
+                            f'{reason}: {count}' for reason,count in tnf_board["common_blockers"][:5]
+                        )
+                    )
+                st.caption(
+                    "Early-exit cash-out probabilities are unvalidated. "
+                    "Use the separate combo quote lab for observed public "
+                    "bid depth and prospective paper research."
+                )
         if result.legs:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Qualified legs", len(result.legs))

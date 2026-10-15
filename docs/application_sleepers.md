@@ -137,3 +137,44 @@ private RFQs and unfillable bids must not be called successful exits.
 
 There is no live trading, no 24/7 monitoring, no Railway runtime, no
 historical quote backfill, and no calibrated future cash-out probability.
+
+
+## Thursday Night Football model-first spotlight (October 2026)
+
+A Thursday-only on-demand research panel appears in the Parlay Generator when
+a Thursday Hawaii date and NFL or All sport are selected. The normal build
+button still generates candidates with the *existing independent NFL models
+and execution audits*. The spotlight does NOT set any market probability,
+add favored/cheap filler, bypass research gates, generate live bets, or infer
+a Kalshi combo bid from separate contract prices. The Single-game four-leg
+maximum is unchanged.
+
+The research board validates official, timezone-aware kickoff timestamps:
+kickoff must fall Thursday in America/New_York and match the selected date
+in Pacific/Honolulu; a missing timestamp remains RESEARCH ONLY, and
+already-started games cannot be presented as pregame qualified. Only
+NFL candidate legs with an independently available model probability,
+Kalshi executable ask, transaction fee, completed audit qualification and
+existing Best Available ticket-policy eligibility are labeled
+PREGAME QUALIFIED. Zero qualifiers means zero suggested legs.
+
+The board groups receiving/receptions, passing/QB volume, rushing/workload,
+TD scorer (including 2+ tails), and team/game scoring. Injury/role uncertainty
+and model data/prospective validation blockers are displayed even if the
+indicated model probability exceeds price. Strong cross-stat dependence
+between two props on the same player is highlighted rather than
+multiplying marginal probabilities as if independent.
+
+For the October 15 Seahawks-at-Broncos Thursday game, consult official
+injury reports: Jaxon Smith-Njigba was cleared to play, Denver's
+Pat Surtain II and Talanoa Hufanga were out, Riley Moss questionable,
+Seattle's Zach Charbonnet, Drake Thomas and Chazz Surratt ruled out.
+These are scouting leads, NOT model coefficients or guaranteed Overs.
+Seahawks-Broncos opening price and media/social picks do not establish value.
+Pre-event status, exact offered alternative line, independent model,
+Kalshi ask and fees must each be rechecked. Cash-out opportunity probability
+is separate and still uncalibrated, using only independently observed exact
+combo bids where available.
+
+Read-only, user-initiated, no Railway, no polling, no automated orders, and
+no promotion of a retroactive screenshot without immutable prospective proof.
