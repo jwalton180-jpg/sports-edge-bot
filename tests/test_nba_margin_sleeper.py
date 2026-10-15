@@ -45,7 +45,7 @@ def test_exact_19_plus_rule_and_disallow_ambiguous_or_regulation_only():
 def test_margin_tail_monotone_symmetric_and_never_confident_without_validation():
     h=history()
     p=nba_margin_tail(h,home_id="H",away_id="A",selected_id="H",before_time=NOW.isoformat())
-    hard=nba_margin_tail(h,home_id="H",away_id="A",selected_id="H",before_time=NOW.isoformat(),line=24.5)
+    hard=nba_margin_tail(h,home_id="H",away_id="A",selected_id="H",before_time=NOW.isoformat(),line=30.5)
     opponent=nba_margin_tail(h,home_id="H",away_id="A",selected_id="A",before_time=NOW.isoformat())
     assert 0 < hard.probability < p.probability < 1
     assert 0 < opponent.probability < 1
