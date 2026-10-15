@@ -178,3 +178,50 @@ def merge_archives(docs):
             "provenance":proof,
             "games":sorted(rows.values(),key=lambda r:(r["event_time"],r["sport"],r["event_id"])),
             "research_only":True,"no_kalshi_market_settlement_claim":True}
+
+
+def upcoming_fixtures(sport, data, *, as_of):
+    """Fetch ESPN scheduled events only; return source-backed public identities."""
+    if sport not in PATHS or not isinstance(data,dict) or not isinstance(data.get("events"),list):
+        raise ValueError("malformed_fixture_source")
+    now=utc(as_of)
+    result=[]
+    for e in data["events"]:
+        if not isinstance(e,dict) or e.get("status",{}).get("type",{}).get("completed") is True:
+            continue
+        try:
+            if len(e["competitions"])!=1:continue
+            competitors=e["competitions"][0]["competitors"]
+            if len(competitors)!=2:continue
+            teams={x["homeAway"]:str(x["team"]["id"]) for x in competitors}
+            if set(teams)!={"home","away"} or teams["home"]==teams["away"]:continue
+            start=utc(e["date"])
+            if start<=now:continue
+            result.append({"sport":sport,"event_id":str(e["id"]),
+                           "event_time":start.isoformat(),
+                           "home_id":teams["home"],"away_id":teams["away"],
+                           "source":"ESPN_SCHEDULED_SCOREBOARD",
+                           "status":"FUTURE_UNPLAYED"})
+        except (KeyError,TypeError,IndexError,ValueError):
+            continue
+    if len({(x["sport"],x["event_id"]) for x in result})!=len(result):
+        raise ValueError("duplicate_fixture")
+    return sorted(result,key=lambda x:(x["event_time"],x["event_id"]))
+
+
+def scheduled_day(sport, day, *, as_of, get=None):
+    if sport not in PATHS or type(day) is not date:
+        raise ValueError("unsupported_fixture_input")
+    url=daily_url(sport,day)
+    if get is None:
+        r=requests.get(url,timeout=20,headers={"User-Agent":"SportEdge-readonly-research/1.0"})
+        r.raise_for_status()
+        data=r.json()
+    else:
+        data=get(url)
+    rows=upcoming_fixtures(sport,data,as_of=as_of)
+    return {"schema":"SPORTEDGE-FIVE-SPORT-FIXTURES-V1",
+            "sports":[sport],"source":"ESPN_PUBLIC_SCHEDULED_SCOREBOARD",
+            "captured_at_utc":utc(as_of).isoformat(),
+            "provenance":{"url":url,"digest_of_json":sha256(json.dumps(data,sort_keys=True).encode()).hexdigest()},
+            "fixtures":rows,"no_kalshi_prices":True,"research_only":True}
