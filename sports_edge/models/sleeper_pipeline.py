@@ -188,6 +188,21 @@ def research_projection(row, spec, sources):
     m = row.market
     if not spec.rules_supported:
         return None, {}
+    if row.sport == "NBA" and row.family == "Game Total" and spec.threshold is not None and 240 <= spec.threshold <= 260:
+        # The independent high-total model explicitly supports the entire
+        # regulation+overtime game, not a quarter or sportsbook derived total.
+        if not str(m.get("ticker","")).startswith("KXNBATOTAL-"):
+            raise ValueError("nba_high_total_series_unverified")
+        if re.search(r"first half|second half|quarter|regulation only|excluding overtime",
+                     str(m.get("rules_primary",""))+" "+str(m.get("rules_secondary","")),re.I):
+            raise ValueError("nba_high_total_entire_game_scope_unverified")
+        from sports_edge.models.nba_high_total import nba_high_total
+        context=sources.nba_margin_context(m)
+        projection=nba_high_total(context["rows"],home_id=context["home_id"],
+            away_id=context["away_id"],before_time=context["start"],
+            line=spec.threshold-.5,season_type=context["season_type"])
+        context["focus_market"]=f"NBA full-game NO Over {spec.threshold-.5:g} points"
+        return projection,context
     if row.sport == "NBA" and row.family == "Spread" and spec.threshold in {19,20,31}:
         from sports_edge.models.nba_margin_sleeper import nba_margin_tail
         context = sources.nba_margin_context(m)
@@ -286,7 +301,7 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
         "NFL": {"Player Touchdowns"},
         "NCAAF": {"Moneyline"},
         "Soccer": {"Game Total","Team Total","Both Teams Score"},
-        "NBA": {"Spread","Points","Rebounds","Assists","Three-Pointers",
+        "NBA": {"Spread","Game Total","Points","Rebounds","Assists","Three-Pointers",
                 "Points + Rebounds + Assists"},
         "WNBA": {"Points","Rebounds","Assists","Three-Pointers",
                  "Points + Rebounds + Assists"},
@@ -294,6 +309,13 @@ def scan_sleeper_markets(markets, *, coverage_complete, limit=60, client=None, s
     def supported_scope(row):
         if row.sport == "Soccer" and not str(row.market.get("ticker","")).startswith("KXEPL"):
             return False
+        if row.sport == "NBA" and row.family == "Game Total":
+            try:
+                return (str(row.market.get("ticker","")).startswith("KXNBATOTAL-")
+                        and 239.5 <= float(row.market["floor_strike"]) <= 259.5
+                        and row.market.get("strike_type") == "greater")
+            except (KeyError,TypeError,ValueError):
+                return False
         if row.sport == "NBA" and row.family == "Spread":
             try:
                 return (float(row.market["floor_strike"]) in {18.5,19.5,30.5} and
