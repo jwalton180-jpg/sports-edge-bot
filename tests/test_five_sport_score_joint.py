@@ -203,3 +203,17 @@ def test_fixture_parser_ignores_finished_and_started_but_includes_future():
     with pytest.raises(ValueError):
         make_frozen_calls(archive(),dict(future_document(),fixtures=[dict(fixture(),status="FINAL")]),
                           as_of="2026-10-15T10:00:00Z")
+
+
+@pytest.mark.parametrize("sport",("NCAAF","NBA","NHL"))
+def test_exact_midnight_utc_kickoffs_require_previous_day_freeze(sport):
+    rows=[dict(r,event_time=r["event_time"].replace("T12:00:00","T00:00:00"))
+          for r in history(sport)]
+    report,predictions=historical_score_holdout(
+        rows,sport=sport,holdout_start="2025-04-15T00:00:00Z",min_test=20)
+    assert report["status"]=="HISTORICAL_HOLDOUT_RESEARCH_ONLY"
+    assert all(datetime.fromisoformat(r["predicted_at"])<
+               datetime.fromisoformat(r["event_time"]) for r in predictions)
+    assert all((datetime.fromisoformat(r["event_time"])-
+               datetime.fromisoformat(r["predicted_at"])).days>=1
+               for r in predictions)
