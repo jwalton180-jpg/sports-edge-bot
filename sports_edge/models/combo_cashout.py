@@ -208,6 +208,7 @@ def calculate_user_reported_cashout(
 def first_observed_cashout_target(
     *, combo_ticker: str, contracts: int, cost: Any,
     quotes: list[dict], required_roi: float, fee_per_contract: Any,
+    entry_observed_at: datetime | str, resolved_at: datetime | str | None = None,
 ) -> dict:
     """Forward-replay price observation only; NEVER call a simulated fill.
 
@@ -218,12 +219,20 @@ def first_observed_cashout_target(
         raise ValueError("invalid_profit_threshold")
     if len(quotes)>100000:
         raise ValueError("bounded_quote_path_required")
+    entry = _time(entry_observed_at)
+    resolution = _time(resolved_at)
+    if entry is None or (resolution is not None and resolution <= entry):
+        raise ValueError("entry_before_resolution_required")
     seen = None
     for q in quotes:
         t=_time(q.get("observed_at"))
         if t is None or (seen is not None and t<=seen):
             raise ValueError("quote_path_not_chronological")
         seen=t
+        if t <= entry:
+            continue  # future-mark observations strictly AFTER entry
+        if resolution is not None and t >= resolution:
+            break  # no settlement-as-price or post-final hindsight
         evidence=assess_combo_cashout_quote(
             combo_ticker=combo_ticker,contracts_held=contracts,
             total_entry_cost=cost,combo_yes_bid=q.get("combo_yes_bid"),
