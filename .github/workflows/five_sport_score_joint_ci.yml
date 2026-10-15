@@ -1,0 +1,39 @@
+name: Five-sport source-backed score joint simulations
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "sports_edge/data/five_sport_score_archive.py"
+      - "sports_edge/models/five_sport_score_joint.py"
+      - "sports_edge/joint_score_evidence_panel.py"
+      - "scripts/five_sport_joint_research.py"
+      - "sports_edge/app.py"
+      - "tests/test_five_sport_score_joint.py"
+      - ".github/workflows/five_sport_score_joint_ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "sports_edge/data/five_sport_score_archive.py"
+      - "sports_edge/models/five_sport_score_joint.py"
+      - "sports_edge/joint_score_evidence_panel.py"
+      - "scripts/five_sport_joint_research.py"
+      - "sports_edge/app.py"
+      - "tests/test_five_sport_score_joint.py"
+      - ".github/workflows/five_sport_score_joint_ci.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  score-joint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Historical source, paired-score model, leakage and paper snapshot tests
+        run: python -m pytest -q tests/test_five_sport_score_joint.py tests/test_all_game_joint_research.py tests/test_tnf_research.py
+      - name: App and bounded read-only research syntax
+        run: python -m compileall -q sports_edge/app.py sports_edge/data/five_sport_score_archive.py sports_edge/models/five_sport_score_joint.py sports_edge/joint_score_evidence_panel.py scripts/five_sport_joint_research.py

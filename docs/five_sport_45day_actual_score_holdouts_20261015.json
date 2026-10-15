@@ -1,0 +1,80 @@
+{
+  "schema": "SPORTEDGE-FIVE-SPORT-SOURCE-BACKED-HOLDOUT-EVIDENCE-V1",
+  "captured_utc_date": "2026-10-15",
+  "scope": "completed ESPN public full-game final scores; retrospective walkforward score-only home-win AND total-over; NO historical Kalshi settlement or current executable combo quote",
+  "tested_model": "paired_completed_score_residual_v1",
+  "status": "UNVALIDATED_RESEARCH_ONLY",
+  "sport_results": [
+    {
+      "sport": "NFL",
+      "source_calendar_days": 45,
+      "completed_games": 105,
+      "holdout_games": 39,
+      "threshold": "44.5",
+      "joint_brier": 0.20868984615384611,
+      "independence_brier": 0.20867879279012813,
+      "league_prior_brier": 0.21489402597373675,
+      "source_json_sha256": "962eec44aad71005f4cfe7affa5de28d395ca12e681f86efca3849da110b9f51",
+      "holdout_report_sha256": "55731ed6810f15f0f8ee0b270efc514e8f5f0192abed7729cdb584de64aab24a"
+    },
+    {
+      "sport": "NCAAF",
+      "source_calendar_days": 45,
+      "completed_games": 390,
+      "holdout_games": 64,
+      "threshold": "51.5",
+      "joint_brier": 0.18168715625,
+      "independence_brier": 0.18146368388315623,
+      "league_prior_brier": 0.21292179720560317,
+      "source_json_sha256": "d2b2a304611c6c55d13dfb45117be5873648ab630df8492c41de3cb0f39dcff1",
+      "holdout_report_sha256": "c8b83a12f520b397a8ae55d96b592e76d983e5ce8a84439be9d5c450462134b6"
+    },
+    {
+      "sport": "NBA",
+      "source_calendar_days": 45,
+      "completed_games": 328,
+      "holdout_games": 172,
+      "threshold": "224.5",
+      "joint_brier": 0.20641655232558137,
+      "independence_brier": 0.2070762180288896,
+      "league_prior_brier": 0.22771246671669043,
+      "source_json_sha256": "f2e656659f05389c30501d1303e62383e6ddd6c85ae92996aa264b553d5cdea8",
+      "holdout_report_sha256": "a3d4c8a4da705715a01b8aa415bb72e245267f515252c6c5063a4588d311ee37"
+    },
+    {
+      "sport": "NHL",
+      "source_calendar_days": 45,
+      "completed_games": 330,
+      "holdout_games": 164,
+      "threshold": "5.5",
+      "joint_brier": 0.2129836768292683,
+      "independence_brier": 0.21214943126515243,
+      "league_prior_brier": 0.211018427882361,
+      "source_json_sha256": "c3a4d8d3290ccc5a332bf300e448d7740607ac78d95eed67883a38757fcb58be",
+      "holdout_report_sha256": "fa1a40ab7e954c982eec1db9a5015efc0822cfb4c5a67f6a3f50f63910b80f4d"
+    },
+    {
+      "sport": "MLB",
+      "source_calendar_days": 45,
+      "completed_games": 609,
+      "holdout_games": 303,
+      "threshold": "8.5",
+      "joint_brier": 0.20128465016501657,
+      "independence_brier": 0.20065709013387467,
+      "league_prior_brier": 0.19637405750074077,
+      "source_json_sha256": "46fc00498342d5515f3aa36b5ad7ac377fd0392c582ec66623dac9b17efb0486",
+      "holdout_report_sha256": "ca11160bcf9ddfabae4863073f30f25ee9dc74542754603edfb3729158994737"
+    }
+  ],
+  "total_completed_games": 1762,
+  "total_holdout_games": 742,
+  "model_not_approved": true,
+  "notes": [
+    "Outcome is home winning final score AND full game score total above a prespecified threshold; no player props.",
+    "Different 45-day historical source windows were used for each sport due to seasonal calendars.",
+    "Score dates use previous UTC midnight freeze to avoid midnight-kickoff leakage and same-day results.",
+    "NBA slightly better than independence, but differences are small; NHL and MLB failed league-prior Brier.",
+    "No trading ROI or executable combo-market profitability can be inferred; historical final scores may differ from Kalshi settlement rules.",
+    "Complete source archives and reports are local only on user-authorized Mac; checksums included for reproducibility."
+  ]
+}
