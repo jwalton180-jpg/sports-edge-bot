@@ -126,24 +126,46 @@ def test_earliest_profitable_bid_is_causal_and_never_marked_as_filled():
     ]
     result=first_observed_cashout_target(
         combo_ticker="COMBO-ABC",contracts=10,cost=2,
-        quotes=q,required_roi=.50,fee_per_contract=".01")
+        quotes=q,required_roi=.50,fee_per_contract=".01",
+        entry_observed_at=NOW-timedelta(seconds=1))
     assert result["status"]=="FIRST_OBSERVED_PROFITABLE_COMBO_QUOTE_ONLY"
     assert result["observed_at"]==(NOW+timedelta(minutes=2)).isoformat()
     assert not result["actual_fill_verified"]
     no_full=first_observed_cashout_target(
         combo_ticker="COMBO-ABC",contracts=10,cost=2,
-        quotes=q[:2],required_roi=.5,fee_per_contract=".01")
+        quotes=q[:2],required_roi=.5,fee_per_contract=".01",
+        entry_observed_at=NOW-timedelta(seconds=1))
     assert no_full["status"]=="NO_OBSERVED_FULL_SIZE_PROFIT_TARGET"
 
 
 def test_no_quote_path_hindsight_wins_or_reorder():
     assert first_observed_cashout_target(
         combo_ticker="C",contracts=1,cost=".3",quotes=[],
-        required_roi=.25,fee_per_contract=".01")["actual_fill_verified"] is False
+        required_roi=.25,fee_per_contract=".01",
+        entry_observed_at=NOW-timedelta(seconds=1))["actual_fill_verified"] is False
     with pytest.raises(ValueError,match="chronological"):
         first_observed_cashout_target(
             combo_ticker="C",contracts=1,cost=".3",
             quotes=[
                 {"observed_at":NOW.isoformat(),"combo_yes_bid":.4,"available_bid_contracts":1},
                 {"observed_at":NOW.isoformat(),"combo_yes_bid":.7,"available_bid_contracts":1},
-            ],required_roi=.25,fee_per_contract=".01")
+            ],required_roi=.25,fee_per_contract=".01",
+            entry_observed_at=NOW-timedelta(seconds=1))
+
+
+
+def test_replay_never_uses_pre_entry_rally_or_after_settlement_quote():
+    observed=[
+        {"observed_at":(NOW-timedelta(minutes=10)).isoformat(),
+         "combo_yes_bid":".95","available_bid_contracts":10},
+        {"observed_at":(NOW+timedelta(minutes=1)).isoformat(),
+         "combo_yes_bid":".25","available_bid_contracts":10},
+        {"observed_at":(NOW+timedelta(minutes=20)).isoformat(),
+         "combo_yes_bid":".90","available_bid_contracts":10},
+    ]
+    report=first_observed_cashout_target(
+        combo_ticker="C",contracts=10,cost=2,quotes=observed,
+        required_roi=.5,fee_per_contract=".01",
+        entry_observed_at=NOW,
+        resolved_at=NOW+timedelta(minutes=10))
+    assert report["status"]=="NO_OBSERVED_FULL_SIZE_PROFIT_TARGET"
