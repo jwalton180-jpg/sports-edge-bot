@@ -1,0 +1,81 @@
+{
+  "schema": "SPORTEDGE-READONLY-FROZEN-PAPER-EVIDENCE-MANIFEST-V1",
+  "date": "2026-10-15",
+  "status": "PAPER_SHADOW_ONLY_UNCALIBRATED",
+  "model": "paired_completed_score_residual_v1",
+  "data_source": "public ESPN full game final scores collected on demand through 2026-10-14",
+  "scope": "home_win AND sport-specific full-game-over; no individual player props, no Kalshi prices, no live cashout",
+  "files": [
+    {
+      "label": "mlb-friday",
+      "file_name": "mlb-friday-paper-frozen.json",
+      "as_of_utc": "2026-10-15T20:58:28.507322+00:00",
+      "local_file_sha256": "af9cc3ba60bc8bdf70fb0a56dd9d3ccbb2bfc55f4c5bbf41ad7000480a913f30",
+      "sealed_content_sha256": "e88775e7bc8d29e75e1712439dab321bd5b19b6fd52e8a40f6eb734e390f736d",
+      "scheduled_games": 2,
+      "unvalidated_research_predictions": 2,
+      "insufficient_data_marked": 0
+    },
+    {
+      "label": "nba-friday",
+      "file_name": "nba-friday-paper-frozen.json",
+      "as_of_utc": "2026-10-15T20:58:26.357700+00:00",
+      "local_file_sha256": "07c108188da666530c6f24aa0c5aab903f583195d3dd066684b405d26247481e",
+      "sealed_content_sha256": "d43f12fcfa767dee264ac2ca0a67799d121c8468f3810c281442593cac9ec45e",
+      "scheduled_games": 12,
+      "unvalidated_research_predictions": 0,
+      "insufficient_data_marked": 12
+    },
+    {
+      "label": "ncaaf-saturday",
+      "file_name": "ncaaf-saturday-paper-frozen.json",
+      "as_of_utc": "2026-10-15T20:59:32.505510+00:00",
+      "local_file_sha256": "8f3bed15e1720d0cc0ebe7050d71f2fbbf3d523385d2a13209a272f8feb6394b",
+      "sealed_content_sha256": "9974502496013faf4d0fe51ba8c8ea1dc641460a152de51deea2e0d2c7842cb6",
+      "scheduled_games": 52,
+      "unvalidated_research_predictions": 49,
+      "insufficient_data_marked": 3
+    },
+    {
+      "label": "nfl-sunday",
+      "file_name": "nfl-sunday-paper-frozen.json",
+      "as_of_utc": "2026-10-15T20:58:24.214472+00:00",
+      "local_file_sha256": "ae0345271c63798d9e0798bc9bb303aef504617ec01539e92ddc01f587e4152a",
+      "sealed_content_sha256": "9ab61db877152b8800b8c56f724720a3fd2ac84eba08fffd757ab7c22913b7cd",
+      "scheduled_games": 12,
+      "unvalidated_research_predictions": 12,
+      "insufficient_data_marked": 0
+    },
+    {
+      "label": "nfl-tnf",
+      "file_name": "nfl-tnf-paper-frozen.json",
+      "as_of_utc": "2026-10-15T20:58:23.248676+00:00",
+      "local_file_sha256": "887af05dc790f99b81a0813e5db8c89e291232b92bd2cc83ab902c3aeaeb7c93",
+      "sealed_content_sha256": "df14dda9eee76364166974d1dd27aea65126edea9e1b460f81d2d30315b1a522",
+      "scheduled_games": 1,
+      "unvalidated_research_predictions": 1,
+      "insufficient_data_marked": 0
+    },
+    {
+      "label": "nhl-friday",
+      "file_name": "nhl-friday-paper-frozen.json",
+      "as_of_utc": "2026-10-15T20:58:27.389660+00:00",
+      "local_file_sha256": "fad1980c589d68fe3ed6626f2057a5f7c068587c3ce041b9bba7e7e9468c6f65",
+      "sealed_content_sha256": "44c913c04fcb77b37635117593c5d5bc588264ab02bdfa59c1b948b3d102a83f",
+      "scheduled_games": 2,
+      "unvalidated_research_predictions": 2,
+      "insufficient_data_marked": 0
+    }
+  ],
+  "total_scheduled_games": 82,
+  "unvalidated_score_probabilities": 66,
+  "explicitly_insufficient_games": 16,
+  "private_data_in_manifest": false,
+  "notes": [
+    "SHA256 hashes are anchored in GitHub before the listed games; the underlying score-only prediction files remain on the user-authorized Mac.",
+    "No documented prospective win rate at the moment of capture; all predictions are ungraded.",
+    "NBA has 12/12 missing due insufficient prior completed games; NCAAF has 3/52 insufficient team histories.",
+    "A positive modeled score-based combination is not a positive expected value Kalshi contract.",
+    "No orders, cancellations, deposits, trading or 24/7 background monitoring."
+  ]
+}
