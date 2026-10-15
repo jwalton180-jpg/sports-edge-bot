@@ -114,6 +114,10 @@ def test_exact_combo_quote_fees_and_staleness():
     quote={
         "source":"KALSHI_EXACT_COMBO_EXECUTABLE_ASK",
         "exact_combo_ticker":"KXMVECROSSCATEGORY-TEST",
+        "constituent_contract_sides":[
+            f"{a.kalshi_ticker}|{a.kalshi_side}",
+            f"{b.kalshi_ticker}|{b.kalshi_side}",
+        ],
         "executable_ask_dollars":".52",
         "entry_fee_per_contract":".02",
         "observed_at_utc":NOW.isoformat(),
@@ -122,7 +126,8 @@ def test_exact_combo_quote_fees_and_staleness():
     assert res["joint_market_cost"]==.54
     assert res["model_minus_exact_combo_cost"]==.06
     assert res["qualified_for_live"] is False
-    for value in [None,{"source":"LEG_PRICE_PRODUCT",**quote},
+    for value in [{"source":"LEG_PRICE_PRODUCT",**quote},
+                  {**quote,"constituent_contract_sides":["WRONG|YES",f"{b.kalshi_ticker}|YES"]},
                   {**quote,"observed_at_utc":(NOW-timedelta(minutes=2)).isoformat()},
                   {**quote,"entry_fee_per_contract":None}]:
         with pytest.raises(ValueError):
@@ -154,6 +159,19 @@ def test_marginal_mismatch_and_unreviewed_leg_fail_closed():
     with pytest.raises(ValueError,match="not_execution_qualified"):
         evaluate_joint_scenarios([a,replace(b,execution_audit_status=None)],
                                  bundle=bundle([a,b]),now=NOW)
+
+
+def test_joint_simulations_span_all_five_sports_without_pairwise_multiplies():
+    sports=list(SPORTS)
+    legs=[candidate(sport=s,event="GAME-"+s,
+                    selection="ATHLETE-"+s,
+                    fair=(.7 if i%2==0 else .6),
+                    price=.48) for i,s in enumerate(sports)]
+    report=evaluate_joint_scenarios(legs,bundle=bundle(legs),now=NOW)
+    assert report["sports"]==sorted(sports)
+    assert report["distinct_game_count"]==5
+    assert report["joint_model_probability"]==.6
+    assert report["qualified_for_live"] is False
 
 
 def test_input_guards_and_not_supported_sports():
