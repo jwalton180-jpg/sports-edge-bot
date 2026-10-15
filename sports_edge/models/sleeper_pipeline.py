@@ -85,7 +85,7 @@ def contract_spec(row):
             problems.append("nba_margin_rules_threshold_mismatch")
         if re.search(r"\b(first half|second half|quarter|regulation only|excluding overtime)\b",rules,re.I):
             problems.append("nba_margin_not_entire_game_including_overtime")
-        threshold=floor(float(m["floor_strike"]))+1 if choice is not None and m.get("floor_strike") is not None and str(m.get("strike_type"))=="greater" and str(m["floor_strike"])==choice.group(2) else None
+        threshold=floor(float(choice.group(2)))+1 if choice is not None and not any(x in problems for x in ("nba_margin_half_point_strike_unverified","nba_margin_rules_threshold_mismatch")) else None
     if row.family == "Team Total":
         match = re.match(r"^(.+?)\s+(?:over|under)\s+[0-9.]+",title,re.I)
         if match:
