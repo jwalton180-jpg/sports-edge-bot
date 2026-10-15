@@ -223,12 +223,13 @@ def first_observed_cashout_target(
     resolution = _time(resolved_at)
     if entry is None or (resolution is not None and resolution <= entry):
         raise ValueError("entry_before_resolution_required")
-    seen = None
-    for q in quotes:
-        t=_time(q.get("observed_at"))
-        if t is None or (seen is not None and t<=seen):
-            raise ValueError("quote_path_not_chronological")
-        seen=t
+    # Validate timestamp ordering without using any future quote price.
+    stamps = [_time(q.get("observed_at")) for q in quotes]
+    if any(t is None for t in stamps) or any(
+        before >= after for before,after in zip(stamps,stamps[1:])
+    ):
+        raise ValueError("quote_path_not_chronological")
+    for q,t in zip(quotes,stamps):
         if t <= entry:
             continue  # future-mark observations strictly AFTER entry
         if resolution is not None and t >= resolution:
