@@ -77,7 +77,8 @@ def complete_history(games, *, target, before):
     return selected
 
 
-def simulate_paired_scores(games, *, target, as_of, draws=1000):
+def simulate_paired_scores(games, *, target, as_of, draws=1000,
+                           max_history_age_days=None):
     """Sample past home/away *residual pairs* after causal team-level adjustment.
 
     The method is intentionally an uncalibrated research baseline. Paired
@@ -90,6 +91,15 @@ def simulate_paired_scores(games, *, target, as_of, draws=1000):
     asof=utc(as_of)
     if asof>=target_time:raise ValueError("prediction_not_pregame")
     history=complete_history(games,target=target,before=as_of)
+    if max_history_age_days is not None:
+        if (type(max_history_age_days) is not int or
+            not 1<=max_history_age_days<=365):
+            raise ValueError("bounded_age_days_required")
+        if (not history or
+            (asof-max(utc(row["event_time"]) for row in history)).total_seconds() >
+            max_history_age_days*86400):
+            return {"status":"STALE_SPORT_HISTORY_FOR_FUTURE_PREDICTION",
+                    "qualified_for_live":False,"scores":[]}
     if len(history)<MIN_LEAGUE:
         return {"status":"INSUFFICIENT_LEAGUE_HISTORY","count":len(history),
                 "qualified_for_live":False,"scores":[]}
