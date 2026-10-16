@@ -31,15 +31,18 @@ def build_ticket_for_scope(
         valid_rows = []
         for row in rows:
             raw_start = getattr(row, "verified_start", None)
-            if raw_start:
-                try:
-                    parsed = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
-                    if parsed.tzinfo is None:
-                        continue
-                    if parsed.astimezone(zone).date() != target_date:
-                        continue
-                except (TypeError, ValueError, OverflowError):
+            # A missing source-backed start is not proof that the event belongs
+            # to this slate. Do not let unknown-date candidates into a ticket.
+            if not raw_start:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
                     continue
+                if parsed.astimezone(zone).date() != target_date:
+                    continue
+            except (TypeError, ValueError, OverflowError):
+                continue
             valid_rows.append(row)
         rows = valid_rows
     if game_scope == "Single game":
