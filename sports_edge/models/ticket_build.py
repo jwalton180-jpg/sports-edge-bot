@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from datetime import date, datetime
 import inspect
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from sports_edge.models.parlay_candidates import ParlayCandidateLeg
@@ -18,9 +20,31 @@ def build_ticket_for_scope(
     sport_filter: str,
     game_scope: str,
     preferred_event_ids: Iterable[str] = (),
+    ticket_date: str | date | None = None,
+    ticket_timezone: str = "Pacific/Honolulu",
 ) -> Any:
-    """Build initial and enriched tickets through one scope-aware policy path."""
+    """Build tickets with stale, explicitly dated events excluded."""
     rows = list(candidates)
+    if ticket_date is not None:
+        target_date = date.fromisoformat(ticket_date) if isinstance(ticket_date, str) else ticket_date
+        zone = ZoneInfo(ticket_timezone)
+        valid_rows = []
+        for row in rows:
+            raw_start = getattr(row, "verified_start", None)
+            # A missing source-backed start is not proof that the event belongs
+            # to this slate. Do not let unknown-date candidates into a ticket.
+            if not raw_start:
+                continue
+            try:
+                parsed = datetime.fromisoformat(str(raw_start).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    continue
+                if parsed.astimezone(zone).date() != target_date:
+                    continue
+            except (TypeError, ValueError, OverflowError):
+                continue
+            valid_rows.append(row)
+        rows = valid_rows
     if game_scope == "Single game":
         return builder(
             rows,
