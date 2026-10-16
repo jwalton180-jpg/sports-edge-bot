@@ -1,5 +1,5 @@
 {
-  "already_moved_postmortems": 158,
+  "already_moved_postmortems": 159,
   "by_lane": {
     "DEEP REVERSAL": {
       "1-4c": {
@@ -165,8 +165,8 @@
       "hypothetical_gross_dollars_per_contract": 10.11,
       "losses": 74,
       "model_brier": 0.22643859794129312,
-      "observations": 118,
-      "pending": 2,
+      "observations": 119,
+      "pending": 3,
       "quote_brier": 0.22145775862068967,
       "second_half_win_rate": 0.3103448275862069,
       "settled": 116,
@@ -208,8 +208,8 @@
       "hypothetical_gross_dollars_per_contract": 4.59,
       "losses": 170,
       "model_brier": 0.2012050166993266,
-      "observations": 251,
-      "pending": 3,
+      "observations": 253,
+      "pending": 5,
       "quote_brier": 0.20316653225806452,
       "second_half_win_rate": 0.2903225806451613,
       "settled": 248,
@@ -217,42 +217,42 @@
       "wins": 78
     }
   },
-  "extreme_dip_quote_snapshots": 1031,
+  "extreme_dip_quote_snapshots": 1034,
   "last_worker_run": {
-    "confirmed_radar_signals": 0,
-    "early_watches": 1,
+    "confirmed_radar_signals": 3,
+    "early_watches": 0,
     "errors": [],
-    "extreme_dip_observations": 0,
+    "extreme_dip_observations": 1,
     "healthy": true,
-    "model_sides": 196,
+    "model_sides": 194,
     "new_settlements": 0,
-    "new_signals": 0,
-    "observed_at": "2026-10-16T12:24:18.509601+00:00",
-    "open_contracts": 216,
-    "pending_settlements": 7,
+    "new_signals": 1,
+    "observed_at": "2026-10-16T12:28:39.726828+00:00",
+    "open_contracts": 214,
+    "pending_settlements": 10,
     "post_surge_audits": 0,
-    "price_only_scanned": 40,
-    "price_only_watches": 5,
+    "price_only_scanned": 37,
+    "price_only_watches": 4,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
       "stale_live_score": 14,
-      "unique_live_score_not_found": 202
+      "unique_live_score_not_found": 200
     },
-    "quoted_snapshots_added": 3,
+    "quoted_snapshots_added": 2,
     "recovery_building": 0,
     "score_states": 16,
-    "settlement_checks_due": 2,
+    "settlement_checks_due": 1,
     "survivability_cleared": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 67,
-  "recorded_snapshots": 5716,
+  "recorded_snapshots": 5727,
   "recovery_building_quote_snapshots": 90,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 518,
-  "total_pending": 7,
+  "total_observations": 521,
+  "total_pending": 10,
   "total_settled": 511
 }
