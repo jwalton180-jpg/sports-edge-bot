@@ -98,6 +98,7 @@ def _fallback_catalog_diagnostics(markets):
 catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
 from sports_edge.models.live_board import LiveSignal, build_live_signals as _sportsbook_crosschecks, build_underdog_signals, market_yes_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
+from sports_edge.models.parlay_runtime import guard_ticket_action
 
 # Streamlit Community Cloud can hot-reload the app entrypoint before every
 # dependency module is refreshed. Keep the parlay engine in lockstep with the
@@ -335,18 +336,31 @@ def _safe_error(exc: Exception) -> str:
     return msg[:300]
 
 
+def _parlay_build_failure(error_type: str) -> None:
+    st.error(
+        "Ticket build could not finish because a sports-data, Kalshi, or model "
+        "request failed. No new ticket was produced. Retry when the source "
+        "recovers; if it repeats, send the error type below."
+    )
+    st.caption(f"Parlay diagnostic: {error_type} (no credentials or private URLs shown)")
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def get_kalshi_markets(sport_filter_value: str):
     selected = None if sport_filter_value == "All" else (sport_filter_value,)
-    result = fetch_supported_sport_catalog(
-        page_limit_per_series=50,
-        page_size=1000,
-        request_pause_s=0.0,
-        max_workers=6,
-        request_interval_s=0.15,
-        sports=selected,
-        overview_only=(sport_filter_value == "All"),
-    )
+    try:
+        result = fetch_supported_sport_catalog(
+            page_limit_per_series=50,
+            page_size=1000,
+            request_pause_s=0.0,
+            max_workers=6,
+            request_interval_s=0.15,
+            sports=selected,
+            overview_only=(sport_filter_value == "All"),
+        )
+    except Exception as exc:
+        # A temporary Kalshi outage should not crash the complete Streamlit UI.
+        return [], _safe_error(exc), None, 0, False, 0, ()
     return (
         list(result.markets),
         result.error,
@@ -360,23 +374,22 @@ def get_kalshi_markets(sport_filter_value: str):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_parlay_kalshi_markets(sport_filter_value: str):
-    """Full current Kalshi universe for parlay game/date selection.
-
-    The main All-sports screen intentionally uses an overview catalog for speed;
-    parlay scoping cannot, because users must be able to select every eligible
-    game on the requested date.
-    """
+    """Full parlay game/date catalog, with fail-closed provider recovery."""
     selected = None if sport_filter_value == "All" else (sport_filter_value,)
-    result = fetch_supported_sport_catalog(
-        page_limit_per_series=50,
-        page_size=1000,
-        request_pause_s=0.0,
-        max_workers=6,
-        request_interval_s=0.15,
-        sports=selected,
-        overview_only=False,
-        discover_all_series=True,
-    )
+    try:
+        result = fetch_supported_sport_catalog(
+            page_limit_per_series=50,
+            page_size=1000,
+            request_pause_s=0.0,
+            max_workers=6,
+            request_interval_s=0.15,
+            sports=selected,
+            overview_only=False,
+            discover_all_series=True,
+        )
+    except Exception as exc:
+        # Do not reuse an old market catalog or manufacture game identities.
+        return [], _safe_error(exc), False, ()
     return (
         list(result.markets),
         result.error,
@@ -392,18 +405,29 @@ def get_parlay_kalshi_events():
     events: dict[str, dict] = {}
     cursor = None
     error = None
+    seen_cursors: set[str] = set()
     for _ in range(50):
         try:
-            payload = client.events(status="open", limit=200, cursor=cursor, with_nested_markets=True)
+            # We only need the parent event names. Nested markets multiply the
+            # payload by hundreds and can cause timeouts / transient 429s.
+            payload = client.events(status="open", limit=200, cursor=cursor, with_nested_markets=False)
+            if not isinstance(payload, dict) or not isinstance(payload.get("events"), list):
+                raise ValueError("malformed Kalshi event-label payload")
+            for event in payload["events"]:
+                if not isinstance(event, dict):
+                    continue
+                key = str(event.get("event_ticker") or event.get("ticker") or "").strip()
+                if key:
+                    events[key] = event
+            next_cursor = str(payload.get("cursor") or "").strip()
+            if not next_cursor:
+                break
+            if next_cursor in seen_cursors:
+                raise ValueError("Kalshi event-label pagination repeated a cursor")
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
         except Exception as exc:
             error = _safe_error(exc)
-            break
-        for event in payload.get("events", []) if isinstance(payload, dict) else []:
-            key = str(event.get("event_ticker") or event.get("ticker") or "").strip()
-            if key:
-                events[key] = event
-        cursor = str(payload.get("cursor") or "").strip() if isinstance(payload, dict) else ""
-        if not cursor:
             break
     return events, error
 
@@ -1983,7 +2007,10 @@ elif view == "Parlay Generator":
 
     build_disabled = game_scope != "All games" and not selected_game_titles
     if st.button("Build Sports Edge ticket", type="primary", use_container_width=True, disabled=build_disabled):
-        with st.spinner("Running sport models against current Kalshi markets…"):
+        with guard_ticket_action(
+            st.session_state, st.spinner("Running sport models against current Kalshi markets…"),
+            _parlay_build_failure, replace_previous=True,
+        ):
             use_all_mlb_models = preset in {"Best Available", "Mixed Sports"}
             use_mlb_game_lines = preset in {"Best Available", "Mixed Sports", "MLB Game Markets"}
             use_all_nfl_models = preset in {"Best Available", "Mixed Sports"}
@@ -2315,7 +2342,12 @@ elif view == "Parlay Generator":
     if state_matches and api_key and state.get("model_candidate_rows") and not state.get("secondary_done"):
         st.caption("Model-first ticket is ready. Sportsbook confirmation is optional and runs separately.")
         if st.button("Add optional sportsbook cross-check", use_container_width=True, key="secondary_crosscheck_v4"):
-            with st.spinner("Cross-checking a bounded set of exact-game sportsbook markets…"):
+            with guard_ticket_action(
+                st.session_state, st.spinner("Cross-checking a bounded set of exact-game sportsbook markets…"),
+                lambda error_type: st.warning(
+                    f"Sportsbook cross-check failed ({error_type}); the existing model-first ticket is unchanged."
+                ),
+            ):
                 model_candidates = list(state.get("model_candidate_rows") or [])
                 active, active_err = get_active_sports(api_key)
                 lazy_games, _, universe_errors = build_game_universe(api_key, active, sport_filter)
