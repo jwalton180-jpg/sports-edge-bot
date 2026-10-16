@@ -399,6 +399,26 @@ def get_parlay_kalshi_markets(sport_filter_value: str):
 
 
 @st.cache_data(ttl=60, show_spinner=False)
+def get_parlay_event_by_ticker(event_ticker: str):
+    """Resolve an exact parent event omitted from the bulk open-event page."""
+    ticker = str(event_ticker or "").strip()
+    if not ticker or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" for ch in ticker):
+        return {}
+    client = KalshiPublicClient()
+    try:
+        payload = client.http.get_json(f"{client.base}/events/{ticker}")
+        if not isinstance(payload, dict):
+            return {}
+        event = payload.get("event")
+        if isinstance(event, dict):
+            return event
+        # Some compatible API responses return the event object directly.
+        return payload if payload.get("event_ticker") or payload.get("ticker") else {}
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=60, show_spinner=False)
 def get_parlay_kalshi_events():
     """Best-effort open-event metadata for ticket labels; never a fatal dependency."""
     client = KalshiPublicClient()
@@ -1480,6 +1500,12 @@ def _parlay_game_choices(grouped, sport_filter_value: str, target_date: date, ti
             event = events_by_ticker.get(event_key) or {}
             title = _event_matchup_title(event)
             if not title:
+                # Bulk open-event pagination can omit a parent even when its
+                # child markets are present. Resolve the exact parent rather
+                # than silently dropping every market for that game.
+                event = get_parlay_event_by_ticker(event_key)
+                title = _event_matchup_title(event)
+            if not title:
                 continue
             label = f"{sport} · {title}"
             choices.setdefault(event_key, (event_key, label, title))
@@ -1912,6 +1938,35 @@ elif view == "Parlay Generator":
     if parlay_catalog_error:
         st.warning(f"Game selector warning: {parlay_catalog_error}")
     st.caption(f"{len(available_games)} open game event(s) found for {ticket_local_date.isoformat()} · Hawaiʻi time")
+    if not available_games:
+        sport_market_count = sum(len(rows) for rows in parlay_grouped.values())
+        date_match_count = 0
+        event_key_count = 0
+        for rows in parlay_grouped.values():
+            for row in rows:
+                market = getattr(row, "market", {}) or {}
+                try:
+                    if _market_local_date(market, ticket_timezone) == ticket_local_date:
+                        date_match_count += 1
+                        if str(market.get("event_ticker") or "").strip():
+                            event_key_count += 1
+                except (TypeError, ValueError, KeyError):
+                    continue
+        if not sport_market_count:
+            st.warning(
+                f"No classified Kalshi markets were loaded for {sport_filter}. "
+                "Refresh the page; if this repeats, the Kalshi catalog feed or sport classifier needs investigation."
+            )
+        elif not date_match_count:
+            st.warning(
+                f"Loaded {sport_market_count} markets, but none matched {ticket_local_date.isoformat()} in Hawaiʻi time. "
+                "Try another date within the next 7 days or refresh the catalog."
+            )
+        else:
+            st.warning(
+                f"Found {date_match_count} markets for this date ({event_key_count} with event IDs), "
+                "but could not resolve any parent game titles. Refresh once; if still empty, report this diagnostic."
+            )
     game_scope = st.segmented_control(
         "Game scope",
         ["All games", "Selected games", "Single game"],
