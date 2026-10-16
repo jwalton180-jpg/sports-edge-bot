@@ -2430,6 +2430,8 @@ elif view == "Parlay Generator":
                     sport_filter=sport_filter,
                     game_scope=game_scope,
                     preferred_event_ids=state.get("selected_coverage_ids") or (),
+                    ticket_date=state.get("ticket_date"),
+                    ticket_timezone="Pacific/Honolulu",
                 )
                 st.session_state["intel_parlay_v3"] = {
                     **state,
