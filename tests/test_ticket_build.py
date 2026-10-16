@@ -110,3 +110,26 @@ def test_ticket_state_rejects_stale_mode_preset_sport_or_target():
     assert matches(base_state(), preset="MLB Hits") is False
     assert matches(base_state(), sport="All") is False
     assert matches(base_state(), target=6) is False
+
+
+def test_ticket_date_blocks_missing_or_mismatched_verified_start():
+    from types import SimpleNamespace
+
+    same_day = SimpleNamespace(verified_start="2026-10-15T19:00:00-04:00", event_id="same")
+    wrong_day = SimpleNamespace(verified_start="2026-10-16T19:00:00-04:00", event_id="wrong")
+    missing = SimpleNamespace(verified_start=None, event_id="missing")
+    naive = SimpleNamespace(verified_start="2026-10-15T19:00:00", event_id="naive")
+    malformed = SimpleNamespace(verified_start="not-a-time", event_id="bad")
+
+    result = build_ticket_for_scope(
+        [same_day, wrong_day, missing, naive, malformed],
+        builder=capturing_builder,
+        assessor=assessor,
+        mode="best",
+        target_legs=5,
+        sport_filter="All",
+        game_scope="All games",
+        ticket_date="2026-10-15",
+        ticket_timezone="Pacific/Honolulu",
+    )
+    assert [row.event_id for row in result["candidates"]] == ["same"]
