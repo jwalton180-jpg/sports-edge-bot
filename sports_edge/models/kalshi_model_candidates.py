@@ -2207,6 +2207,23 @@ def model_candidates_from_kalshi(
                 )
             )
 
+    # Attach a real event occurrence timestamp from the source contract.
+    # Settlement/close dates are deliberately not substituted for kickoff/start.
+    starts_by_ticker: dict[str, str] = {}
+    for sport_rows in grouped.values():
+        for market_row in sport_rows:
+            market = market_row.market
+            ticker = str(market.get("ticker") or "").strip()
+            raw_start = market.get("occurrence_datetime")
+            if ticker and raw_start:
+                parsed_start = _parse_timestamp(raw_start)
+                if parsed_start is not None:
+                    starts_by_ticker[ticker] = parsed_start.isoformat()
+
+    all_rows = [
+        replace(row, verified_start=starts_by_ticker.get(str(row.kalshi_ticker or "").strip()))
+        for row in all_rows
+    ]
     # Model candidates are allowed to include both sides; the EV gate chooses.
     return all_rows
 
