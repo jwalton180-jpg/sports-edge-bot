@@ -195,25 +195,25 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 224,
+        "evaluated": 225,
         "minimum_prior_verified": 30,
-        "model_brier": 0.19862,
-        "quote_brier": 0.195487,
+        "model_brier": 0.198737,
+        "quote_brier": 0.195329,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.3409090909090909,
-      "hypothetical_gross_dollars_per_contract": 2.27,
-      "losses": 184,
-      "model_brier": 0.20072315718694717,
+      "first_half_win_rate": 0.3458646616541353,
+      "hypothetical_gross_dollars_per_contract": 1.87,
+      "losses": 185,
+      "model_brier": 0.20081427854564662,
       "observations": 268,
-      "pending": 3,
-      "quote_brier": 0.2000788679245283,
-      "second_half_win_rate": 0.2706766917293233,
-      "settled": 265,
-      "win_rate": 0.30566037735849055,
+      "pending": 2,
+      "quote_brier": 0.19992819548872182,
+      "second_half_win_rate": 0.2631578947368421,
+      "settled": 266,
+      "win_rate": 0.30451127819548873,
       "wins": 81
     }
   },
@@ -224,24 +224,24 @@
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 202,
+    "model_sides": 234,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-17T18:48:12.665208+00:00",
-    "open_contracts": 332,
-    "pending_settlements": 7,
+    "observed_at": "2026-10-17T21:00:41.164590+00:00",
+    "open_contracts": 372,
+    "pending_settlements": 6,
     "post_surge_audits": 0,
-    "price_only_scanned": 16,
+    "price_only_scanned": 21,
     "price_only_watches": 0,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 332
+      "unique_live_score_not_found": 372
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
-    "score_states": 0,
+    "score_states": 2,
     "settlement_checks_due": 0,
     "survivability_cleared": 0
   },
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 550,
-  "total_pending": 7,
-  "total_settled": 543
+  "total_pending": 6,
+  "total_settled": 544
 }
