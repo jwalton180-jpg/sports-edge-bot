@@ -393,7 +393,9 @@ def get_parlay_kalshi_markets(sport_filter_value: str):
             request_interval_s=0.15,
             sports=selected,
             overview_only=False,
-            discover_all_series=True,
+            # Use the bounded production series allowlist. Full /series discovery
+            # enumerates thousands of unrelated series and overloads this UI path.
+            discover_all_series=False,
         )
     except Exception as exc:
         # Do not reuse an old market catalog or manufacture game identities.
