@@ -200,3 +200,17 @@ def test_nba_win_margin_is_not_a_winner_or_player_prop():
     assert classify_kalshi_market(m)==("NBA","Win Margin")
     m=market("KXNBASPREAD-26NOV20HMA-H19","Home team wins by over 18.5 points")
     assert classify_kalshi_market(m)==("NBA","Spread")
+
+
+
+def test_all_supported_sports_have_game_market_classification():
+    cases = [
+        ("KXNHLGAME-26OCT17-TEAM", "NHL game winner", "NHL"),
+        ("KXNCAAFGAME-26OCT17-TEAM", "NCAAF game winner", "NCAAF"),
+        ("KXEPLGAME-26OCT17-TEAM", "Soccer game winner", "Soccer"),
+        ("KXNBAWINMARGIN-26OCT17-TEAM", "NBA team wins by 18.5 or more", "NBA"),
+    ]
+    for ticker, title, expected_sport in cases:
+        classified = classify_kalshi_market(market(ticker, title))
+        assert classified is not None
+        assert classified[0] == expected_sport

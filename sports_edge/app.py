@@ -16,7 +16,15 @@ import streamlit as st
 
 from sports_edge.core.startup import deployment_mode
 from sports_edge.data.kalshi import KalshiPublicClient
-from sports_edge.data.kalshi_catalog import fetch_supported_sport_catalog
+# Streamlit Community Cloud can retain a previous catalog module during a
+# hot reload. Resolve the catalog export from the refreshed module so the
+# parlay page does not call a stale function signature after partial deploys.
+_kc = importlib.import_module("sports_edge.data.kalshi_catalog")
+try:
+    _kc = importlib.reload(_kc)
+except Exception:
+    pass
+fetch_supported_sport_catalog = _kc.fetch_supported_sport_catalog
 from sports_edge.data.mlb import MLBClient
 from sports_edge.data.mlb_prop_data import schedule_for_day
 from sports_edge.data.nfl import NFLClient
