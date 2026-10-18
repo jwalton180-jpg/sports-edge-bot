@@ -47,3 +47,29 @@ def test_candidate_player_ids_only_returns_explicit_ids():
         "awayTeam": {"players": [{"playerId": "12"}, {"playerId": -1}]},
     },)
     assert nhl.candidate_player_ids(games) == (12, 13)
+
+
+def test_goal_probability_fails_closed_on_short_history():
+    assert nhl.probability_goal_1plus(tuple()) == {
+        "probability": None, "status": "INSUFFICIENT_HISTORY", "games": 0
+    }
+
+
+def test_goal_probability_is_bounded_and_explicitly_unvalidated():
+    logs = tuple({"source": "NHL", "goals": 1 if i < 5 else 0} for i in range(20))
+    result = nhl.probability_goal_1plus(logs)
+    assert 0.0 <= result["probability"] <= 1.0
+    assert result["status"] == "UNVALIDATED_RESEARCH"
+    assert result["games"] == 20
+
+
+def test_roster_parser_uses_explicit_ids_and_names(monkeypatch):
+    monkeypatch.setattr(nhl, "_get_json", lambda *a, **k: {
+        "forwards": [{"id": 12, "fullName": "Example Forward", "positionCode": "C"},
+                     {"id": "bad", "fullName": "Unknown"}],
+        "defensemen": [{"id": 13, "fullName": "Example Defense", "positionCode": "D"}],
+    })
+    assert nhl.roster_for_team("MIN", "20262027") == (
+        {"player_id": 12, "name": "Example Forward", "team": "MIN", "position": "C"},
+        {"player_id": 13, "name": "Example Defense", "team": "MIN", "position": "D"},
+    )
