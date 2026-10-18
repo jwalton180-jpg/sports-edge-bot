@@ -24,5 +24,6 @@ def test_main_ui_exposes_every_sport_and_nfl_tail_focus():
     assert '"NFL 2+ Touchdowns"' in source
     assert 'render_sleeper_panel(markets' in source
     assert 'return audit_app_candidates(candidates' in source
-    assert 'discover_all_series=True' in source
+    assert 'discover_all_series=False' in source
+    assert 'overview_only=False' in source
     assert 'c4.metric("Illustrative payout"' in source
