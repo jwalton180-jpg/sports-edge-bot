@@ -148,7 +148,8 @@ def goal_scorer_candidates(day_iso: str, *, current_season: str, prior_season: s
             except (requests.RequestException, ValueError):
                 continue
             candidates = []
-            for player in roster:
+            # Bound network work: roster is forwards first; evaluate up to 12 per team.
+            for player in roster[:12]:
                 pid = player["player_id"]
                 try:
                     logs = player_game_log(pid, current_season)
