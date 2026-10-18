@@ -1444,7 +1444,11 @@ if sport_filter == "NHL":
     st.caption("Official NHL schedule, roster and game logs. Estimates are unvalidated research baselines—not betting advice or verified value.")
     try:
         from sports_edge.data.nhl_goal_scorers import schedule_for_day, goal_scorer_candidates
-        _nhl_day = datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+        _nhl_now = datetime.now(ZoneInfo("Pacific/Honolulu"))
+        _nhl_day = _nhl_now.date().isoformat()
+        _nhl_season_start = _nhl_now.year if _nhl_now.month >= 7 else _nhl_now.year - 1
+        _nhl_current_season = f"{_nhl_season_start}{_nhl_season_start + 1}"
+        _nhl_prior_season = f"{_nhl_season_start - 1}{_nhl_season_start}"
         _nhl_games = schedule_for_day(_nhl_day)
         st.caption(f"Schedule date: {_nhl_day} · Official NHL games found: {len(_nhl_games)}")
         if not _nhl_games:
@@ -1452,8 +1456,8 @@ if sport_filter == "NHL":
         else:
             with st.spinner("Checking official NHL rosters and game logs (read-only)…"):
                 _nhl_rows = goal_scorer_candidates(
-                    _nhl_day, current_season=f"{datetime.now(ZoneInfo('Pacific/Honolulu')).year}{datetime.now(ZoneInfo('Pacific/Honolulu')).year + 1}",
-                    prior_season=f"{datetime.now(ZoneInfo('Pacific/Honolulu')).year - 1}{datetime.now(ZoneInfo('Pacific/Honolulu')).year}",
+                    _nhl_day, current_season=_nhl_current_season,
+                    prior_season=_nhl_prior_season,
                     max_per_game=2,
                 )
             if _nhl_rows:
