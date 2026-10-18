@@ -1438,6 +1438,39 @@ sport_filter = st.segmented_control(
     label_visibility="collapsed",
 ) or "All"
 
+# NHL goal-scorer pipeline: read-only official NHL data, research-only probabilities.
+if sport_filter == "NHL":
+    st.markdown("### 🏒 NHL Goal Scorer Lab")
+    st.caption("Official NHL schedule, roster and game logs. Estimates are unvalidated research baselines—not betting advice or verified value.")
+    try:
+        from sports_edge.data.nhl_goal_scorers import schedule_for_day, goal_scorer_candidates
+        _nhl_day = datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+        _nhl_games = schedule_for_day(_nhl_day)
+        st.caption(f"Schedule date: {_nhl_day} · Official NHL games found: {len(_nhl_games)}")
+        if not _nhl_games:
+            st.info("No games returned by the official NHL schedule endpoint for this date.")
+        else:
+            with st.spinner("Checking official NHL rosters and game logs (read-only)…"):
+                _nhl_rows = goal_scorer_candidates(
+                    _nhl_day, current_season=f"{datetime.now(ZoneInfo('Pacific/Honolulu')).year}{datetime.now(ZoneInfo('Pacific/Honolulu')).year + 1}",
+                    prior_season=f"{datetime.now(ZoneInfo('Pacific/Honolulu')).year - 1}{datetime.now(ZoneInfo('Pacific/Honolulu')).year}",
+                    max_per_game=2,
+                )
+            if _nhl_rows:
+                st.dataframe(pd.DataFrame([{
+                    "Game": f"{r['team']} vs {r['opponent']}",
+                    "Player": r["name"],
+                    "Goal 1+ baseline": f"{r['probability']:.1%}",
+                    "Games used": r["games"],
+                    "History season": r["season_used"],
+                    "Model status": r["status"],
+                    "Caveat": "; ".join(r["warnings"]),
+                } for r in _nhl_rows]), use_container_width=True, hide_index=True)
+            else:
+                st.warning("No candidates passed the official-data and minimum-history checks. No picks are fabricated.")
+    except Exception as _nhl_error:
+        st.warning(f"NHL goal-scorer pipeline unavailable; no picks shown. {_nhl_error}")
+
 if st.button("↻ Refresh live data", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
