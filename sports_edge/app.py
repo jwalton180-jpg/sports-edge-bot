@@ -104,7 +104,7 @@ def _fallback_catalog_diagnostics(markets):
     )
 
 catalog_diagnostics = getattr(_ks, "catalog_diagnostics", _fallback_catalog_diagnostics)
-from sports_edge.models.live_board import LiveSignal, build_live_signals as _sportsbook_crosschecks, build_underdog_signals, market_yes_probability
+from sports_edge.models.live_board import LiveSignal, build_live_signals as _sportsbook_crosschecks, build_underdog_signals, market_yes_probability, market_side_probability
 from sports_edge.models.parlay import PRESETS, kalshi_copy_ticket
 from sports_edge.models.parlay_runtime import guard_ticket_action
 
