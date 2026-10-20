@@ -152,25 +152,25 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 99,
+        "evaluated": 100,
         "minimum_prior_verified": 30,
-        "model_brier": 0.240536,
-        "quote_brier": 0.22386,
+        "model_brier": 0.241654,
+        "quote_brier": 0.222582,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.4307692307692308,
-      "hypothetical_gross_dollars_per_contract": 10.19,
-      "losses": 84,
-      "model_brier": 0.23016763933884615,
+      "hypothetical_gross_dollars_per_contract": 9.88,
+      "losses": 85,
+      "model_brier": 0.2311007843582519,
       "observations": 133,
-      "pending": 3,
-      "quote_brier": 0.22102846153846153,
-      "second_half_win_rate": 0.27692307692307694,
-      "settled": 130,
-      "win_rate": 0.35384615384615387,
+      "pending": 2,
+      "quote_brier": 0.22007480916030536,
+      "second_half_win_rate": 0.2727272727272727,
+      "settled": 131,
+      "win_rate": 0.3511450381679389,
       "wins": 46
     },
     "WATCH": {
@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 1097,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 0,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,9 +227,9 @@
     "model_sides": 536,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-20T23:47:51.416760+00:00",
+    "observed_at": "2026-10-20T23:52:17.803799+00:00",
     "open_contracts": 696,
-    "pending_settlements": 7,
+    "pending_settlements": 6,
     "post_surge_audits": 0,
     "price_only_scanned": 135,
     "price_only_watches": 0,
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 579,
-  "total_pending": 7,
-  "total_settled": 572
+  "total_pending": 6,
+  "total_settled": 573
 }
