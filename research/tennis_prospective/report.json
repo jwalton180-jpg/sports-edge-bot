@@ -1,5 +1,5 @@
 {
-  "already_moved_postmortems": 163,
+  "already_moved_postmortems": 167,
   "by_lane": {
     "DEEP REVERSAL": {
       "1-4c": {
@@ -79,8 +79,8 @@
       "hypothetical_gross_dollars_per_contract": 3.62,
       "losses": 106,
       "model_brier": 0.1765209598060465,
-      "observations": 131,
-      "pending": 2,
+      "observations": 132,
+      "pending": 3,
       "quote_brier": 0.14359844961240312,
       "second_half_win_rate": 0.15384615384615385,
       "settled": 129,
@@ -217,42 +217,42 @@
       "wins": 82
     }
   },
-  "extreme_dip_quote_snapshots": 1082,
+  "extreme_dip_quote_snapshots": 1085,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 2,
     "early_watches": 0,
     "errors": [],
-    "extreme_dip_observations": 2,
+    "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 486,
+    "model_sides": 482,
     "new_settlements": 0,
-    "new_signals": 1,
-    "observed_at": "2026-10-20T07:30:52.381316+00:00",
-    "open_contracts": 698,
-    "pending_settlements": 6,
+    "new_signals": 0,
+    "observed_at": "2026-10-20T07:35:22.136729+00:00",
+    "open_contracts": 694,
+    "pending_settlements": 7,
     "post_surge_audits": 1,
-    "price_only_scanned": 128,
-    "price_only_watches": 4,
+    "price_only_scanned": 126,
+    "price_only_watches": 6,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "stale_live_score": 14,
-      "unique_live_score_not_found": 684
+      "stale_live_score": 12,
+      "unique_live_score_not_found": 682
     },
-    "quoted_snapshots_added": 5,
+    "quoted_snapshots_added": 2,
     "recovery_building": 0,
-    "score_states": 14,
+    "score_states": 12,
     "settlement_checks_due": 1,
     "survivability_cleared": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 67,
-  "recorded_snapshots": 5934,
+  "recorded_snapshots": 5945,
   "recovery_building_quote_snapshots": 95,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 565,
-  "total_pending": 6,
+  "total_observations": 566,
+  "total_pending": 7,
   "total_settled": 559
 }
