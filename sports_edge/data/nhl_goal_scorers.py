@@ -143,13 +143,21 @@ def goal_scorer_candidates(day_iso: str, *, current_season: str, prior_season: s
         if not home_abbr or not away_abbr or game_id is None:
             continue
         for team_abbr, opponent in ((home_abbr, away_abbr), (away_abbr, home_abbr)):
-            try:
-                roster = roster_for_team(str(team_abbr), current_season)
-            except (requests.RequestException, ValueError):
+            roster = ()
+            # Season-transition endpoints may not expose the current roster yet.
+            for roster_season in (current_season, prior_season):
+                try:
+                    roster = roster_for_team(str(team_abbr), roster_season)
+                    if roster:
+                        break
+                except (requests.RequestException, ValueError):
+                    continue
+            if not roster:
                 continue
             candidates = []
-            # Bound network work: roster is forwards first; evaluate up to 12 per team.
-            for player in roster[:12]:
+            # Evaluate a wider bounded pool; do not assume API ordering equals scoring ability.
+            roster = tuple(sorted(roster, key=lambda p: (p.get("position") not in {"C", "L", "R", "F"}, p["name"])))[:30]
+            for player in roster:
                 pid = player["player_id"]
                 try:
                     logs = player_game_log(pid, current_season)
