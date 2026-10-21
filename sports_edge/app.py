@@ -1449,37 +1449,61 @@ sport_filter = st.segmented_control(
     label_visibility="collapsed",
  ) or "All"
 
-# NHL goal-scorer pipeline: official read-only data; unvalidated research estimates only.
+# NHL goal-scorer pipeline: refresh this dependency explicitly because Streamlit
+# Community Cloud can reload app.py before the updated module file is in sys.modules.
 if sport_filter == "NHL":
     st.markdown("### 🏒 NHL Goal Scorer Lab")
     st.caption("Official NHL schedule, roster and game logs. Research probabilities are unvalidated and do not imply betting value.")
     try:
-        from sports_edge.data.nhl_goal_scorers import goal_scorer_report
+        _nhl_scorer_module = import_module_fresh("sports_edge.data.nhl_goal_scorers")
+        if _nhl_scorer_module is None:
+            raise ImportError("NHL scorer module could not be loaded")
         _nhl_now = datetime.now(ZoneInfo("Pacific/Honolulu"))
         _nhl_day = _nhl_now.date().isoformat()
         _nhl_start = _nhl_now.year if _nhl_now.month >= 7 else _nhl_now.year - 1
         _nhl_current = f"{_nhl_start}{_nhl_start + 1}"
         _nhl_prior = f"{_nhl_start - 1}{_nhl_start}"
-        with st.spinner("Checking official NHL schedule, rosters and player history (read-only)…"):
-            _nhl_report = goal_scorer_report(
-                _nhl_day, current_season=_nhl_current, prior_season=_nhl_prior,
-                max_per_game=2, minimum_games=10, max_skaters_per_team=24,
+        _nhl_report_fn = getattr(_nhl_scorer_module, "goal_scorer_report", None)
+        if callable(_nhl_report_fn):
+            with st.spinner("Checking official NHL schedule, rosters and player history (read-only)…"):
+                _nhl_report = _nhl_report_fn(
+                    _nhl_day, current_season=_nhl_current, prior_season=_nhl_prior,
+                    max_per_game=2, minimum_games=10, max_skaters_per_team=24,
+                )
+            _nhl_rows = _nhl_report.get("candidates", [])
+            st.caption(
+                f"Schedule date: {_nhl_day} · Games: {_nhl_report.get('schedule_games', 0)} · "
+                f"Teams: {_nhl_report.get('teams_seen', 0)} · Roster skaters checked: {_nhl_report.get('roster_players', 0)} · "
+                f"Player histories checked: {_nhl_report.get('players_checked', 0)} · "
+                f"History-qualified: {_nhl_report.get('history_qualified', 0)} · API errors: {_nhl_report.get('api_errors', 0)}"
             )
-        st.caption(
-            f"Schedule date: {_nhl_day} · Games: {_nhl_report['schedule_games']} · "
-            f"Teams: {_nhl_report['teams_seen']} · Roster skaters checked: {_nhl_report['roster_players']} · "
-            f"Player histories checked: {_nhl_report['players_checked']} · "
-            f"History-qualified: {_nhl_report['history_qualified']} · API errors: {_nhl_report['api_errors']}"
-        )
-        _nhl_rows = _nhl_report["candidates"]
+            _nhl_empty_message = _nhl_report.get("diagnostic", "No candidates returned.")
+        else:
+            # Backward-compatible path for a stale deployed module that has
+            # the original candidate API but not the new diagnostics API.
+            _nhl_legacy_fn = getattr(_nhl_scorer_module, "goal_scorer_candidates", None)
+            if not callable(_nhl_legacy_fn):
+                raise ImportError("Loaded NHL scorer module has neither report nor legacy candidate function")
+            with st.spinner("Refreshing stale NHL scorer module and checking available player history…"):
+                _nhl_rows = list(_nhl_legacy_fn(
+                    _nhl_day, current_season=_nhl_current, prior_season=_nhl_prior, max_per_game=2,
+                ))
+            _nhl_empty_message = (
+                "The loaded NHL module is an older version without pipeline diagnostics. "
+                "Refresh the app deployment to load the current history-fallback module."
+            )
+            st.caption("Compatibility mode: legacy scorer API detected; diagnostics unavailable.")
         if _nhl_rows:
             st.dataframe(pd.DataFrame([{"Game": f"{r['team']} vs {r['opponent']}", "Player": r["name"],
                 "Goal 1+ baseline": f"{r['probability']:.1%}", "Games used": r["games"],
-                "History season": r["season_used"], "Status": r["status"], "Caveats": "; ".join(r["warnings"])}
+                "History season": r.get("season_used", "legacy"), "Status": r["status"],
+                "Caveats": "; ".join(r.get("warnings", ["Unvalidated research estimate; no odds/value check"]))}
                 for r in _nhl_rows]), use_container_width=True, hide_index=True)
+            if _nhl_report_fn:
+                st.caption(_nhl_empty_message)
         else:
-            st.warning(_nhl_report["diagnostic"])
-            st.caption("No candidates are fabricated. If the API/history coverage is insufficient, the diagnostics above identify where the pipeline stopped.")
+            st.warning(_nhl_empty_message)
+            st.caption("No candidates are fabricated. Use the diagnostic counts to distinguish missing schedule, roster, API, and history coverage.")
     except Exception as _nhl_error:
         st.warning(f"NHL goal-scorer pipeline unavailable; no picks shown. {type(_nhl_error).__name__}: {_nhl_error}")
 
