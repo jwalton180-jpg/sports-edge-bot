@@ -63,7 +63,7 @@ def test_goal_probability_is_bounded_and_explicitly_unvalidated():
     assert result["games"] == 20
 
 
-def test_roster_parser_uses_explicit_ids_and_names(monkeypatch):
+def test_roster_parser_uses_legacy_names_and_explicit_ids(monkeypatch):
     monkeypatch.setattr(nhl, "_get_json", lambda *a, **k: {
         "forwards": [{"id": 12, "fullName": "Example Forward", "positionCode": "C"},
                      {"id": "bad", "fullName": "Unknown"}],
@@ -73,3 +73,45 @@ def test_roster_parser_uses_explicit_ids_and_names(monkeypatch):
         {"player_id": 12, "name": "Example Forward", "team": "MIN", "position": "C"},
         {"player_id": 13, "name": "Example Defense", "team": "MIN", "position": "D"},
     )
+
+
+def test_roster_parser_supports_current_nhl_localized_name_schema(monkeypatch):
+    monkeypatch.setattr(nhl, "_get_json", lambda *a, **k: {
+        "forwards": [
+            {"id": 8484145, "firstName": {"default": "Zach"}, "lastName": {"default": "Benson"},
+             "positionCode": "L"},
+            {"id": 8482659, "firstName": {"default": "Josh"}, "lastName": {"default": "Doan"},
+             "positionCode": "R"},
+        ],
+        "defensemen": [
+            {"id": 8471234, "firstName": {"default": "Example"}, "lastName": {"default": "Defender"},
+             "positionCode": "D"},
+        ],
+    })
+    assert nhl.roster_for_team("BUF", "20262027") == (
+        {"player_id": 8484145, "name": "Zach Benson", "team": "BUF", "position": "L"},
+        {"player_id": 8482659, "name": "Josh Doan", "team": "BUF", "position": "R"},
+        {"player_id": 8471234, "name": "Example Defender", "team": "BUF", "position": "D"},
+    )
+
+
+def test_goal_scorer_candidates_emits_rows_when_official_schema_data_is_present(monkeypatch):
+    monkeypatch.setattr(nhl, "schedule_for_day", lambda day: ({
+        "id": 2026020152,
+        "homeTeam": {"abbrev": "BUF"},
+        "awayTeam": {"abbrev": "PHI"},
+    },))
+    monkeypatch.setattr(nhl, "roster_for_team", lambda team, season: (
+        {"player_id": 8484145, "name": "Zach Benson", "team": team, "position": "L"},
+    ))
+    current_logs = tuple(
+        {"source": "NHL", "goals": 1 if i < 5 else 0, "date": f"2026-10-{i + 1:02d}", "game_id": str(i)}
+        for i in range(20)
+    )
+    monkeypatch.setattr(nhl, "player_game_log", lambda player_id, season: current_logs)
+    rows = nhl.goal_scorer_candidates(
+        "2026-10-21", current_season="20262027", prior_season="20252026"
+    )
+    assert len(rows) == 2
+    assert {row["team"] for row in rows} == {"BUF", "PHI"}
+    assert all(row["status"] == "UNVALIDATED_RESEARCH" for row in rows)
