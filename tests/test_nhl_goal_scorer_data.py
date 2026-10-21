@@ -126,7 +126,7 @@ def test_report_uses_older_season_when_current_season_is_empty(monkeypatch):
     ))
 
     def logs(player_id, season):
-        count = {"20262027": 0, "20252026": 12, "20242025": 24}.get(season, 0)
+        count = {"20262027": 0, "20252026": 5, "20242025": 24}.get(season, 0)
         return tuple({"source": "NHL", "goals": 1 if i < 4 else 0, "date": f"2025-01-{i + 1:02d}",
                       "game_id": str(i)} for i in range(count))
 
