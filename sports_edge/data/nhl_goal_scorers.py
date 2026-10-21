@@ -104,6 +104,29 @@ def player_game_log(player_id: int, season: str, game_type: int = 2) -> tuple[di
     return tuple(sorted(normalized, key=lambda r: (r["date"], r["game_id"])))
 
 
+
+def candidate_player_ids(games: tuple[dict, ...]) -> tuple[int, ...]:
+    """Extract explicit player IDs from NHL game/team payloads without guessing."""
+    found = set()
+    for game in games:
+        for side in ("homeTeam", "awayTeam"):
+            team = game.get(side) or {}
+            for key in ("goalie", "players"):
+                values = team.get(key)
+                if isinstance(values, dict):
+                    values = values.values()
+                if isinstance(values, (list, tuple, type({}.values()))):
+                    for value in values:
+                        if not isinstance(value, dict):
+                            continue
+                        try:
+                            pid = int(value.get("playerId", value.get("id")))
+                        except (TypeError, ValueError):
+                            continue
+                        if pid > 0:
+                            found.add(pid)
+    return tuple(sorted(found))
+
 def probability_goal_1plus(game_log: tuple[dict, ...], *, minimum_games: int = 10) -> dict:
     """Poisson baseline; lower history floor is explicitly flagged as unvalidated."""
     if len(game_log) < minimum_games:
