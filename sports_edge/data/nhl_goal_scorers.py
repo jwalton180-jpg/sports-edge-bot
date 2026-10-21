@@ -23,6 +23,13 @@ def _get_json(path: str, *, params: dict | None = None) -> dict:
     return payload
 
 
+def _localized_name(value) -> str:
+    """Read NHL API localized-name objects as well as legacy string fields."""
+    if isinstance(value, dict):
+        value = value.get("default") or next(iter(value.values()), "")
+    return value.strip() if isinstance(value, str) else ""
+
+
 @lru_cache(maxsize=16)
 def schedule_for_day(day_iso: str) -> tuple[dict, ...]:
     date.fromisoformat(day_iso)
@@ -54,9 +61,19 @@ def roster_for_team(team_abbrev: str, season: str) -> tuple[dict, ...]:
                 pid = int(row.get("id", row.get("playerId")))
             except (TypeError, ValueError):
                 continue
-            name = row.get("fullName") or row.get("name")
-            if pid > 0 and isinstance(name, str) and name.strip():
-                players.append({"player_id": pid, "name": name.strip(), "team": team,
+            # The current NHL API schema supplies firstName/lastName as
+            # localized objects; legacy fullName/name fields are not reliable.
+            name = (
+                _localized_name(row.get("fullName") or row.get("name"))
+                or " ".join(
+                    part for part in (
+                        _localized_name(row.get("firstName")),
+                        _localized_name(row.get("lastName")),
+                    ) if part
+                )
+            )
+            if pid > 0 and name:
+                players.append({"player_id": pid, "name": name, "team": team,
                                 "position": str(row.get("positionCode") or group[:-1]).upper()})
     return tuple(players)
 
@@ -148,15 +165,19 @@ def goal_scorer_candidates(day_iso: str, *, current_season: str, prior_season: s
             except (requests.RequestException, ValueError):
                 continue
             candidates = []
-            # Bound network work: roster is forwards first; evaluate up to 12 per team.
-            for player in roster[:12]:
+            # Keep API work bounded, while evaluating forwards before defensemen.
+            skaters = [p for p in roster if p.get("position") != "D"]
+            skaters += [p for p in roster if p.get("position") == "D"]
+            for player in skaters[:18]:
                 pid = player["player_id"]
                 try:
                     logs = player_game_log(pid, current_season)
                     season_used = current_season
                     if len(logs) < 20:
-                        logs = player_game_log(pid, prior_season)
-                        season_used = prior_season
+                        prior_logs = player_game_log(pid, prior_season)
+                        if len(prior_logs) > len(logs):
+                            logs = prior_logs
+                            season_used = prior_season
                     estimate = probability_goal_1plus(logs)
                 except (requests.RequestException, ValueError):
                     continue
