@@ -29,6 +29,7 @@ from sports_edge.data.mlb import MLBClient
 from sports_edge.data.mlb_prop_data import schedule_for_day
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
+from sports_edge.data.source_registry import get_source_status
 from sports_edge.core.hot_reload import import_module_fresh
 
 # Streamlit Community Cloud can hot-reload this entrypoint while dependency
@@ -3588,6 +3589,25 @@ elif view == "Live Feed":
             st.divider()
     else:
         st.info(merr or "No MLB live events right now.")
+
+with st.expander("Data source coverage / integrations", expanded=False):
+    source_rows = get_source_status()
+    st.caption("Integrated means this repository has a client. Research-only vendors are not scraped or claimed as connected without verified authorized API access.")
+    st.dataframe(
+        pd.DataFrame([
+            {
+                "Source": row["name"],
+                "Role": row["role"],
+                "Access": row["access"],
+                "Status": row["status"].replace("_", " ").title(),
+                "Notes": row["detail"],
+            }
+            for row in source_rows
+        ]),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.caption("For The Odds API, configure THE_ODDS_API_KEY in Streamlit secrets to enable the existing adapter. Source presence does not imply a model edge or validated prediction.")
 
 with st.expander("System status / Model Trust"):
     st.write("**Futures:** excluded from the main workflow.")
