@@ -1452,30 +1452,36 @@ sport_filter = st.segmented_control(
 # NHL goal-scorer pipeline: official read-only data; unvalidated research estimates only.
 if sport_filter == "NHL":
     st.markdown("### 🏒 NHL Goal Scorer Lab")
-    st.caption("Official NHL schedule, roster and game logs. Baseline probabilities are unvalidated and are not a value/bet recommendation.")
+    st.caption("Official NHL schedule, roster and game logs. Research probabilities are unvalidated and do not imply betting value.")
     try:
-        from sports_edge.data.nhl_goal_scorers import schedule_for_day, goal_scorer_candidates
+        from sports_edge.data.nhl_goal_scorers import goal_scorer_report
         _nhl_now = datetime.now(ZoneInfo("Pacific/Honolulu"))
         _nhl_day = _nhl_now.date().isoformat()
         _nhl_start = _nhl_now.year if _nhl_now.month >= 7 else _nhl_now.year - 1
         _nhl_current = f"{_nhl_start}{_nhl_start + 1}"
         _nhl_prior = f"{_nhl_start - 1}{_nhl_start}"
-        _nhl_games = schedule_for_day(_nhl_day)
-        st.caption(f"Schedule date: {_nhl_day} · Official games found: {len(_nhl_games)}")
-        if not _nhl_games:
-            st.info("No games returned by the official NHL schedule endpoint.")
+        with st.spinner("Checking official NHL schedule, rosters and player history (read-only)…"):
+            _nhl_report = goal_scorer_report(
+                _nhl_day, current_season=_nhl_current, prior_season=_nhl_prior,
+                max_per_game=2, minimum_games=10, max_skaters_per_team=24,
+            )
+        st.caption(
+            f"Schedule date: {_nhl_day} · Games: {_nhl_report['schedule_games']} · "
+            f"Teams: {_nhl_report['teams_seen']} · Roster skaters checked: {_nhl_report['roster_players']} · "
+            f"Player histories checked: {_nhl_report['players_checked']} · "
+            f"History-qualified: {_nhl_report['history_qualified']} · API errors: {_nhl_report['api_errors']}"
+        )
+        _nhl_rows = _nhl_report["candidates"]
+        if _nhl_rows:
+            st.dataframe(pd.DataFrame([{"Game": f"{r['team']} vs {r['opponent']}", "Player": r["name"],
+                "Goal 1+ baseline": f"{r['probability']:.1%}", "Games used": r["games"],
+                "History season": r["season_used"], "Status": r["status"], "Caveats": "; ".join(r["warnings"])}
+                for r in _nhl_rows]), use_container_width=True, hide_index=True)
         else:
-            with st.spinner("Checking official NHL rosters and player logs (read-only)…"):
-                _nhl_rows = goal_scorer_candidates(_nhl_day, current_season=_nhl_current, prior_season=_nhl_prior, max_per_game=2)
-            if _nhl_rows:
-                st.dataframe(pd.DataFrame([{"Game": f"{r['team']} vs {r['opponent']}", "Player": r["name"],
-                    "Goal 1+ baseline": f"{r['probability']:.1%}", "Games used": r["games"],
-                    "History season": r["season_used"], "Status": r["status"], "Caveats": "; ".join(r["warnings"])}
-                    for r in _nhl_rows]), use_container_width=True, hide_index=True)
-            else:
-                st.warning("No candidates passed the official-data/minimum-history checks. No picks fabricated.")
+            st.warning(_nhl_report["diagnostic"])
+            st.caption("No candidates are fabricated. If the API/history coverage is insufficient, the diagnostics above identify where the pipeline stopped.")
     except Exception as _nhl_error:
-        st.warning(f"NHL goal-scorer pipeline unavailable; no picks shown. {_nhl_error}")
+        st.warning(f"NHL goal-scorer pipeline unavailable; no picks shown. {type(_nhl_error).__name__}: {_nhl_error}")
 
 if st.button("↻ Refresh live data", use_container_width=True):
     st.cache_data.clear()
