@@ -132,13 +132,10 @@ def _player_history(player: dict, seasons: tuple[str, ...], minimum_games: int) 
         if len(logs) > len(best_logs):
             best_logs, best_season = logs, season
         if len(logs) >= minimum_games:
-            # Prefer current season if it has enough games; otherwise take the
-            # first older season with sufficient history.
-            if season == seasons[0]:
-                return {"logs": logs, "season": season}, None, None
-            if not best_logs or len(logs) > len(best_logs):
-                best_logs, best_season = logs, season
-            # Continue one more iteration only if an older season may add data.
+            # Prefer current-season history. Otherwise accept the first prior
+            # season with sufficient history; only query an older season when
+            # the newer season has too little data. This keeps API work bounded.
+            return {"logs": logs, "season": season}, None, None
     estimate = probability_goal_1plus(best_logs, minimum_games=minimum_games)
     if estimate["probability"] is None:
         return None, best_season, "; ".join(errors) if errors else None
