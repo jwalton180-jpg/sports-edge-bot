@@ -2853,13 +2853,13 @@ elif view == "Parlay Generator":
         if result.legs:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Qualified legs", len(result.legs))
-            c2.metric("Terminal fair*", f"{result.fair_joint_probability:.2%}")
-            c3.metric("Leg-price implied*", f"{result.market_joint_probability:.2%}")
-            c4.metric("Illustrative payout", f"{result.market_payout_multiplier:.2f}x")
-            st.caption("* Terminal all-legs success is NOT the probability of an early profitable cash-out. These leg-price products are NOT Kalshi combo RFQ bids.")
+            c2.metric("Joint success probability", "Unavailable")
+            c3.metric("Actual combined price", "Unavailable")
+            c4.metric("Illustrative leg-price payout", f"{result.market_payout_multiplier:.2f}x")
+            st.warning("No validated joint-dependence model or executable combined parlay quote is available. The product of individual leg probabilities is only an independence benchmark, not a joint probability; expected value and a model/market value ratio are withheld.")
             st.caption(
                 f"Build: {builder_label.upper()} · Ticket math risk: {result.risk_label} · "
-                f"model/market value ratio {result.ticket_value_multiple:.2f}x"
+                "independence benchmark and payout illustration only"
             )
 
             rows = pd.DataFrame(
