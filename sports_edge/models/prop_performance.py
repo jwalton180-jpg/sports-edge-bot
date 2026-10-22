@@ -54,6 +54,7 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
     risked = profit = 0.0
     resolved_odds: list[float] = []
     brier_terms: list[float] = []
+    missing_odds_resolved = 0
     for row in rows:
         result = str(row.get("result", "pending")).lower()
         if result not in VALID_RESULTS:
@@ -68,10 +69,12 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
             elif row.get("odds_american") is not None:
                 dec = american_to_decimal(row["odds_american"])
             else:
-                raise ValueError("settled win/loss requires recorded odds")
-            profit += net_units(result, dec, stake)
-            risked += stake
-            resolved_odds.append(dec)
+                dec = None
+                missing_odds_resolved += 1
+            if dec is not None:
+                profit += net_units(result, dec, stake)
+                risked += stake
+                resolved_odds.append(dec)
             probability = row.get("probability")
             outcome = row.get("outcome", 1 if result == "win" else 0)
             if probability is not None:
@@ -93,9 +96,11 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
         "decided": decided,
         "hit_rate": counts["win"] / decided if decided else None,
         "hit_rate_denominator": decided,
-        "net_units": profit,
+        "net_units": profit if decided and missing_odds_resolved == 0 else None,
         "risked_units": risked,
-        "roi": profit / risked if risked else None,
+        "priced_net_units": profit,
+        "missing_odds_resolved": missing_odds_resolved,
+        "roi": profit / risked if risked and missing_odds_resolved == 0 else None,
         "average_decimal_odds": mean(resolved_odds) if resolved_odds else None,
         "brier_score": mean(brier_terms) if brier_terms else None,
         "brier_denominator": len(brier_terms),
