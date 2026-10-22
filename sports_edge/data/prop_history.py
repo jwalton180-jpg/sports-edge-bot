@@ -27,6 +27,23 @@ def event_date_from_ticker(value: str | None) -> date | None:
         return None
 
 
+def market_player_and_threshold(market: dict) -> tuple[str | None, float | None]:
+    """Extract only explicit player-prefix and milestone information."""
+    title = str((market or {}).get("title") or "").strip()
+    if ":" not in title:
+        return None, None
+    player = title.split(":", 1)[0].strip()
+    if not player:
+        return None, None
+    floor = _number((market or {}).get("floor_strike"))
+    if floor is not None:
+        threshold = float(int(floor + 0.5))
+    else:
+        match = re.search(r":\s*[^:]+?\s+(\d+(?:\.\d+)?)\s*\+", title)
+        threshold = float(match.group(1)) if match else None
+    return player, threshold
+
+
 def _number(value: Any) -> float | None:
     try:
         if value in (None, ""):
