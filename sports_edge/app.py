@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import importlib
 import inspect
 import io
+import hmac
 import json
 import os
 import requests
@@ -342,10 +343,37 @@ def _secret(name: str) -> str | None:
     return value if value and "YOUR_" not in value else None
 
 
+def _persistent_pick_storage_configured():
+    return bool(_secret("SUPABASE_URL") and _secret("SUPABASE_SERVICE_ROLE_KEY"))
+
+
+def _ensure_tracker_access():
+    if not _persistent_pick_storage_configured():
+        return True
+    expected = _secret("SPORTSEDGE_TRACKER_ACCESS_KEY")
+    if not expected:
+        st.warning("Persistent pick storage is disabled because SPORTSEDGE_TRACKER_ACCESS_KEY is not configured. This public app will use session-only tracking.")
+        return True
+    if st.session_state.get("sportedge_tracker_authorized"):
+        return True
+    with st.form("private_tracker_unlock_v1"):
+        entered = st.text_input("Private tracker access key", type="password")
+        submitted = st.form_submit_button("Unlock private tracker", use_container_width=True)
+    if submitted:
+        if hmac.compare_digest(entered, expected):
+            st.session_state["sportedge_tracker_authorized"] = True
+            st.rerun()
+        else:
+            st.error("Tracker access key did not match.")
+    st.info("Private tracker is locked. Saved database records are not loaded until the tracker is unlocked.")
+    return False
+
+
 def _pick_store():
     url = _secret("SUPABASE_URL")
     key = _secret("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
+    access_key = _secret("SPORTSEDGE_TRACKER_ACCESS_KEY")
+    if not url or not key or not access_key or not st.session_state.get("sportedge_tracker_authorized"):
         return None
     try:
         return SupabasePickStore(url, key)
@@ -3800,6 +3828,8 @@ elif view == "Scorer Lab":
 
 elif view == "My Picks":
     _section_hero("RESEARCH TRACKER", "My Picks", "Save a timestamped research candidate before the event starts, then keep the original price and attribution when results are recorded.")
+    if not _ensure_tracker_access():
+        st.stop()
     store = _pick_store()
     store_error = None
     uploaded_picks = st.file_uploader("Import provider or manual research picks (CSV)", type=["csv"], key="research_pick_csv_upload_v1")
@@ -3993,6 +4023,8 @@ elif view == "My Picks":
 
 elif view == "Performance":
     _section_hero("TRACK RECORD", "Performance", "A transparent record of tracked research candidates. Empty history is shown as empty; provider records and SportEdge records remain attributable.")
+    if not _ensure_tracker_access():
+        st.stop()
     store = _pick_store()
     try:
         records = _pick_records(store) if store is not None else list(_session_pick_records())
