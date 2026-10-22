@@ -33,8 +33,8 @@ def test_basketball_history_is_causal_and_uses_descriptive_denominators(monkeypa
 def test_basketball_prior_season_fallback_is_labeled(monkeypatch):
     monkeypatch.setattr(basketball_prop_data, "player_history", lambda *args: ())
     monkeypatch.setattr(basketball_prop_data, "prior_player_history", lambda *args: (
-        {"game_date": "2026-03-01", "points": 22, "home_away": "home", "opponent_abbreviation": "BOS", "game_id": "old1"},
-        {"game_date": "2026-03-10", "points": 14, "home_away": "away", "opponent_abbreviation": "NYK", "game_id": "old2"},
+        {"game_date": "2025-03-01", "points": 22, "home_away": "home", "opponent_abbreviation": "BOS", "game_id": "old1"},
+        {"game_date": "2025-03-10", "points": 14, "home_away": "away", "opponent_abbreviation": "NYK", "game_id": "old2"},
     ))
     report = prop_history.prop_history_report(
         sport="NBA", player_name="Player Name", market="Points",
