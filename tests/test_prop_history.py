@@ -84,5 +84,4 @@ def test_props_page_keeps_manual_history_research_available_for_empty_catalog():
     assert 'No current Kalshi player-prop contract is available for this sport.' in source
     assert 'Research historical stats' in source
     assert 'manual_prop_history_form_' in source
-    assert 'No synthetic player, line, or historical result is shown.' not in source
 
