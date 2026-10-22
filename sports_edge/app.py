@@ -4210,7 +4210,7 @@ elif view == "Performance":
             e.metric("Brier score", "—" if report["brier_score"] is None else f'{report["brier_score"]:.3f}', f'n={report["brier_denominator"]}')
             avg_odds_text = "—" if report["average_decimal_odds"] is None else f'{report["average_decimal_odds"]:.3f}'
             avg_stake_text = "—" if report["average_stake_units"] is None else f'{report["average_stake_units"]:.2f}'
-            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Settled results with missing odds {report["missing_odds_resolved"]}. Average decimal odds: {avg_odds_text} · Average stake: {avg_stake_text} units. ROI remains unavailable if any resolved win/loss is missing its original price.')
+            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Cancelled {report["cancelled"]} · Settled results with missing odds {report["missing_odds_resolved"]}. Average decimal odds: {avg_odds_text} · Average stake: {avg_stake_text} units. ROI remains unavailable if any resolved win/loss is missing its original price.')
         st.subheader("Breakdown by sport, market, source and model")
         breakdown_rows = []
         breakdown_keys = sorted({(r["sport"], r["market"], r["source"], r["model_version"]) for r in perf_rows})
@@ -4220,7 +4220,7 @@ elif view == "Performance":
             breakdown_rows.append({
                 "Sport": sport_name, "Market": market_name, "Source": source_name, "Model": model_name,
                 "Wins": report["wins"], "Losses": report["losses"], "Pushes": report["pushes"],
-                "Voids": report["voids"], "Pending": report["pending"], "n": report["total_records"],
+                "Voids": report["voids"], "Cancelled": report["cancelled"], "Pending": report["pending"], "n": report["total_records"],
                 "Hit rate": report["hit_rate"], "ROI": report["roi"], "Net units": report["net_units"],
                 "Brier": report["brier_score"],
             })
