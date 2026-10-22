@@ -26,4 +26,7 @@ def test_main_ui_exposes_every_sport_and_nfl_tail_focus():
     assert 'return audit_app_candidates(candidates' in source
     assert 'discover_all_series=False' in source
     assert 'overview_only=False' in source
-    assert 'c4.metric("Illustrative payout"' in source
+    assert 'c4.metric("Illustrative leg-price payout"' in source
+    assert 'Joint success probability", "Unavailable"' in source
+    assert 'Actual combined price", "Unavailable"' in source
+    assert 'expected value and a model/market value ratio are withheld' in source
