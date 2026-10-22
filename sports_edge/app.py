@@ -395,6 +395,9 @@ def _safe_event_start(value):
 
 def _render_prop_history_report(report):
     status = report.get("status", "UNKNOWN")
+    threshold = report.get("threshold")
+    threshold_label = "not set" if threshold is None else str(threshold)
+    st.markdown(f"**{report.get('player', 'Player')} · {report.get('market', 'Market')}** · threshold {threshold_label}")
     st.caption(
         f"Status: {status} · Source: {report.get('source', 'not available')} · "
         f"Retrieved: {report.get('retrieved_at', '—')} · "
@@ -1923,21 +1926,24 @@ elif view == "Player Props":
             if manual_submit:
                 try:
                     manual_threshold = float(manual_threshold_text.strip()) if manual_threshold_text.strip() else None
-                    manual_report = prop_history_report(
-                        sport=manual_history_sport,
-                        player_name=manual_player.strip(),
-                        market=manual_market,
-                        event_date=manual_event_date,
-                        threshold=manual_threshold,
-                    )
-                    st.session_state["manual_prop_history_report_v1"] = manual_report
-                    st.session_state["manual_prop_history_query_v1"] = (
-                        manual_history_sport, manual_player.strip(), manual_market, manual_event_date.isoformat(), manual_threshold
-                    )
                 except ValueError:
+                    manual_threshold = "invalid"
                     st.warning("Line / threshold must be a number or left blank.")
-                except Exception as exc:
-                    st.warning(f"Historical research could not finish: {_safe_error(exc)}")
+                if manual_threshold != "invalid":
+                    try:
+                        manual_report = prop_history_report(
+                            sport=manual_history_sport,
+                            player_name=manual_player.strip(),
+                            market=manual_market,
+                            event_date=manual_event_date,
+                            threshold=manual_threshold,
+                        )
+                        st.session_state["manual_prop_history_report_v1"] = manual_report
+                        st.session_state["manual_prop_history_query_v1"] = (
+                            manual_history_sport, manual_player.strip(), manual_market, manual_event_date.isoformat(), manual_threshold
+                        )
+                    except Exception as exc:
+                        st.warning(f"Historical research could not finish: {_safe_error(exc)}")
             manual_report = st.session_state.get("manual_prop_history_report_v1")
             if manual_report:
                 last_query = st.session_state.get("manual_prop_history_query_v1", ())
