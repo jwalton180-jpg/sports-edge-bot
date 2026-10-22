@@ -343,6 +343,57 @@ header[data-testid="stHeader"]{background:rgba(16,17,19,.86);border-bottom:1px s
 .ticket-shell{background:#202226}.ticket-kicker{color:#d5d7db}.game-card,.market-card{border-radius:19px;background:#202226}[data-testid="stDataFrame"]{border-color:#383b41;background:#202226}div[data-testid="stExpander"]{border-color:#383b41;background:#1b1c1f}
 .st-key-main-nav-shell{background:rgba(20,21,24,.94);border-color:#3a3d43;box-shadow:0 8px 28px rgba(0,0,0,.28)}
 @media(max-width:700px){.block-container{padding:.35rem .65rem calc(7.6rem + env(safe-area-inset-bottom))}.hero{font-size:1.8rem}.section-hero{padding:.9rem;border-radius:19px}.section-title{font-size:1.32rem}.game-card,.market-card{padding:.9rem;border-radius:19px}.st-key-main-nav-shell{background:rgba(18,19,22,.96);border-color:#3b3e45;box-shadow:0 8px 30px rgba(0,0,0,.5)}}
+
+/* Mobile bottom-nav reliability: pin the keyed Streamlit block above the safe area. */
+@media screen and (max-width: 700px) {
+  .stApp .st-key-main-nav-shell {
+    position: fixed !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 99999 !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 6px !important;
+    border: 1px solid #41444b !important;
+    border-radius: 20px !important;
+    background: rgba(18,19,22,.97) !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,.52) !important;
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  .stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none;
+    background: transparent !important;
+  }
+  .stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]::-webkit-scrollbar { display:none }
+  .stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] > div {
+    flex-wrap: nowrap !important;
+    min-width: max-content !important;
+  }
+  .stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] button {
+    min-height: 46px !important;
+    flex: 1 0 auto !important;
+    padding: 7px 10px !important;
+    white-space: nowrap !important;
+    color: #e8e9ec !important;
+    border-radius: 14px !important;
+  }
+  .stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] button[aria-pressed="true"] {
+    background: #393c43 !important;
+    color: #fff !important;
+  }
+  .stApp .block-container {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom)) !important;
+  }
+}
 </style>
 """,
     unsafe_allow_html=True,
