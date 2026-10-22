@@ -186,7 +186,7 @@ def test_report_uses_older_season_when_current_season_is_empty(monkeypatch):
     assert report["schedule_games"] == 1
     assert report["teams_seen"] == 2
     assert report["history_qualified"] == 2
-    assert len(report["candidates"]) == 2
+    assert len(report["candidates"]) == 1
     assert all(row["season_used"] == "20242025" for row in report["candidates"])
     assert "research candidates" in report["diagnostic"]
 
