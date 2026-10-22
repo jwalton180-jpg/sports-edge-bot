@@ -31,12 +31,14 @@ class PropPerformanceTests(unittest.TestCase):
             {"result": "loss", "odds_american": -110, "stake_units": 1, "probability": .6},
             {"result": "push", "odds_american": -110},
             {"result": "void", "odds_american": -110},
+            {"result": "cancelled", "odds_american": -110},
             {"result": "pending"},
         ])
         self.assertEqual(report["wins"], 1)
         self.assertEqual(report["losses"], 1)
         self.assertEqual(report["pushes"], 1)
         self.assertEqual(report["voids"], 1)
+        self.assertEqual(report["cancelled"], 1)
         self.assertEqual(report["pending"], 1)
         self.assertEqual(report["hit_rate_denominator"], 2)
         self.assertAlmostEqual(report["hit_rate"], .5)
@@ -56,6 +58,16 @@ class PropPerformanceTests(unittest.TestCase):
         self.assertEqual(result[2]["total_records"], 2)
         self.assertEqual(result[2]["hit_rate_denominator"], 2)
         self.assertEqual(result[4]["pending"], 1)
+
+    def test_roi_is_unavailable_when_any_settled_pick_lacks_original_odds(self):
+        report = summarize_performance([
+            {"result": "win", "decimal_odds": 2.0, "probability": .6},
+            {"result": "loss", "probability": .6},
+        ])
+        self.assertIsNone(report["roi"])
+        self.assertIsNone(report["net_units"])
+        self.assertEqual(report["missing_odds_resolved"], 1)
+        self.assertEqual(report["priced_net_units"], 1.0)
 
     def test_invalid_probabilities_fail_closed(self):
         with self.assertRaises(ValueError):

@@ -11,7 +11,7 @@ from math import isfinite
 from statistics import mean
 from typing import Iterable, Mapping, Any
 
-VALID_RESULTS = {"win", "loss", "push", "void", "pending"}
+VALID_RESULTS = {"win", "loss", "push", "void", "cancelled", "pending"}
 
 
 def american_to_decimal(odds: int | float) -> float:
@@ -53,7 +53,9 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
     counts = {key: 0 for key in VALID_RESULTS}
     risked = profit = 0.0
     resolved_odds: list[float] = []
+    resolved_stakes: list[float] = []
     brier_terms: list[float] = []
+    missing_odds_resolved = 0
     for row in rows:
         result = str(row.get("result", "pending")).lower()
         if result not in VALID_RESULTS:
@@ -63,15 +65,18 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
             stake = float(row.get("stake_units", 1.0))
             if not isfinite(stake) or stake <= 0:
                 raise ValueError("stake_units must be positive and finite")
+            resolved_stakes.append(stake)
             if row.get("decimal_odds") is not None:
                 dec = float(row["decimal_odds"])
             elif row.get("odds_american") is not None:
                 dec = american_to_decimal(row["odds_american"])
             else:
-                raise ValueError("settled win/loss requires recorded odds")
-            profit += net_units(result, dec, stake)
-            risked += stake
-            resolved_odds.append(dec)
+                dec = None
+                missing_odds_resolved += 1
+            if dec is not None:
+                profit += net_units(result, dec, stake)
+                risked += stake
+                resolved_odds.append(dec)
             probability = row.get("probability")
             outcome = row.get("outcome", 1 if result == "win" else 0)
             if probability is not None:
@@ -88,15 +93,19 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
         "losses": counts["loss"],
         "pushes": counts["push"],
         "voids": counts["void"],
+        "cancelled": counts["cancelled"],
         "pending": counts["pending"],
         "total_records": len(rows),
         "decided": decided,
         "hit_rate": counts["win"] / decided if decided else None,
         "hit_rate_denominator": decided,
-        "net_units": profit,
+        "net_units": profit if decided and missing_odds_resolved == 0 else None,
         "risked_units": risked,
-        "roi": profit / risked if risked else None,
+        "priced_net_units": profit,
+        "missing_odds_resolved": missing_odds_resolved,
+        "roi": profit / risked if risked and missing_odds_resolved == 0 else None,
         "average_decimal_odds": mean(resolved_odds) if resolved_odds else None,
+        "average_stake_units": mean(resolved_stakes) if resolved_stakes else None,
         "brier_score": mean(brier_terms) if brier_terms else None,
         "brier_denominator": len(brier_terms),
     }

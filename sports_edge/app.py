@@ -4,9 +4,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 import importlib
 import inspect
+import io
+import hmac
 import json
 import os
 import requests
+import uuid
 from statistics import median
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -30,6 +33,8 @@ from sports_edge.data.mlb_prop_data import schedule_for_day
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.data.source_registry import get_source_status
+from sports_edge.data.pick_store import SupabasePickStore, validate_prediction, parse_timestamp
+from sports_edge.models.prop_performance import summarize_performance, summarize_parlays, american_to_decimal, net_units
 from sports_edge.core.hot_reload import import_module_fresh
 
 # Streamlit Community Cloud can hot-reload this entrypoint while dependency
@@ -322,7 +327,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-29-adaptive-tennis-radar")
+st.caption("Build: 2026-10-22-prop-picks-performance-v1")
 
 
 def _secret(name: str) -> str | None:
@@ -336,6 +341,96 @@ def _secret(name: str) -> str | None:
         pass
     value = (os.getenv(name) or "").strip()
     return value if value and "YOUR_" not in value else None
+
+
+def _persistent_pick_storage_configured():
+    return bool(_secret("SUPABASE_URL") and _secret("SUPABASE_SERVICE_ROLE_KEY"))
+
+
+def _ensure_tracker_access():
+    if not _persistent_pick_storage_configured():
+        return True
+    expected = _secret("SPORTSEDGE_TRACKER_ACCESS_KEY")
+    if not expected:
+        st.warning("Persistent pick storage is disabled because SPORTSEDGE_TRACKER_ACCESS_KEY is not configured. This public app will use session-only tracking.")
+        return True
+    if st.session_state.get("sportedge_tracker_authorized"):
+        return True
+    with st.form("private_tracker_unlock_v1"):
+        entered = st.text_input("Private tracker access key", type="password")
+        submitted = st.form_submit_button("Unlock private tracker", use_container_width=True)
+    if submitted:
+        if hmac.compare_digest(entered, expected):
+            st.session_state["sportedge_tracker_authorized"] = True
+            st.rerun()
+        else:
+            st.error("Tracker access key did not match.")
+    st.info("Private tracker is locked. Saved database records are not loaded until the tracker is unlocked.")
+    return False
+
+
+def _pick_store():
+    url = _secret("SUPABASE_URL")
+    key = _secret("SUPABASE_SERVICE_ROLE_KEY")
+    access_key = _secret("SPORTSEDGE_TRACKER_ACCESS_KEY")
+    if not url or not key or not access_key or not st.session_state.get("sportedge_tracker_authorized"):
+        return None
+    try:
+        return SupabasePickStore(url, key)
+    except Exception:
+        return None
+
+
+def _session_pick_records():
+    return st.session_state.setdefault("sportedge_session_pick_records", [])
+
+
+def _safe_event_start(value):
+    try:
+        return parse_timestamp(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_payload(record):
+    payload = record.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _pick_records(store):
+    if store is not None:
+        return store.list_records()
+    return list(_session_pick_records())
+
+
+def _settlement_by_prediction(records):
+    settled = {}
+    for record in records:
+        if record.get("record_type") != "settlement":
+            continue
+        payload = _record_payload(record)
+        prediction_id = payload.get("prediction_id")
+        if prediction_id:
+            settled[prediction_id] = payload
+    return settled
+
+
+def _save_research_prediction(payload, store):
+    row = validate_prediction(payload)
+    row.setdefault("record_origin", "manual")
+    if store is not None:
+        return store.append_prediction(row)
+    prediction_id = str(uuid.uuid4())
+    row["prediction_id"] = prediction_id
+    row["saved_at"] = datetime.now(timezone.utc).isoformat()
+    record = {
+        "id": prediction_id,
+        "record_type": "prediction",
+        "payload": row,
+        "created_at": row["saved_at"],
+    }
+    _session_pick_records().append(record)
+    return record
 
 
 def _safe_error(exc: Exception) -> str:
@@ -1419,16 +1514,22 @@ if "prop_signal_cache" not in st.session_state:
     st.session_state.prop_signal_cache = {}
 
 nav_map = {
-    "For You": "Edge Board",
+    "Discover": "Edge Board",
     "Games": "Games",
     "Markets": "Game Lines",
     "Props": "Player Props",
     "Parlays": "Parlay Generator",
     "Live": "Live Feed",
 }
+more_views = {
+    "Scorer Lab": "Scorer Lab",
+    "My Picks": "My Picks",
+    "Performance": "Performance",
+    "Data Sources": "Data Sources",
+}
 reverse_nav = {value: key for key, value in nav_map.items()}
-current_nav = reverse_nav.get(st.session_state.view, "For You")
-nav_labels = list(nav_map)
+current_nav = reverse_nav.get(st.session_state.view, "More" if st.session_state.view in more_views.values() else "Discover")
+nav_labels = list(nav_map) + ["More"]
 
 st.markdown('<div class="section-eyebrow">EXPLORE</div>', unsafe_allow_html=True)
 selected_nav = st.segmented_control(
@@ -1438,7 +1539,18 @@ selected_nav = st.segmented_control(
     key="main_nav_v2",
     label_visibility="collapsed",
 )
-view = nav_map.get(selected_nav or current_nav, "Edge Board")
+if selected_nav == "More":
+    more_default = st.session_state.view if st.session_state.view in more_views.values() else "My Picks"
+    selected_more = st.segmented_control(
+        "More tools",
+        list(more_views),
+        default=more_default,
+        key="more_nav_v1",
+        label_visibility="collapsed",
+    )
+    view = more_views.get(selected_more or more_default, "My Picks")
+else:
+    view = nav_map.get(selected_nav or current_nav, "Edge Board")
 st.session_state.view = view
 
 sport_filter = st.segmented_control(
@@ -1451,7 +1563,7 @@ sport_filter = st.segmented_control(
 
 # NHL goal-scorer pipeline: refresh this dependency explicitly because Streamlit
 # Community Cloud can reload app.py before the updated module file is in sys.modules.
-if sport_filter == "NHL":
+if (view == "Scorer Lab" and sport_filter == "NHL") or (sport_filter == "NHL" and view == "Player Props"):
     st.markdown("### 🏒 NHL Goal Scorer Lab")
     st.caption("Official NHL schedule, roster and game logs. Research probabilities are unvalidated and do not imply betting value.")
     try:
@@ -1501,6 +1613,46 @@ if sport_filter == "NHL":
                 for r in _nhl_rows]), use_container_width=True, hide_index=True)
             if _nhl_report_fn:
                 st.caption(_nhl_empty_message)
+            savable_nhl = [
+                (index, row) for index, row in enumerate(_nhl_rows)
+                if _safe_event_start(row.get("event_start")) is not None
+                and _safe_event_start(row.get("event_start")) > datetime.now(timezone.utc)
+            ]
+            if savable_nhl:
+                selected_nhl_index = st.selectbox(
+                    "NHL scorer candidate to track",
+                    [index for index, _ in savable_nhl],
+                    format_func=lambda index: next(f"{row['name']} · {row['team']} vs {row['opponent']}" for i, row in savable_nhl if i == index),
+                    key="track_nhl_scorer_select_v1",
+                )
+                if st.button("Save NHL scorer research candidate to My Picks", key="track_nhl_scorer_button_v1", use_container_width=True):
+                    row = _nhl_rows[selected_nhl_index]
+                    try:
+                        payload = {
+                            "sport": "NHL",
+                            "event": row.get("event_title") or f"{row['team']} vs {row['opponent']}",
+                            "market": "Anytime goal scorer",
+                            "selection": row["name"],
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                            "event_start": row["event_start"],
+                            "source": "SportEdge",
+                            "record_type": "nhl_goal_scorer",
+                            "record_origin": "generated",
+                            "probability": row["probability"],
+                            "model_version": row.get("model", "official_game_log_poisson_v1"),
+                            "sample_size": row.get("games"),
+                            "event_id": row.get("game_id"),
+                            "notes": "; ".join(row.get("warnings", ())) + "; unvalidated baseline; no executable odds/value check",
+                        }
+                        tracking_store = _pick_store()
+                        _save_research_prediction(payload, tracking_store)
+                        if tracking_store is None:
+                            st.warning("NHL scorer candidate saved to this session only. Configure the private tracker and Supabase secrets for durable tracking.")
+                        else:
+                            st.success("NHL scorer research candidate saved before puck drop. No wager was placed.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.warning(f"NHL scorer was not saved: {_safe_error(exc)}")
         else:
             st.warning(_nhl_empty_message)
             st.caption("No candidates are fabricated. Use the diagnostic counts to distinguish missing schedule, roster, API, and history coverage.")
@@ -1835,7 +1987,54 @@ elif view == "Player Props":
                     ]
                 )
                 st.dataframe(analysis_rows, use_container_width=True, hide_index=True)
-
+                savable_props = [
+                    (index, row) for index, row in enumerate(assessments)
+                    if row.qualified and row.leg.verified_start
+                ]
+                if savable_props:
+                    selected_prop_index = st.selectbox(
+                        "Qualified prop to track",
+                        [index for index, _ in savable_props],
+                        format_func=lambda index: next(row.leg.selection for i, row in savable_props if i == index),
+                        key=f"track_prop_select_{sport_filter}_{family}",
+                    )
+                    if st.button("Save qualified prop to My Picks", key=f"track_prop_button_{sport_filter}_{family}", use_container_width=True):
+                        selected_assessment = assessments[selected_prop_index]
+                        selected_leg = selected_assessment.leg
+                        try:
+                            payload = {
+                                "sport": selected_leg.sport,
+                                "event": selected_leg.event_title,
+                                "market": selected_leg.market_label,
+                                "selection": selected_leg.selection,
+                                "observed_at": datetime.now(timezone.utc).isoformat(),
+                                "event_start": selected_leg.verified_start,
+                                "source": "SportEdge",
+                                "record_type": "prop",
+                                "record_origin": "generated",
+                                "probability": selected_assessment.fair_probability,
+                                "model_version": selected_leg.model_name or "unknown",
+                                "model_confidence": selected_leg.model_confidence,
+                                "sample_size": selected_leg.model_sample_size,
+                                "event_id": selected_leg.event_id,
+                                "market_key": selected_leg.market_key,
+                                "kalshi_ticker": selected_leg.kalshi_ticker,
+                                "kalshi_price": selected_leg.kalshi_price,
+                                "notes": "; ".join(selected_assessment.warnings) or None,
+                            }
+                            if selected_leg.median_odds is not None:
+                                payload["odds_american"] = selected_leg.median_odds
+                            tracking_store = _pick_store()
+                            _save_research_prediction(payload, tracking_store)
+                            if tracking_store is None:
+                                st.warning("Qualified prop saved to this session only. Configure Supabase secrets for durable tracking.")
+                            else:
+                                st.success("Qualified prop saved to durable My Picks storage. Original model probability and timestamp are preserved.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.warning(f"Prop was not saved: {_safe_error(exc)}")
+                else:
+                    st.caption("No qualified prop with a verified event start is available to save. No unqualified candidate is promoted.")
                 for row in assessments[:12]:
                     with st.expander(f"{row.leg.selection} — Sports Edge analysis"):
                         st.write(f"**Model:** {row.leg.model_name or '—'}")
@@ -1856,7 +2055,7 @@ elif view == "Player Props":
             )
 
 elif view == "Edge Board":
-    _section_hero("FOR YOU", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
+    _section_hero("DISCOVER", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
     st.markdown(
         '<div class="section-note">Ranked by Sports Edge Intelligence: executable Kalshi gap + source quality + freshness + cross-book agreement. '
         'Only real current games are eligible; futures are excluded.</div>',
@@ -2654,13 +2853,13 @@ elif view == "Parlay Generator":
         if result.legs:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Qualified legs", len(result.legs))
-            c2.metric("Terminal fair*", f"{result.fair_joint_probability:.2%}")
-            c3.metric("Leg-price implied*", f"{result.market_joint_probability:.2%}")
-            c4.metric("Illustrative payout", f"{result.market_payout_multiplier:.2f}x")
-            st.caption("* Terminal all-legs success is NOT the probability of an early profitable cash-out. These leg-price products are NOT Kalshi combo RFQ bids.")
+            c2.metric("Joint success probability", "Unavailable")
+            c3.metric("Actual combined price", "Unavailable")
+            c4.metric("Illustrative leg-price payout", f"{result.market_payout_multiplier:.2f}x")
+            st.warning("No validated joint-dependence model or executable combined parlay quote is available. The product of individual leg probabilities is only an independence benchmark, not a joint probability; expected value and a model/market value ratio are withheld.")
             st.caption(
                 f"Build: {builder_label.upper()} · Ticket math risk: {result.risk_label} · "
-                f"model/market value ratio {result.ticket_value_multiple:.2f}x"
+                "independence benchmark and payout illustration only"
             )
 
             rows = pd.DataFrame(
@@ -2688,7 +2887,50 @@ elif view == "Parlay Generator":
                 ]
             )
             st.dataframe(rows, use_container_width=True, hide_index=True)
-
+            if st.button("Save this parlay candidate to My Picks", key="track_intelligent_parlay_v1", use_container_width=True):
+                try:
+                    verified_starts = [parse_timestamp(row.leg.verified_start) for row in result.legs if row.leg.verified_start]
+                    if len(verified_starts) != len(result.legs) or not verified_starts or min(verified_starts) <= datetime.now(timezone.utc):
+                        raise ValueError("Every leg needs a verified future event start before the parlay can be tracked.")
+                    dependence_unknown = (
+                        result.correlation_risk != "LOW"
+                        or any("independence" in warning.lower() or "joint probability" in warning.lower() or "correlation" in warning.lower() for warning in result.warnings)
+                    )
+                    leg_payloads = [{
+                        "sport": row.leg.sport,
+                        "event": row.leg.event_title,
+                        "market": row.leg.market_label,
+                        "selection": row.leg.selection,
+                        "model_probability": row.fair_probability,
+                        "source": row.leg.model_name or "SportEdge",
+                        "kalshi_price": row.leg.kalshi_price,
+                    } for row in result.legs]
+                    payload = {
+                        "sport": sport_filter,
+                        "event": "Multi-event research parlay",
+                        "market": "Parlay research candidate",
+                        "selection": " + ".join(row.leg.selection for row in result.legs),
+                        "observed_at": datetime.now(timezone.utc).isoformat(),
+                        "event_start": min(verified_starts).isoformat(),
+                        "source": "SportEdge",
+                        "record_type": "parlay",
+                        "record_origin": "generated",
+                        "leg_count": len(result.legs),
+                        "probability": None if dependence_unknown else result.fair_joint_probability,
+                        "model_version": "intelligent-parlay",
+                        "legs": leg_payloads,
+                        "illustrative_payout_multiplier": result.market_payout_multiplier,
+                        "notes": "Joint probability unavailable for value purposes unless validated dependence evidence exists." if dependence_unknown else "Research estimate only; verify actual sportsbook parlay price separately.",
+                    }
+                    tracking_store = _pick_store()
+                    _save_research_prediction(payload, tracking_store)
+                    if tracking_store is None:
+                        st.warning("Parlay candidate saved to this session only. Configure Supabase secrets for durable tracking.")
+                    else:
+                        st.success("Parlay candidate saved before the earliest event start. This is a research record, not a placed wager or sportsbook quote.")
+                    st.rerun()
+                except Exception as exc:
+                    st.warning(f"Parlay was not saved: {_safe_error(exc)}")
             for idx, row in enumerate(result.legs, 1):
                 with st.expander(f"{idx}. {row.leg.selection} — model analysis"):
                     st.write(f"**Event:** {row.leg.event_title}")
@@ -3619,6 +3861,405 @@ elif view == "Live Feed":
             st.divider()
     else:
         st.info(merr or "No MLB live events right now.")
+
+elif view == "Scorer Lab":
+    if sport_filter == "NHL":
+        _section_hero("NHL SCORER LAB", "Anytime-goal research", "Official NHL schedule, roster and player-history coverage. Only eligible history-backed research estimates appear; no scorer is invented to fill a quota.")
+        st.caption("Current lineup, line combination, power-play role, goalie context and executable anytime-goal odds are not yet complete in this baseline. These estimates are not validated value picks.")
+    elif sport_filter == "NFL":
+        _section_hero("NFL TD SCORER LAB", "Anytime-touchdown research", "Run the existing independent NFL touchdown model against the actual current Kalshi player-prop catalog. Missing prices or verified starts block tracking and value claims.")
+        if st.button("Run NFL touchdown scorer analysis", type="primary", use_container_width=True, key="nfl_td_scorer_scan_v1"):
+            with st.spinner("Checking current NFL touchdown markets and independent model evidence…"):
+                try:
+                    td_candidates = model_candidates_from_kalshi(
+                        kalshi_grouped,
+                        sport_filter="NFL",
+                        include_nfl_touchdowns=True,
+                        max_nfl_td_players=24,
+                        target_local_date=datetime.now(ZoneInfo("Pacific/Honolulu")).date(),
+                        ticket_timezone="Pacific/Honolulu",
+                    )
+                    td_candidates = [row for row in td_candidates if row.market_key == "player_anytime_td"]
+                    td_assessments = [assess_leg(row, "best") for row in td_candidates]
+                    td_assessments.sort(key=lambda row: (row.qualified, row.score), reverse=True)
+                    st.session_state["nfl_td_scorer_results_v1"] = td_assessments
+                except Exception as exc:
+                    st.warning(f"NFL touchdown analysis unavailable: {_safe_error(exc)}")
+                    st.session_state["nfl_td_scorer_results_v1"] = []
+        td_assessments = [
+            row for row in st.session_state.get("nfl_td_scorer_results_v1", [])
+            if _safe_event_start(row.leg.verified_start) is not None
+            and _safe_event_start(row.leg.verified_start) > datetime.now(timezone.utc)
+        ]
+        if not td_assessments:
+            st.info("No NFL touchdown-scorer candidates have been generated in this session. Run the analysis; if the actual catalog lacks eligible markets or independent model evidence, the lab will remain empty.")
+        else:
+            st.dataframe(pd.DataFrame([{
+                "Status": "QUALIFIED RESEARCH" if row.qualified else "WATCH / PASS",
+                "Event": row.leg.event_title,
+                "Selection": row.leg.selection,
+                "Model probability": f"{row.fair_probability:.1%}",
+                "Sportsbook price": row.leg.median_odds if row.leg.median_odds is not None else "—",
+                "Kalshi price": f"{row.kalshi_probability:.1%}" if row.kalshi_probability is not None else "—",
+                "Edge": f"{row.edge_points:+.1f} pp" if row.edge_points is not None else "—",
+                "Model confidence": f"{row.leg.model_confidence:.0%}",
+                "Event start": row.leg.verified_start or "unverified",
+                "Caveats": "; ".join(row.warnings) or "See model evidence",
+            } for row in td_assessments]), use_container_width=True, hide_index=True)
+            savable_td = [(index, row) for index, row in enumerate(td_assessments) if row.qualified and _safe_event_start(row.leg.verified_start) is not None and _safe_event_start(row.leg.verified_start) > datetime.now(timezone.utc)]
+            if savable_td:
+                selected_td_index = st.selectbox(
+                    "NFL touchdown candidate to track",
+                    [index for index, _ in savable_td],
+                    format_func=lambda index: next(row.leg.selection for i, row in savable_td if i == index),
+                    key="track_nfl_td_select_v1",
+                )
+                if st.button("Save qualified NFL touchdown candidate to My Picks", key="track_nfl_td_button_v1", use_container_width=True):
+                    row = td_assessments[selected_td_index]
+                    leg = row.leg
+                    try:
+                        payload = {
+                            "sport": "NFL",
+                            "event": leg.event_title,
+                            "market": "Anytime touchdown scorer",
+                            "selection": leg.selection,
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                            "event_start": leg.verified_start,
+                            "source": "SportEdge",
+                            "record_type": "nfl_td_scorer",
+                            "record_origin": "generated",
+                            "probability": row.fair_probability,
+                            "model_version": leg.model_name or "unknown",
+                            "model_confidence": leg.model_confidence,
+                            "sample_size": leg.model_sample_size,
+                            "event_id": leg.event_id,
+                            "kalshi_ticker": leg.kalshi_ticker,
+                            "kalshi_price": leg.kalshi_price,
+                            "notes": "; ".join(row.warnings) or "Review current availability and exact odds before any value assessment.",
+                        }
+                        if leg.median_odds is not None:
+                            payload["odds_american"] = leg.median_odds
+                        tracking_store = _pick_store()
+                        _save_research_prediction(payload, tracking_store)
+                        if tracking_store is None:
+                            st.warning("NFL touchdown candidate saved to this session only. Configure the private tracker and Supabase secrets for durable tracking.")
+                        else:
+                            st.success("NFL touchdown research candidate saved before kickoff. No wager was placed.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.warning(f"NFL touchdown candidate was not saved: {_safe_error(exc)}")
+            else:
+                st.caption("No qualified touchdown candidate with a verified future start is available to save.")
+    else:
+        _section_hero("SCORER LAB", "Choose NHL or NFL", "NHL anytime-goal and NFL anytime-touchdown research use separate source pipelines and separate records.")
+        st.info("Select NHL or NFL in the sport selector above to load the corresponding scorer research pipeline.")
+
+elif view == "My Picks":
+    _section_hero("RESEARCH TRACKER", "My Picks", "Save a timestamped research candidate before the event starts, then keep the original price and attribution when results are recorded.")
+    if not _ensure_tracker_access():
+        st.stop()
+    store = _pick_store()
+    store_error = None
+    uploaded_picks = st.file_uploader("Import provider or manual research picks (CSV)", type=["csv"], key="research_pick_csv_upload_v1")
+    if uploaded_picks is not None:
+        st.caption("Import requires original observed_at and event_start timestamps. Rows observed at or after event start are rejected; import time is never substituted for a missing original timestamp.")
+        if len(uploaded_picks.getvalue()) > 2_000_000:
+            st.warning("CSV import is limited to 2 MB per upload.")
+        else:
+            try:
+                import_frame = pd.read_csv(io.BytesIO(uploaded_picks.getvalue()))
+                required_columns = {"sport", "event", "market", "selection", "observed_at", "event_start", "source", "record_type"}
+                missing_columns = sorted(required_columns - set(import_frame.columns))
+                if missing_columns:
+                    st.warning("CSV missing required columns: " + ", ".join(missing_columns))
+                else:
+                    st.dataframe(import_frame.head(8), use_container_width=True, hide_index=True)
+                    if st.button("Import valid CSV rows", key="research_pick_csv_import_button"):
+                        imported = 0
+                        rejected = []
+                        optional_columns = {"probability", "odds_american", "model_version", "leg_count", "notes", "model_confidence", "sample_size"}
+                        for row_index, raw_row in import_frame.iterrows():
+                            try:
+                                payload = {}
+                                for key in required_columns | optional_columns:
+                                    value = raw_row.get(key)
+                                    if value is None or pd.isna(value):
+                                        continue
+                                    payload[key] = value.item() if hasattr(value, "item") else value
+                                if "probability" in payload:
+                                    payload["probability"] = float(payload["probability"])
+                                if "odds_american" in payload:
+                                    payload["odds_american"] = int(float(payload["odds_american"]))
+                                    if payload["odds_american"] == 0:
+                                        raise ValueError("American odds cannot be zero")
+                                if payload.get("record_type") == "parlay" and "leg_count" in payload:
+                                    payload["leg_count"] = int(float(payload["leg_count"]))
+                                now_utc = datetime.now(timezone.utc)
+                                if parse_timestamp(payload["observed_at"]) > now_utc:
+                                    raise ValueError("observed_at cannot be in the future")
+                                if parse_timestamp(payload["event_start"]) <= now_utc:
+                                    raise ValueError("past-event imports are rejected to prevent backfilling")
+                                payload["record_origin"] = "imported"
+                                payload["provenance_status"] = "imported_unverified"
+                                _save_research_prediction(payload, store)
+                                imported += 1
+                            except Exception as exc:
+                                rejected.append(f"row {row_index + 2}: {_safe_error(exc)}")
+                        st.success(f"Imported {imported} causal record(s).")
+                        if rejected:
+                            st.warning(f"Rejected {len(rejected)} row(s): " + " · ".join(rejected[:5]))
+            except Exception as exc:
+                st.warning(f"CSV could not be read: {_safe_error(exc)}")
+
+    try:
+        records = _pick_records(store)
+    except Exception as exc:
+        store_error = type(exc).__name__
+        records = list(_session_pick_records())
+        store = None
+    if store is None:
+        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets for durable storage. See docs/pick_storage.md.")
+    if store_error:
+        st.error(f"Configured storage could not be read ({store_error}). New entries in this view are session-only until storage is healthy.")
+
+    with st.form("research_pick_capture_v1", clear_on_submit=True):
+        st.subheader("Save a research candidate")
+        record_kind = st.selectbox("Candidate type", ["Individual prop", "Parlay candidate", "NHL goal scorer", "NFL touchdown scorer", "Live / reversal research"])
+        sport_value = st.selectbox("Sport", ["NFL", "NCAAF", "NBA", "NHL", "MLB", "Tennis", "WNBA", "Soccer", "Other"])
+        event_value = st.text_input("Game / event")
+        market_value = st.text_input("Market", placeholder="Player points, anytime TD, anytime goal…")
+        selection_value = st.text_input("Selection", placeholder="Player X over 24.5 points")
+        event_start_value = st.text_input("Event start (ISO-8601 with timezone)", placeholder="2026-10-22T23:00:00Z")
+        source_value = st.selectbox("Source / provider attribution", ["SportEdge", "Manual research", "PropsBot.AI", "Betstamp", "Juice Reel", "Outlier", "The Odds API", "Other provider"])
+        probability_known = st.checkbox("Model probability is available", value=True)
+        probability_value = st.number_input("Model probability (%)", min_value=0.0, max_value=100.0, value=55.0, step=0.5, disabled=not probability_known)
+        odds_value = st.text_input("Original American odds (optional)", placeholder="-110 or +135")
+        leg_count_value = st.number_input("Parlay leg count (for parlay candidates)", min_value=1, max_value=12, value=2, step=1, disabled=record_kind != "Parlay candidate")
+        model_version_value = st.text_input("Model / version (optional)")
+        notes_value = st.text_input("Notes / evidence caveat (optional)")
+        save_submitted = st.form_submit_button("Save research candidate", use_container_width=True)
+
+    if save_submitted:
+        observed_at = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "sport": sport_value,
+            "event": event_value.strip(),
+            "market": market_value.strip(),
+            "selection": selection_value.strip(),
+            "observed_at": observed_at,
+            "event_start": event_start_value.strip(),
+            "source": source_value,
+            "record_type": {
+                "Individual prop": "prop",
+                "Parlay candidate": "parlay",
+                "NHL goal scorer": "nhl_goal_scorer",
+                "NFL touchdown scorer": "nfl_td_scorer",
+                "Live / reversal research": "live_reversal",
+            }[record_kind],
+            "model_version": model_version_value.strip() or None,
+            "notes": notes_value.strip() or None,
+            "price_type": "american_odds" if odds_value.strip() else "unpriced",
+        }
+        if probability_known:
+            payload["probability"] = float(probability_value) / 100.0
+        if odds_value.strip():
+            try:
+                payload["odds_american"] = int(odds_value.strip().replace(" ", ""))
+                if payload["odds_american"] == 0:
+                    raise ValueError("American odds cannot be zero")
+            except ValueError:
+                st.error("Original odds must be a non-zero American price such as -110 or +135.")
+                payload = None
+        if payload is not None:
+            try:
+                if payload["record_type"] == "parlay":
+                    payload["leg_count"] = int(leg_count_value)
+                _save_research_prediction(payload, store)
+                st.success("Research candidate saved with its original timestamp. This does not mean a wager was placed.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Candidate was not saved: {_safe_error(exc)}")
+
+    try:
+        records = _pick_records(store) if store is not None else list(_session_pick_records())
+    except Exception as exc:
+        st.error(f"Could not refresh saved picks ({type(exc).__name__}).")
+        records = list(_session_pick_records())
+        store = None
+    predictions = [r for r in records if r.get("record_type") == "prediction"]
+    settlements = _settlement_by_prediction(records)
+    if predictions:
+        display_rows = []
+        for record in predictions:
+            payload = _record_payload(record)
+            settlement = settlements.get(record.get("id"), {})
+            display_rows.append({
+                "Saved": payload.get("saved_at") or record.get("created_at"),
+                "Sport": payload.get("sport"),
+                "Event": payload.get("event"),
+                "Type": payload.get("record_type"),
+                "Market": payload.get("market"),
+                "Selection": payload.get("selection"),
+                "Model probability": payload.get("probability"),
+                "Original American odds": payload.get("odds_american"),
+                "Source": payload.get("source"),
+                "Origin": payload.get("record_origin", "manual"),
+                "Provenance": payload.get("provenance_status", "internal_record"),
+                "Status": settlement.get("result", "pending").upper(),
+                "Model": payload.get("model_version"),
+            })
+        st.subheader("Saved candidates")
+        st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
+        st.download_button("Export My Picks CSV", pd.DataFrame(display_rows).to_csv(index=False).encode("utf-8"), "sportedge_my_picks.csv", "text/csv", use_container_width=True)
+
+    settled_predictions = [
+        r for r in predictions
+        if r.get("id") not in settlements
+        and (lambda p: _safe_event_start(p.get("event_start")) is not None and _safe_event_start(p.get("event_start")) <= datetime.now(timezone.utc))(_record_payload(r))
+    ]
+    if settled_predictions:
+        st.subheader("Record a result")
+        st.caption("Manual settlement is not independently verified. Use an official final-results URL and keep the original prediction unchanged.")
+        with st.form("research_pick_settlement_v1"):
+            chosen_id = st.selectbox("Prediction", [r.get("id") for r in settled_predictions], format_func=lambda pid: next((f"{_record_payload(r).get('sport')} · {_record_payload(r).get('selection')} · {pid[:8]}" for r in settled_predictions if r.get("id") == pid), pid))
+            result_value = st.selectbox("Result", ["win", "loss", "push", "void", "cancelled"])
+            settlement_url = st.text_input("Official result source URL (HTTPS required)")
+            settle_submitted = st.form_submit_button("Append settlement record", use_container_width=True)
+        if settle_submitted:
+            try:
+                if not settlement_url.strip().startswith("https://"):
+                    raise ValueError("Use an HTTPS source URL for the result.")
+                settled_at = datetime.now(timezone.utc).isoformat()
+                if store is not None:
+                    store.append_settlement(prediction_id=chosen_id, result=result_value, settled_at=settled_at, source_url=settlement_url.strip(), verification="manual")
+                else:
+                    original = next(r for r in settled_predictions if r.get("id") == chosen_id)
+                    if settled_at < parse_timestamp(_record_payload(original)["event_start"]).isoformat():
+                        raise ValueError("Settlement cannot predate event start.")
+                    _session_pick_records().append({
+                        "id": str(uuid.uuid4()),
+                        "record_type": "settlement",
+                        "payload": {"prediction_id": chosen_id, "result": result_value, "settled_at": settled_at, "source_url": settlement_url.strip(), "verification": "manual"},
+                        "created_at": settled_at,
+                    })
+                st.success("Settlement appended. The prediction record was not changed.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Settlement not recorded: {_safe_error(exc)}")
+    else:
+        st.caption("No unsettled past-event picks are available to grade yet. Pending future candidates remain untouched.")
+
+elif view == "Performance":
+    _section_hero("TRACK RECORD", "Performance", "A transparent record of tracked research candidates. Empty history is shown as empty; provider records and SportEdge records remain attributable.")
+    if not _ensure_tracker_access():
+        st.stop()
+    store = _pick_store()
+    try:
+        records = _pick_records(store) if store is not None else list(_session_pick_records())
+    except Exception as exc:
+        st.error(f"Persistent tracking is unavailable ({type(exc).__name__}); session-only records may be incomplete.")
+        records = list(_session_pick_records())
+    predictions = [r for r in records if r.get("record_type") == "prediction"]
+    settlements = _settlement_by_prediction(records)
+    if not predictions:
+        st.info("No tracked predictions yet. Save candidates in My Picks before the event starts. No hit rate or ROI is available.")
+    else:
+        perf_rows = []
+        for record in predictions:
+            payload = _record_payload(record)
+            settlement = settlements.get(record.get("id"), {})
+            result_value = str(settlement.get("result") or "pending").lower()
+            perf_rows.append({
+                "record_type": payload.get("record_type", "prop"),
+                "source": payload.get("source", "unknown"),
+                "record_origin": payload.get("record_origin", "manual"),
+                "sport": payload.get("sport", "unknown"),
+                "market": payload.get("market", "unknown"),
+                "model_version": payload.get("model_version", "unknown"),
+                "observed_at": payload.get("observed_at"),
+                "leg_count": payload.get("leg_count"),
+                "result": result_value,
+                "odds_american": payload.get("odds_american"),
+                "probability": payload.get("probability"),
+                "outcome": 1 if result_value == "win" else 0 if result_value == "loss" else None,
+                "stake_units": payload.get("stake_units", 1.0),
+            })
+        performance_groups = [
+            ("All tracked research", perf_rows),
+            ("SportEdge-generated", [r for r in perf_rows if str(r["source"]).lower() == "sportedge" and r["record_origin"] == "generated"]),
+        ]
+        attribution_pairs = sorted({
+            (str(r["source"]), str(r["record_origin"]))
+            for r in perf_rows
+            if not (str(r["source"]).lower() == "sportedge" and r["record_origin"] == "generated")
+        })
+        for source_name, origin_name in attribution_pairs:
+            performance_groups.append((
+                f"{origin_name.title()} · {source_name}",
+                [r for r in perf_rows if str(r["source"]) == source_name and str(r["record_origin"]) == origin_name],
+            ))
+        for group_name, group_rows in performance_groups:
+            st.subheader(group_name)
+            report = summarize_performance(group_rows)
+            a, b, d, e = st.columns(4)
+            a.metric("Win rate", "—" if report["hit_rate"] is None else f'{report["hit_rate"]:.1%}', f'{report["wins"]}W / {report["losses"]}L · n={report["hit_rate_denominator"]}')
+            b.metric("ROI", "—" if report["roi"] is None else f'{report["roi"]:+.1%}', "Requires complete original odds")
+            d.metric("Net units", "—" if report["net_units"] is None else f'{report["net_units"]:+.2f}', f'{report["risked_units"]:.2f} units priced')
+            e.metric("Brier score", "—" if report["brier_score"] is None else f'{report["brier_score"]:.3f}', f'n={report["brier_denominator"]}')
+            avg_odds_text = "—" if report["average_decimal_odds"] is None else f'{report["average_decimal_odds"]:.3f}'
+            avg_stake_text = "—" if report["average_stake_units"] is None else f'{report["average_stake_units"]:.2f}'
+            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Cancelled {report["cancelled"]} · Settled results with missing odds {report["missing_odds_resolved"]}. Average decimal odds: {avg_odds_text} · Average stake: {avg_stake_text} units. ROI remains unavailable if any resolved win/loss is missing its original price.')
+        st.subheader("Breakdown by sport, market, source and model")
+        breakdown_rows = []
+        breakdown_keys = sorted({(r["sport"], r["market"], r["source"], r["model_version"]) for r in perf_rows})
+        for sport_name, market_name, source_name, model_name in breakdown_keys:
+            subset = [r for r in perf_rows if (r["sport"], r["market"], r["source"], r["model_version"]) == (sport_name, market_name, source_name, model_name)]
+            report = summarize_performance(subset)
+            breakdown_rows.append({
+                "Sport": sport_name, "Market": market_name, "Source": source_name, "Model": model_name,
+                "Wins": report["wins"], "Losses": report["losses"], "Pushes": report["pushes"],
+                "Voids": report["voids"], "Cancelled": report["cancelled"], "Pending": report["pending"], "n": report["total_records"],
+                "Hit rate": report["hit_rate"], "ROI": report["roi"], "Net units": report["net_units"],
+                "Brier": report["brier_score"],
+            })
+        st.dataframe(pd.DataFrame(breakdown_rows), use_container_width=True, hide_index=True)
+        resolved_rows = []
+        for record in predictions:
+            payload = _record_payload(record)
+            settlement = settlements.get(record.get("id"), {})
+            result_value = str(settlement.get("result") or "pending").lower()
+            if result_value in {"win", "loss"}:
+                resolved_rows.append((payload, result_value, settlement.get("settled_at")))
+        has_missing_price = any(payload.get("odds_american") is None for payload, _, _ in resolved_rows)
+        if resolved_rows and not has_missing_price:
+            equity_rows = []
+            running_units = 0.0
+            for payload, result_value, settled_at in sorted(resolved_rows, key=lambda row: str(row[2] or "")):
+                stake = float(payload.get("stake_units", 1.0))
+                decimal_price = american_to_decimal(payload["odds_american"])
+                running_units += net_units(result_value, decimal_price, stake)
+                equity_rows.append({"Settlement": str(settled_at or payload.get("event_start")), "Cumulative net units": running_units})
+            st.subheader("Cumulative net units")
+            st.line_chart(pd.DataFrame(equity_rows).set_index("Settlement"))
+        elif resolved_rows:
+            st.caption("Cumulative-profit chart withheld because at least one settled win/loss is missing its original odds.")
+        observed_values = [str(r["observed_at"]) for r in perf_rows if r.get("observed_at")]
+        if observed_values:
+            st.caption(f"Observation date range: {min(observed_values)} to {max(observed_values)} · probability coverage: {sum(r.get('probability') is not None for r in perf_rows)}/{len(perf_rows)} records.")
+        parlay_rows = [r for r in perf_rows if r["record_type"] == "parlay" and type(r.get("leg_count")) is int]
+        if parlay_rows:
+            st.subheader("Whole-parlay results by leg count")
+            parlay_report = summarize_parlays(parlay_rows)
+            st.dataframe(pd.DataFrame([{"Legs": legs, "Wins": row["wins"], "Losses": row["losses"], "Pushes": row["pushes"], "Voids": row["voids"], "Cancelled": row["cancelled"], "Pending": row["pending"], "Hit rate": row["hit_rate"], "ROI": row["roi"], "Net units": row["net_units"], "n": row["total_records"]} for legs, row in parlay_report.items()]), use_container_width=True, hide_index=True)
+        st.caption("Only candidates captured before event start are eligible. Manually entered settlements are marked manual and are not represented as independently verified. Whole parlays are graded separately from individual legs.")
+
+elif view == "Data Sources":
+    _section_hero("INTEGRATIONS", "Data sources", "Connected, configured, partial and research-only sources are kept distinct. A website or API document does not mean credentials are available.")
+    source_rows = get_source_status()
+    st.dataframe(pd.DataFrame([{"Source": row["name"], "Role": row["role"], "Access": row["access"], "Status": row["status"].replace("_", " ").title(), "Notes": row["detail"]} for row in source_rows]), use_container_width=True, hide_index=True)
+    st.markdown("Manual research links: [PropsBot free prop preview](https://propsbot.ai/free-ai-player-prop-generator/) · [PropsBot public ledger / methodology](https://propsbot.ai/about/) · [Outlier free NFL research](https://www.outlier.bet/nfl-free-bets/)")
+    st.markdown("Official API documentation: [Betstamp API](https://www.betstamp.com/docs) · [Juice Reel API](https://www.juicereel.com/api-docs)")
+    st.caption("PropsBot's High ROI and High Hit Rate signals are separate and provider-reported; their published metrics are not SportEdge results or parlay ROI. PropsBot and Outlier are manual research links only until authorized API/export access is verified. Betstamp requires a provisioned key and plan entitlements. Juice Reel requires user consent and a secure server-side OAuth implementation. No provider is marked connected without actual configuration.")
 
 with st.expander("Data source coverage / integrations", expanded=False):
     source_rows = get_source_status()
