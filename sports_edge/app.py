@@ -386,6 +386,23 @@ def _settlement_by_prediction(records):
     return settled
 
 
+def _save_research_prediction(payload, store):
+    row = validate_prediction(payload)
+    if store is not None:
+        return store.append_prediction(row)
+    prediction_id = str(uuid.uuid4())
+    row["prediction_id"] = prediction_id
+    row["saved_at"] = datetime.now(timezone.utc).isoformat()
+    record = {
+        "id": prediction_id,
+        "record_type": "prediction",
+        "payload": row,
+        "created_at": row["saved_at"],
+    }
+    _session_pick_records().append(record)
+    return record
+
+
 def _safe_error(exc: Exception) -> str:
     msg = str(exc)
     if "apiKey=" in msg:
@@ -1900,7 +1917,49 @@ elif view == "Player Props":
                     ]
                 )
                 st.dataframe(analysis_rows, use_container_width=True, hide_index=True)
-
+                savable_props = [
+                    (index, row) for index, row in enumerate(assessments)
+                    if row.qualified and row.leg.verified_start
+                ]
+                if savable_props:
+                    selected_prop_index = st.selectbox(
+                        "Qualified prop to track",
+                        [index for index, _ in savable_props],
+                        format_func=lambda index: next(row.leg.selection for i, row in savable_props if i == index),
+                        key=f"track_prop_select_{sport_filter}_{family}",
+                    )
+                    if st.button("Save qualified prop to My Picks", key=f"track_prop_button_{sport_filter}_{family}", use_container_width=True):
+                        selected_assessment = assessments[selected_prop_index]
+                        selected_leg = selected_assessment.leg
+                        try:
+                            payload = {
+                                "sport": selected_leg.sport,
+                                "event": selected_leg.event_title,
+                                "market": selected_leg.market_label,
+                                "selection": selected_leg.selection,
+                                "observed_at": datetime.now(timezone.utc).isoformat(),
+                                "event_start": selected_leg.verified_start,
+                                "source": "SportEdge",
+                                "record_type": "prop",
+                                "probability": selected_assessment.fair_probability,
+                                "model_version": selected_leg.model_name or "unknown",
+                                "model_confidence": selected_leg.model_confidence,
+                                "sample_size": selected_leg.model_sample_size,
+                                "event_id": selected_leg.event_id,
+                                "market_key": selected_leg.market_key,
+                                "kalshi_ticker": selected_leg.kalshi_ticker,
+                                "kalshi_price": selected_leg.kalshi_price,
+                                "notes": "; ".join(selected_assessment.warnings) or None,
+                            }
+                            if selected_leg.median_odds is not None:
+                                payload["odds_american"] = selected_leg.median_odds
+                            _save_research_prediction(payload, _pick_store())
+                            st.success("Qualified prop saved to My Picks. Original model probability and timestamp are preserved.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.warning(f"Prop was not saved: {_safe_error(exc)}")
+                else:
+                    st.caption("No qualified prop with a verified event start is available to save. No unqualified candidate is promoted.")
                 for row in assessments[:12]:
                     with st.expander(f"{row.leg.selection} — Sports Edge analysis"):
                         st.write(f"**Model:** {row.leg.model_name or '—'}")
@@ -2753,7 +2812,45 @@ elif view == "Parlay Generator":
                 ]
             )
             st.dataframe(rows, use_container_width=True, hide_index=True)
-
+            if st.button("Save this parlay candidate to My Picks", key="track_intelligent_parlay_v1", use_container_width=True):
+                try:
+                    verified_starts = [parse_timestamp(row.leg.verified_start) for row in result.legs if row.leg.verified_start]
+                    if len(verified_starts) != len(result.legs) or not verified_starts or min(verified_starts) <= datetime.now(timezone.utc):
+                        raise ValueError("Every leg needs a verified future event start before the parlay can be tracked.")
+                    dependence_unknown = (
+                        result.correlation_risk != "LOW"
+                        or any("independence" in warning.lower() or "joint probability" in warning.lower() or "correlation" in warning.lower() for warning in result.warnings)
+                    )
+                    leg_payloads = [{
+                        "sport": row.leg.sport,
+                        "event": row.leg.event_title,
+                        "market": row.leg.market_label,
+                        "selection": row.leg.selection,
+                        "model_probability": row.fair_probability,
+                        "source": row.leg.model_name or "SportEdge",
+                        "kalshi_price": row.leg.kalshi_price,
+                    } for row in result.legs]
+                    payload = {
+                        "sport": sport_filter,
+                        "event": "Multi-event research parlay",
+                        "market": "Parlay research candidate",
+                        "selection": " + ".join(row.leg.selection for row in result.legs),
+                        "observed_at": datetime.now(timezone.utc).isoformat(),
+                        "event_start": min(verified_starts).isoformat(),
+                        "source": "SportEdge",
+                        "record_type": "parlay",
+                        "leg_count": len(result.legs),
+                        "probability": None if dependence_unknown else result.fair_joint_probability,
+                        "model_version": "intelligent-parlay",
+                        "legs": leg_payloads,
+                        "illustrative_payout_multiplier": result.market_payout_multiplier,
+                        "notes": "Joint probability unavailable for value purposes unless validated dependence evidence exists." if dependence_unknown else "Research estimate only; verify actual sportsbook parlay price separately.",
+                    }
+                    _save_research_prediction(payload, _pick_store())
+                    st.success("Parlay candidate saved before the earliest event start. This is a research record, not a placed wager or sportsbook quote.")
+                    st.rerun()
+                except Exception as exc:
+                    st.warning(f"Parlay was not saved: {_safe_error(exc)}")
             for idx, row in enumerate(result.legs, 1):
                 with st.expander(f"{idx}. {row.leg.selection} — model analysis"):
                     st.write(f"**Event:** {row.leg.event_title}")
@@ -3754,21 +3851,9 @@ elif view == "My Picks":
                 payload = None
         if payload is not None:
             try:
-                payload = validate_prediction(payload)
                 if payload["record_type"] == "parlay":
                     payload["leg_count"] = int(leg_count_value)
-                if store is not None:
-                    store.append_prediction(payload)
-                else:
-                    prediction_id = str(uuid.uuid4())
-                    payload["prediction_id"] = prediction_id
-                    payload["saved_at"] = datetime.now(timezone.utc).isoformat()
-                    _session_pick_records().append({
-                        "id": prediction_id,
-                        "record_type": "prediction",
-                        "payload": payload,
-                        "created_at": payload["saved_at"],
-                    })
+                _save_research_prediction(payload, store)
                 st.success("Research candidate saved with its original timestamp. This does not mean a wager was placed.")
                 st.rerun()
             except Exception as exc:
