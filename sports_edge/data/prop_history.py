@@ -102,7 +102,7 @@ def prop_history_report(*, sport: str, player_name: str, market: str,
         return {"status": "MISSING_EVENT_DATE", "note": "A trustworthy event date is required; close time is not substituted.", "rows": []}
 
     if sport in {"NBA", "WNBA"}:
-        from sports_edge.data.basketball_prop_data import player_history, stat_value, latest_team_abbreviation
+        from sports_edge.data.basketball_prop_data import player_history, prior_player_history, stat_value, latest_team_abbreviation
         season = event_date.year if event_date.month >= 8 else event_date.year - 1
         metric_map = {
             "Points": "points", "Rebounds": "rebounds", "Assists": "assists",
@@ -114,6 +114,10 @@ def prop_history_report(*, sport: str, player_name: str, market: str,
             return {"status": "UNSUPPORTED_MARKET", "note": f"No audited box-score mapping exists for {sport} {market}.", "rows": []}
         try:
             history = player_history(sport, player_name, season, event_date.isoformat())
+            season_used = str(season)
+            if not history:
+                history = prior_player_history(sport, player_name, season)
+                season_used = f"{season - 1} prior season (current-season log empty)"
         except Exception as exc:
             return {"status": "SOURCE_UNAVAILABLE", "note": f"Official/free basketball history request failed ({type(exc).__name__}).", "rows": []}
         rows = []
@@ -141,7 +145,7 @@ def prop_history_report(*, sport: str, player_name: str, market: str,
             })
         return _report(sport=sport, player=player_name, market=market, threshold=threshold,
                        source="SportsDataverse player box-score releases", rows=rows,
-                       season_used=str(season), note="Descriptive historical hit rates only; no injury, projected-minutes, lineup or opponent adjustment is implied.")
+                       season_used=season_used, note="Descriptive historical hit rates only; no injury, projected-minutes, lineup or opponent adjustment is implied. A prior-season fallback is labeled explicitly and is not a current-season hit rate.")
 
     if sport == "NFL":
         from sports_edge.data.nfl_prop_data import player_context, schedule_rows
