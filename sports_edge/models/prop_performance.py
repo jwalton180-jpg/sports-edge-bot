@@ -11,7 +11,7 @@ from math import isfinite
 from statistics import mean
 from typing import Iterable, Mapping, Any
 
-VALID_RESULTS = {"win", "loss", "push", "void", "pending"}
+VALID_RESULTS = {"win", "loss", "push", "void", "cancelled", "pending"}
 
 
 def american_to_decimal(odds: int | float) -> float:
