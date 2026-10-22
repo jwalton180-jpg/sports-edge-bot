@@ -393,6 +393,48 @@ def _safe_event_start(value):
         return None
 
 
+def _render_prop_history_report(report):
+    status = report.get("status", "UNKNOWN")
+    st.caption(
+        f"Status: {status} · Source: {report.get('source', 'not available')} · "
+        f"Retrieved: {report.get('retrieved_at', '—')} · "
+        f"Season/date range: {report.get('season_used', '—')} / "
+        f"{report.get('date_from') or '—'} to {report.get('date_to') or '—'}"
+    )
+    if report.get("note"):
+        st.info(report["note"])
+    if report.get("rows"):
+        metric_specs = (
+            ("Historical hit rate", "season_hit_rate"),
+            ("Last 5 games", "last5_hit_rate"),
+            ("Home games", "home_hit_rate"),
+            ("Away games", "away_hit_rate"),
+        )
+        metric_columns = st.columns(4)
+        for column, (metric_label, summary_key) in zip(metric_columns, metric_specs):
+            summary = report[summary_key]
+            value = "—" if summary.get("hit_rate") is None else f"{summary['hit_rate']:.1%}"
+            denominator = summary.get("sample_size", 0)
+            hits = summary.get("hits")
+            delta = f"{hits}/{denominator}" if hits is not None else f"n={denominator}"
+            column.metric(metric_label, value, delta)
+        history_table = []
+        for game_row in report["rows"]:
+            threshold = report.get("threshold")
+            cleared = None if threshold is None else game_row["value"] >= threshold
+            history_table.append({
+                "Date": game_row.get("date"),
+                "Opponent": game_row.get("opponent", "Unknown"),
+                "Home/Away": game_row.get("home_away", "Unknown"),
+                "Actual": game_row.get("value"),
+                "Threshold": threshold,
+                "Cleared threshold": "Yes" if cleared is True else "No" if cleared is False else "—",
+            })
+        st.dataframe(pd.DataFrame(history_table), use_container_width=True, hide_index=True)
+    elif status not in {"UNSUPPORTED_MARKET", "UNSUPPORTED_SPORT"}:
+        st.warning("No usable historical game rows were returned. SportEdge will not infer missing results or substitute future games.")
+
+
 def _record_payload(record):
     payload = record.get("payload")
     return payload if isinstance(payload, dict) else {}
@@ -1900,42 +1942,7 @@ elif view == "Player Props":
                         st.session_state[history_state_key] = report
                 history_report = st.session_state.get(history_state_key)
                 if history_report:
-                    status = history_report.get("status", "UNKNOWN")
-                    st.caption(
-                        f"Status: {status} · Source: {history_report.get('source', 'not available')} · "
-                        f"Retrieved: {history_report.get('retrieved_at', '—')} · "
-                        f"Season/date range: {history_report.get('season_used', '—')} / "
-                        f"{history_report.get('date_from') or '—'} to {history_report.get('date_to') or '—'}"
-                    )
-                    if history_report.get("note"):
-                        st.info(history_report["note"])
-                    if history_report.get("rows"):
-                        for metric_label, summary_key in (
-                            ("Historical hit rate", "season_hit_rate"),
-                            ("Last 5 games", "last5_hit_rate"),
-                            ("Home games", "home_hit_rate"),
-                            ("Away games", "away_hit_rate"),
-                        ):
-                            summary = history_report[summary_key]
-                            value = "—" if summary.get("hit_rate") is None else f"{summary['hit_rate']:.1%}"
-                            denominator = summary.get("sample_size", 0)
-                            hits = summary.get("hits")
-                            delta = f"{hits}/{denominator}" if hits is not None else f"n={denominator}"
-                            st.metric(metric_label, value, delta)
-                        history_table = []
-                        for game_row in history_report["rows"]:
-                            cleared = None if history_report.get("threshold") is None else game_row["value"] >= history_report["threshold"]
-                            history_table.append({
-                                "Date": game_row.get("date"),
-                                "Opponent": game_row.get("opponent", "Unknown"),
-                                "Home/Away": game_row.get("home_away", "Unknown"),
-                                "Actual": game_row.get("value"),
-                                "Threshold": history_report.get("threshold"),
-                                "Cleared threshold": "Yes" if cleared is True else "No" if cleared is False else "—",
-                            })
-                        st.dataframe(pd.DataFrame(history_table), use_container_width=True, hide_index=True)
-                    elif status not in {"UNSUPPORTED_MARKET", "UNSUPPORTED_SPORT"}:
-                        st.warning("No usable historical game rows were returned. SportEdge will not infer missing results or substitute future games.")
+                    _render_prop_history_report(history_report)
 
         model_family_key = None
         if sport_filter == "MLB" and family == "Hits":
