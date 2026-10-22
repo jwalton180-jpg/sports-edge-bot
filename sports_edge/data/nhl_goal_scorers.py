@@ -183,6 +183,7 @@ def goal_scorer_report(day_iso: str, *, current_season: str, prior_season: str,
         home, away = game.get("homeTeam") or {}, game.get("awayTeam") or {}
         if not home.get("abbrev") or not away.get("abbrev") or game.get("id") is None:
             continue
+        game_candidates = []
         for team_abbr, opponent in ((home["abbrev"], away["abbrev"]), (away["abbrev"], home["abbrev"])):
             report["teams_seen"] += 1
             try:
@@ -224,7 +225,10 @@ def goal_scorer_report(day_iso: str, *, current_season: str, prior_season: str,
                         "warnings": ["UNVALIDATED: no goalie/line/ice-time adjustment",
                                      "No executable odds/value check performed"]})
             team_candidates.sort(key=lambda r: (r["probability"], r.get("rate", 0)), reverse=True)
-            report["candidates"].extend(team_candidates[:max_per_game])
+            game_candidates.extend(team_candidates)
+        # The limit is per game, not per team: rank both rosters together.
+        game_candidates.sort(key=lambda r: (r["probability"], r.get("rate", 0)), reverse=True)
+        report["candidates"].extend(game_candidates[:max_per_game])
     if report["candidates"]:
         report["diagnostic"] = f"{len(report['candidates'])} research candidates from {report['history_qualified']} history-qualified skaters."
     elif report["schedule_games"] == 0:
