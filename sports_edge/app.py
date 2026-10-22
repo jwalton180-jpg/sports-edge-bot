@@ -3966,11 +3966,13 @@ elif view == "Performance":
                 "outcome": 1 if result_value == "win" else 0 if result_value == "loss" else None,
                 "stake_units": payload.get("stake_units", 1.0),
             })
-        for group_name, group_rows in (
+        performance_groups = [
             ("All tracked research", perf_rows),
             ("SportEdge-generated", [r for r in perf_rows if str(r["source"]).lower() == "sportedge"]),
-            ("External / manual records", [r for r in perf_rows if str(r["source"]).lower() != "sportedge"]),
-        ):
+        ]
+        for source_name in sorted({str(r["source"]) for r in perf_rows if str(r["source"]).lower() != "sportedge"}):
+            performance_groups.append((f"Provider / manual: {source_name}", [r for r in perf_rows if str(r["source"]) == source_name]))
+        for group_name, group_rows in performance_groups:
             st.subheader(group_name)
             report = summarize_performance(group_rows)
             a, b, d, e = st.columns(4)
