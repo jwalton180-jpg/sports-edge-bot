@@ -329,6 +329,20 @@ div[data-testid="stExpander"]{border:1px solid var(--se-line);border-radius:14px
 .st-key-main-nav-shell [data-testid="stSegmentedControl"] button p{font-size:.76rem}
 .st-key-sport-filter-shell{margin:.15rem 0 .65rem}
 }
+
+/* Screenshot-led charcoal mobile remodel */
+:root{--se-bg:#101113;--se-panel:#202226;--se-panel2:#292c31;--se-line:#373a40;--se-text:#f4f5f7;--se-muted:#a5a9b1;--se-green:#e7e9ed;--se-green2:#c7cbd1;--se-gold:#e1e3e7;--se-radius:19px}
+.stApp{background:#101113;color:#f4f5f7}.stApp:before{background:linear-gradient(180deg,rgba(35,45,57,.32),transparent 25%);opacity:.8}
+header[data-testid="stHeader"]{background:rgba(16,17,19,.86);border-bottom:1px solid rgba(255,255,255,.04)}
+.block-container{max-width:1180px;padding-top:.55rem;padding-left:.9rem;padding-right:.9rem}
+.good,.section-eyebrow,.ticket-kicker{color:#f1f2f4}.badge,.edge-pill{border-color:#4b4e55;background:#292c31;color:#e8e9ec}.watch-pill{border-color:#575a60;background:#2d2f34;color:#e5e6e8}
+.nav-hint,.surface,.section-hero,.ticket-shell,.game-card,.market-card,[data-testid="stMetric"]{background:#202226;border:1px solid #383b41;box-shadow:none}
+.section-hero{background:linear-gradient(120deg,#30272b,#202b32 70%,#202226);padding:1.05rem;border-radius:20px}.section-eyebrow{color:#c7cbd1}.section-copy,.ticket-sub,.market-meta{color:#aeb2ba}
+[data-testid="stSegmentedControl"]{background:#191a1d;border-color:#383b41}[data-testid="stTabs"] [data-baseweb="tab-list"]{background:#191a1d;border-color:#383b41}[data-testid="stTabs"] [aria-selected="true"]{background:#34373d;color:#fff}
+[data-testid="stButton"] button{border-color:#4a4d54;border-radius:14px}[data-testid="stButton"] button[kind="primary"]{background:#e9eaec;color:#111214;border-color:#e9eaec;box-shadow:none}
+.ticket-shell{background:#202226}.ticket-kicker{color:#d5d7db}.game-card,.market-card{border-radius:19px;background:#202226}[data-testid="stDataFrame"]{border-color:#383b41;background:#202226}div[data-testid="stExpander"]{border-color:#383b41;background:#1b1c1f}
+.st-key-main-nav-shell{background:rgba(20,21,24,.94);border-color:#3a3d43;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+@media(max-width:700px){.block-container{padding:.35rem .65rem calc(7.6rem + env(safe-area-inset-bottom))}.hero{font-size:1.8rem}.section-hero{padding:.9rem;border-radius:19px}.section-title{font-size:1.32rem}.game-card,.market-card{padding:.9rem;border-radius:19px}.st-key-main-nav-shell{background:rgba(18,19,22,.96);border-color:#3b3e45;box-shadow:0 8px 30px rgba(0,0,0,.5)}}
 </style>
 """,
     unsafe_allow_html=True,
