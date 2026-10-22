@@ -1688,7 +1688,8 @@ more_views = {
     "Data Sources": "Data Sources",
 }
 reverse_nav = {value: key for key, value in nav_map.items()}
-current_nav = reverse_nav.get(st.session_state.view, "Tools" if st.session_state.view in more_views.values() else "Home")
+# Edge Board is shared by Home and Trends; Home is the safe first-load default.
+current_nav = "Home" if st.session_state.view == "Edge Board" else reverse_nav.get(st.session_state.view, "Tools" if st.session_state.view in more_views.values() else "Home")
 nav_labels = list(nav_map) + ["Tools"]
 
 with st.container(key="main-nav-shell"):
