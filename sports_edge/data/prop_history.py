@@ -226,7 +226,7 @@ def prop_history_report(*, sport: str, player_name: str, market: str,
                 continue
             rows.append({"date": day, "opponent": raw.get("_opponent") or "Unknown",
                          "home_away": "Home" if str(raw.get("_is_home")).lower() in {"true", "1"} else "Away" if str(raw.get("_is_home")).lower() in {"false", "0"} else "Unknown",
-                         "value": sum(values), "game_id": raw.get("_game_pk"), "team": person.get("currentTeam", {}).get("name", "Unknown")})
+                         "value": sum(values), "game_id": raw.get("_game_pk"), "team": (person.get("currentTeam") or {}).get("name", "Unknown")})
         return _report(sport=sport, player=person.get("fullName") or player_name, market=market, threshold=threshold,
                        source="Official MLB Stats API", rows=rows, season_used=season_used,
                        note="Observed game logs only. A prior-season fallback is labeled explicitly; it is not a current-season hit rate.")
