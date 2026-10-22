@@ -1953,8 +1953,12 @@ elif view == "Player Props":
                             }
                             if selected_leg.median_odds is not None:
                                 payload["odds_american"] = selected_leg.median_odds
-                            _save_research_prediction(payload, _pick_store())
-                            st.success("Qualified prop saved to My Picks. Original model probability and timestamp are preserved.")
+                            tracking_store = _pick_store()
+                            _save_research_prediction(payload, tracking_store)
+                            if tracking_store is None:
+                                st.warning("Qualified prop saved to this session only. Configure Supabase secrets for durable tracking.")
+                            else:
+                                st.success("Qualified prop saved to durable My Picks storage. Original model probability and timestamp are preserved.")
                             st.rerun()
                         except Exception as exc:
                             st.warning(f"Prop was not saved: {_safe_error(exc)}")
@@ -2846,8 +2850,12 @@ elif view == "Parlay Generator":
                         "illustrative_payout_multiplier": result.market_payout_multiplier,
                         "notes": "Joint probability unavailable for value purposes unless validated dependence evidence exists." if dependence_unknown else "Research estimate only; verify actual sportsbook parlay price separately.",
                     }
-                    _save_research_prediction(payload, _pick_store())
-                    st.success("Parlay candidate saved before the earliest event start. This is a research record, not a placed wager or sportsbook quote.")
+                    tracking_store = _pick_store()
+                    _save_research_prediction(payload, tracking_store)
+                    if tracking_store is None:
+                        st.warning("Parlay candidate saved to this session only. Configure Supabase secrets for durable tracking.")
+                    else:
+                        st.success("Parlay candidate saved before the earliest event start. This is a research record, not a placed wager or sportsbook quote.")
                     st.rerun()
                 except Exception as exc:
                     st.warning(f"Parlay was not saved: {_safe_error(exc)}")
