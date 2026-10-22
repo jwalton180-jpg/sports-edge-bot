@@ -65,6 +65,7 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
             stake = float(row.get("stake_units", 1.0))
             if not isfinite(stake) or stake <= 0:
                 raise ValueError("stake_units must be positive and finite")
+            resolved_stakes.append(stake)
             if row.get("decimal_odds") is not None:
                 dec = float(row["decimal_odds"])
             elif row.get("odds_american") is not None:
@@ -76,7 +77,6 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
                 profit += net_units(result, dec, stake)
                 risked += stake
                 resolved_odds.append(dec)
-                resolved_stakes.append(stake)
             probability = row.get("probability")
             outcome = row.get("outcome", 1 if result == "win" else 0)
             if probability is not None:
