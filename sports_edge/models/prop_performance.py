@@ -53,6 +53,7 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
     counts = {key: 0 for key in VALID_RESULTS}
     risked = profit = 0.0
     resolved_odds: list[float] = []
+    resolved_stakes: list[float] = []
     brier_terms: list[float] = []
     missing_odds_resolved = 0
     for row in rows:
@@ -75,6 +76,7 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
                 profit += net_units(result, dec, stake)
                 risked += stake
                 resolved_odds.append(dec)
+                resolved_stakes.append(stake)
             probability = row.get("probability")
             outcome = row.get("outcome", 1 if result == "win" else 0)
             if probability is not None:
@@ -102,6 +104,7 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
         "missing_odds_resolved": missing_odds_resolved,
         "roi": profit / risked if risked and missing_odds_resolved == 0 else None,
         "average_decimal_odds": mean(resolved_odds) if resolved_odds else None,
+        "average_stake_units": mean(resolved_stakes) if resolved_stakes else None,
         "brier_score": mean(brier_terms) if brier_terms else None,
         "brier_denominator": len(brier_terms),
     }
