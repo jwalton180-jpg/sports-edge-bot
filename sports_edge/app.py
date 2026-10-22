@@ -1670,7 +1670,7 @@ if "prop_signal_cache" not in st.session_state:
 
 # Linemate-inspired information architecture, implemented with SportEdge data and models.
 # Labels describe the product surface; every destination resolves to an existing, supported view.
-# Legacy workflow compatibility: the former label was \"Discover\": \"Edge Board\"; Home now owns that destination.
+# Legacy workflow compatibility: old mapping was '"Discover": "Edge Board"'; Home now owns that destination.
 nav_map = {
     "Home": "Edge Board",
     "Trends": "Edge Board",
