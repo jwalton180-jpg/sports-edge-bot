@@ -30,3 +30,5 @@ def test_main_ui_exposes_every_sport_and_nfl_tail_focus():
     assert 'Joint success probability", "Unavailable"' in source
     assert 'Actual combined price", "Unavailable"' in source
     assert 'expected value and a model/market value ratio are withheld' in source
+    assert 'Joint success probability: Unavailable until a validated dependence model exists' in source
+    assert 'SPORTSEDGE_TRACKER_ACCESS_KEY' in source
