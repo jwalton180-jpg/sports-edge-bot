@@ -57,6 +57,16 @@ class PropPerformanceTests(unittest.TestCase):
         self.assertEqual(result[2]["hit_rate_denominator"], 2)
         self.assertEqual(result[4]["pending"], 1)
 
+    def test_roi_is_unavailable_when_any_settled_pick_lacks_original_odds(self):
+        report = summarize_performance([
+            {"result": "win", "decimal_odds": 2.0, "probability": .6},
+            {"result": "loss", "probability": .6},
+        ])
+        self.assertIsNone(report["roi"])
+        self.assertIsNone(report["net_units"])
+        self.assertEqual(report["missing_odds_resolved"], 1)
+        self.assertEqual(report["priced_net_units"], 1.0)
+
     def test_invalid_probabilities_fail_closed(self):
         with self.assertRaises(ValueError):
             summarize_performance([{"result": "win", "decimal_odds": 2, "probability": 1.1}])
