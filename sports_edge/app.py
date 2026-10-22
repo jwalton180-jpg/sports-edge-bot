@@ -1846,6 +1846,10 @@ elif view == "Player Props":
 
     if not prop_rows:
         _premium_empty("No current player props", "No eligible current Kalshi player-prop contracts are available for this sport. Unsupported markets remain hidden from model recommendations.")
+        with st.container(border=True):
+            st.subheader("Player history · recent games and descriptive hit rates")
+            st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. Hit rates require a real player-prop contract with an identifiable player and event date. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
+            st.info("History is waiting for an eligible current player-prop contract. No synthetic player, line, or historical result is shown.")
     else:
         family_options = ["All"] + sorted({row.family for row in prop_rows})
         family = st.selectbox("Prop type", family_options, key=f"kalshi_props_{sport_filter}")
