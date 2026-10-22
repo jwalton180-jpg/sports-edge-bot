@@ -1613,6 +1613,46 @@ if view == "Scorer Lab" or (sport_filter == "NHL" and view == "Player Props"):
                 for r in _nhl_rows]), use_container_width=True, hide_index=True)
             if _nhl_report_fn:
                 st.caption(_nhl_empty_message)
+            savable_nhl = [
+                (index, row) for index, row in enumerate(_nhl_rows)
+                if _safe_event_start(row.get("event_start")) is not None
+                and _safe_event_start(row.get("event_start")) > datetime.now(timezone.utc)
+            ]
+            if savable_nhl:
+                selected_nhl_index = st.selectbox(
+                    "NHL scorer candidate to track",
+                    [index for index, _ in savable_nhl],
+                    format_func=lambda index: next(f"{row['name']} · {row['team']} vs {row['opponent']}" for i, row in savable_nhl if i == index),
+                    key="track_nhl_scorer_select_v1",
+                )
+                if st.button("Save NHL scorer research candidate to My Picks", key="track_nhl_scorer_button_v1", use_container_width=True):
+                    row = _nhl_rows[selected_nhl_index]
+                    try:
+                        payload = {
+                            "sport": "NHL",
+                            "event": row.get("event_title") or f"{row['team']} vs {row['opponent']}",
+                            "market": "Anytime goal scorer",
+                            "selection": row["name"],
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                            "event_start": row["event_start"],
+                            "source": "SportEdge",
+                            "record_type": "nhl_goal_scorer",
+                            "record_origin": "generated",
+                            "probability": row["probability"],
+                            "model_version": row.get("model", "official_game_log_poisson_v1"),
+                            "sample_size": row.get("games"),
+                            "event_id": row.get("game_id"),
+                            "notes": "; ".join(row.get("warnings", ())) + "; unvalidated baseline; no executable odds/value check",
+                        }
+                        tracking_store = _pick_store()
+                        _save_research_prediction(payload, tracking_store)
+                        if tracking_store is None:
+                            st.warning("NHL scorer candidate saved to this session only. Configure the private tracker and Supabase secrets for durable tracking.")
+                        else:
+                            st.success("NHL scorer research candidate saved before puck drop. No wager was placed.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.warning(f"NHL scorer was not saved: {_safe_error(exc)}")
         else:
             st.warning(_nhl_empty_message)
             st.caption("No candidates are fabricated. Use the diagnostic counts to distinguish missing schedule, roster, API, and history coverage.")
