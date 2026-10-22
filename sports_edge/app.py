@@ -7,6 +7,7 @@ import inspect
 import json
 import os
 import requests
+import uuid
 from statistics import median
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -30,6 +31,8 @@ from sports_edge.data.mlb_prop_data import schedule_for_day
 from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.data.source_registry import get_source_status
+from sports_edge.data.pick_store import SupabasePickStore, validate_prediction, parse_timestamp
+from sports_edge.models.prop_performance import summarize_performance, summarize_parlays
 from sports_edge.core.hot_reload import import_module_fresh
 
 # Streamlit Community Cloud can hot-reload this entrypoint while dependency
@@ -336,6 +339,51 @@ def _secret(name: str) -> str | None:
         pass
     value = (os.getenv(name) or "").strip()
     return value if value and "YOUR_" not in value else None
+
+
+def _pick_store():
+    url = _secret("SUPABASE_URL")
+    key = _secret("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        return None
+    try:
+        return SupabasePickStore(url, key)
+    except Exception:
+        return None
+
+
+def _session_pick_records():
+    return st.session_state.setdefault("sportedge_session_pick_records", [])
+
+
+def _safe_event_start(value):
+    try:
+        return parse_timestamp(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_payload(record):
+    payload = record.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _pick_records(store):
+    if store is not None:
+        return store.list_records()
+    return list(_session_pick_records())
+
+
+def _settlement_by_prediction(records):
+    settled = {}
+    for record in records:
+        if record.get("record_type") != "settlement":
+            continue
+        payload = _record_payload(record)
+        prediction_id = payload.get("prediction_id")
+        if prediction_id:
+            settled[prediction_id] = payload
+    return settled
 
 
 def _safe_error(exc: Exception) -> str:
@@ -1426,9 +1474,15 @@ nav_map = {
     "Parlays": "Parlay Generator",
     "Live": "Live Feed",
 }
+more_views = {
+    "Scorer Lab": "Scorer Lab",
+    "My Picks": "My Picks",
+    "Performance": "Performance",
+    "Data Sources": "Data Sources",
+}
 reverse_nav = {value: key for key, value in nav_map.items()}
-current_nav = reverse_nav.get(st.session_state.view, "For You")
-nav_labels = list(nav_map)
+current_nav = reverse_nav.get(st.session_state.view, "More" if st.session_state.view in more_views.values() else "For You")
+nav_labels = list(nav_map) + ["More"]
 
 st.markdown('<div class="section-eyebrow">EXPLORE</div>', unsafe_allow_html=True)
 selected_nav = st.segmented_control(
@@ -1438,7 +1492,18 @@ selected_nav = st.segmented_control(
     key="main_nav_v2",
     label_visibility="collapsed",
 )
-view = nav_map.get(selected_nav or current_nav, "Edge Board")
+if selected_nav == "More":
+    more_default = st.session_state.view if st.session_state.view in more_views.values() else "My Picks"
+    selected_more = st.segmented_control(
+        "More tools",
+        list(more_views),
+        default=more_default,
+        key="more_nav_v1",
+        label_visibility="collapsed",
+    )
+    view = more_views.get(selected_more or more_default, "My Picks")
+else:
+    view = nav_map.get(selected_nav or current_nav, "Edge Board")
 st.session_state.view = view
 
 sport_filter = st.segmented_control(
@@ -1451,7 +1516,7 @@ sport_filter = st.segmented_control(
 
 # NHL goal-scorer pipeline: refresh this dependency explicitly because Streamlit
 # Community Cloud can reload app.py before the updated module file is in sys.modules.
-if sport_filter == "NHL":
+if view == "Scorer Lab" or (sport_filter == "NHL" and view == "Player Props"):
     st.markdown("### 🏒 NHL Goal Scorer Lab")
     st.caption("Official NHL schedule, roster and game logs. Research probabilities are unvalidated and do not imply betting value.")
     try:
@@ -3619,6 +3684,221 @@ elif view == "Live Feed":
             st.divider()
     else:
         st.info(merr or "No MLB live events right now.")
+
+elif view == "Scorer Lab":
+    _section_hero("NHL SCORER LAB", "Anytime-goal research", "Official NHL schedule, roster and player-history coverage. The panel above reports only eligible research estimates; no scorer is invented to fill a quota.")
+    st.caption("For a model estimate to count as a valuable bet, SportEdge still needs a current, verified anytime-goal price and relevant lineup/role context. Unvalidated baselines are not value claims.")
+
+elif view == "My Picks":
+    _section_hero("RESEARCH TRACKER", "My Picks", "Save a timestamped research candidate before the event starts, then keep the original price and attribution when results are recorded.")
+    store = _pick_store()
+    store_error = None
+    try:
+        records = _pick_records(store)
+    except Exception as exc:
+        store_error = type(exc).__name__
+        records = list(_session_pick_records())
+        store = None
+    if store is None:
+        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets for durable storage. See docs/pick_storage.md.")
+    if store_error:
+        st.error(f"Configured storage could not be read ({store_error}). New entries in this view are session-only until storage is healthy.")
+
+    with st.form("research_pick_capture_v1", clear_on_submit=True):
+        st.subheader("Save a research candidate")
+        record_kind = st.selectbox("Candidate type", ["Individual prop", "Parlay candidate", "NHL goal scorer", "NFL touchdown scorer", "Live / reversal research"])
+        sport_value = st.selectbox("Sport", ["NFL", "NCAAF", "NBA", "NHL", "MLB", "Tennis", "WNBA", "Soccer", "Other"])
+        event_value = st.text_input("Game / event")
+        market_value = st.text_input("Market", placeholder="Player points, anytime TD, anytime goal…")
+        selection_value = st.text_input("Selection", placeholder="Player X over 24.5 points")
+        event_start_value = st.text_input("Event start (ISO-8601 with timezone)", placeholder="2026-10-22T23:00:00Z")
+        source_value = st.selectbox("Source / provider attribution", ["SportEdge", "Manual research", "PropsBot.AI", "Betstamp", "Juice Reel", "Outlier", "The Odds API", "Other provider"])
+        probability_known = st.checkbox("Model probability is available", value=True)
+        probability_value = st.number_input("Model probability (%)", min_value=0.0, max_value=100.0, value=55.0, step=0.5, disabled=not probability_known)
+        odds_value = st.text_input("Original American odds (optional)", placeholder="-110 or +135")
+        leg_count_value = st.number_input("Parlay leg count (for parlay candidates)", min_value=1, max_value=12, value=2, step=1, disabled=record_kind != "Parlay candidate")
+        model_version_value = st.text_input("Model / version (optional)")
+        notes_value = st.text_input("Notes / evidence caveat (optional)")
+        save_submitted = st.form_submit_button("Save research candidate", use_container_width=True)
+
+    if save_submitted:
+        observed_at = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "sport": sport_value,
+            "event": event_value.strip(),
+            "market": market_value.strip(),
+            "selection": selection_value.strip(),
+            "observed_at": observed_at,
+            "event_start": event_start_value.strip(),
+            "source": source_value,
+            "record_type": {
+                "Individual prop": "prop",
+                "Parlay candidate": "parlay",
+                "NHL goal scorer": "nhl_goal_scorer",
+                "NFL touchdown scorer": "nfl_td_scorer",
+                "Live / reversal research": "live_reversal",
+            }[record_kind],
+            "model_version": model_version_value.strip() or None,
+            "notes": notes_value.strip() or None,
+            "price_type": "american_odds" if odds_value.strip() else "unpriced",
+        }
+        if probability_known:
+            payload["probability"] = float(probability_value) / 100.0
+        if odds_value.strip():
+            try:
+                payload["odds_american"] = int(odds_value.strip().replace(" ", ""))
+                if payload["odds_american"] == 0:
+                    raise ValueError("American odds cannot be zero")
+            except ValueError:
+                st.error("Original odds must be a non-zero American price such as -110 or +135.")
+                payload = None
+        if payload is not None:
+            try:
+                payload = validate_prediction(payload)
+                if payload["record_type"] == "parlay":
+                    payload["leg_count"] = int(leg_count_value)
+                if store is not None:
+                    store.append_prediction(payload)
+                else:
+                    prediction_id = str(uuid.uuid4())
+                    payload["prediction_id"] = prediction_id
+                    payload["saved_at"] = datetime.now(timezone.utc).isoformat()
+                    _session_pick_records().append({
+                        "id": prediction_id,
+                        "record_type": "prediction",
+                        "payload": payload,
+                        "created_at": payload["saved_at"],
+                    })
+                st.success("Research candidate saved with its original timestamp. This does not mean a wager was placed.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Candidate was not saved: {_safe_error(exc)}")
+
+    try:
+        records = _pick_records(store) if store is not None else list(_session_pick_records())
+    except Exception as exc:
+        st.error(f"Could not refresh saved picks ({type(exc).__name__}).")
+        records = list(_session_pick_records())
+        store = None
+    predictions = [r for r in records if r.get("record_type") == "prediction"]
+    settlements = _settlement_by_prediction(records)
+    if predictions:
+        display_rows = []
+        for record in predictions:
+            payload = _record_payload(record)
+            settlement = settlements.get(record.get("id"), {})
+            display_rows.append({
+                "Saved": payload.get("saved_at") or record.get("created_at"),
+                "Sport": payload.get("sport"),
+                "Event": payload.get("event"),
+                "Type": payload.get("record_type"),
+                "Market": payload.get("market"),
+                "Selection": payload.get("selection"),
+                "Model probability": payload.get("probability"),
+                "Original American odds": payload.get("odds_american"),
+                "Source": payload.get("source"),
+                "Status": settlement.get("result", "pending").upper(),
+                "Model": payload.get("model_version"),
+            })
+        st.subheader("Saved candidates")
+        st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
+        st.download_button("Export My Picks CSV", pd.DataFrame(display_rows).to_csv(index=False).encode("utf-8"), "sportedge_my_picks.csv", "text/csv", use_container_width=True)
+
+    settled_predictions = [
+        r for r in predictions
+        if r.get("id") not in settlements
+        and (lambda p: _safe_event_start(p.get("event_start")) is not None and _safe_event_start(p.get("event_start")) <= datetime.now(timezone.utc))(_record_payload(r))
+    ]
+    if settled_predictions:
+        st.subheader("Record a result")
+        st.caption("Manual settlement is not independently verified. Use an official final-results URL and keep the original prediction unchanged.")
+        with st.form("research_pick_settlement_v1"):
+            chosen_id = st.selectbox("Prediction", [r.get("id") for r in settled_predictions], format_func=lambda pid: next((f"{_record_payload(r).get('sport')} · {_record_payload(r).get('selection')} · {pid[:8]}" for r in settled_predictions if r.get("id") == pid), pid))
+            result_value = st.selectbox("Result", ["win", "loss", "push", "void", "cancelled"])
+            settlement_url = st.text_input("Official result source URL (HTTPS required)")
+            settle_submitted = st.form_submit_button("Append settlement record", use_container_width=True)
+        if settle_submitted:
+            try:
+                if not settlement_url.strip().startswith("https://"):
+                    raise ValueError("Use an HTTPS source URL for the result.")
+                settled_at = datetime.now(timezone.utc).isoformat()
+                if store is not None:
+                    store.append_settlement(prediction_id=chosen_id, result=result_value, settled_at=settled_at, source_url=settlement_url.strip(), verification="manual")
+                else:
+                    original = next(r for r in settled_predictions if r.get("id") == chosen_id)
+                    if settled_at < parse_timestamp(_record_payload(original)["event_start"]).isoformat():
+                        raise ValueError("Settlement cannot predate event start.")
+                    _session_pick_records().append({
+                        "id": str(uuid.uuid4()),
+                        "record_type": "settlement",
+                        "payload": {"prediction_id": chosen_id, "result": result_value, "settled_at": settled_at, "source_url": settlement_url.strip(), "verification": "manual"},
+                        "created_at": settled_at,
+                    })
+                st.success("Settlement appended. The prediction record was not changed.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Settlement not recorded: {_safe_error(exc)}")
+    else:
+        st.caption("No unsettled past-event picks are available to grade yet. Pending future candidates remain untouched.")
+
+elif view == "Performance":
+    _section_hero("TRACK RECORD", "Performance", "A transparent record of tracked research candidates. Empty history is shown as empty; provider records and SportEdge records remain attributable.")
+    store = _pick_store()
+    try:
+        records = _pick_records(store) if store is not None else list(_session_pick_records())
+    except Exception as exc:
+        st.error(f"Persistent tracking is unavailable ({type(exc).__name__}); session-only records may be incomplete.")
+        records = list(_session_pick_records())
+    predictions = [r for r in records if r.get("record_type") == "prediction"]
+    settlements = _settlement_by_prediction(records)
+    if not predictions:
+        st.info("No tracked predictions yet. Save candidates in My Picks before the event starts. No hit rate or ROI is available.")
+    else:
+        perf_rows = []
+        for record in predictions:
+            payload = _record_payload(record)
+            settlement = settlements.get(record.get("id"), {})
+            result_value = str(settlement.get("result") or "pending").lower()
+            if result_value == "cancelled":
+                result_value = "void"
+            perf_rows.append({
+                "record_type": payload.get("record_type", "prop"),
+                "source": payload.get("source", "unknown"),
+                "sport": payload.get("sport", "unknown"),
+                "market": payload.get("market", "unknown"),
+                "leg_count": payload.get("leg_count"),
+                "result": result_value,
+                "odds_american": payload.get("odds_american"),
+                "probability": payload.get("probability"),
+                "outcome": 1 if result_value == "win" else 0 if result_value == "loss" else None,
+                "stake_units": payload.get("stake_units", 1.0),
+            })
+        for group_name, group_rows in (
+            ("All tracked research", perf_rows),
+            ("SportEdge-generated", [r for r in perf_rows if str(r["source"]).lower() == "sportedge"]),
+            ("External / manual records", [r for r in perf_rows if str(r["source"]).lower() != "sportedge"]),
+        ):
+            st.subheader(group_name)
+            report = summarize_performance(group_rows)
+            a, b, d, e = st.columns(4)
+            a.metric("Win rate", "—" if report["hit_rate"] is None else f'{report["hit_rate"]:.1%}', f'{report["wins"]}W / {report["losses"]}L · n={report["hit_rate_denominator"]}')
+            b.metric("ROI", "—" if report["roi"] is None else f'{report["roi"]:+.1%}', "Requires complete original odds")
+            d.metric("Net units", "—" if report["net_units"] is None else f'{report["net_units"]:+.2f}', f'{report["risked_units"]:.2f} units priced')
+            e.metric("Brier score", "—" if report["brier_score"] is None else f'{report["brier_score"]:.3f}', f'n={report["brier_denominator"]}')
+            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Settled results with missing odds {report["missing_odds_resolved"]}. ROI remains unavailable if any resolved win/loss is missing its original price.')
+        parlay_rows = [r for r in perf_rows if r["record_type"] == "parlay" and type(r.get("leg_count")) is int]
+        if parlay_rows:
+            st.subheader("Whole-parlay results by leg count")
+            parlay_report = summarize_parlays(parlay_rows)
+            st.dataframe(pd.DataFrame([{"Legs": legs, "Wins": row["wins"], "Losses": row["losses"], "Pushes": row["pushes"], "Voids": row["voids"], "Pending": row["pending"], "Hit rate": row["hit_rate"], "ROI": row["roi"], "Net units": row["net_units"], "n": row["total_records"]} for legs, row in parlay_report.items()]), use_container_width=True, hide_index=True)
+        st.caption("Only candidates captured before event start are eligible. Manually entered settlements are marked manual and are not represented as independently verified. Whole parlays are graded separately from individual legs.")
+
+elif view == "Data Sources":
+    _section_hero("INTEGRATIONS", "Data sources", "Connected, configured, partial and research-only sources are kept distinct. A website or API document does not mean credentials are available.")
+    source_rows = get_source_status()
+    st.dataframe(pd.DataFrame([{"Source": row["name"], "Role": row["role"], "Access": row["access"], "Status": row["status"].replace("_", " ").title(), "Notes": row["detail"]} for row in source_rows]), use_container_width=True, hide_index=True)
+    st.markdown("Official provider documentation: [Betstamp API](https://www.betstamp.com/docs) · [Juice Reel API](https://www.juicereel.com/api-docs)")
+    st.caption("PropsBot.AI and Outlier remain research-only until authorized API/export access is verified. Betstamp requires an authorized provisioned key. Juice Reel requires user consent and a secure server-side OAuth implementation. No provider is marked connected without actual configuration.")
 
 with st.expander("Data source coverage / integrations", expanded=False):
     source_rows = get_source_status()
