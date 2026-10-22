@@ -328,7 +328,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-10-22-prop-picks-performance-v1")
+st.caption("Build: 2026-10-22-prop-picks-performance-v1 · base e04f6e9")
 
 
 def _secret(name: str) -> str | None:
@@ -4095,7 +4095,7 @@ elif view == "My Picks":
         records = list(_session_pick_records())
         store = None
     if store is None:
-        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets for durable storage. See docs/pick_storage.md.")
+        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Durable private tracking requires SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SPORTSEDGE_TRACKER_ACCESS_KEY in Streamlit secrets. See docs/pick_storage.md.")
     if store_error:
         st.error(f"Configured storage could not be read ({store_error}). New entries in this view are session-only until storage is healthy.")
 
