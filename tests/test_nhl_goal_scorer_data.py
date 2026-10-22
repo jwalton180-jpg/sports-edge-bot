@@ -117,6 +117,30 @@ def test_goal_scorer_candidates_emits_rows_when_official_schema_data_is_present(
     assert all(row["status"] == "UNVALIDATED_RESEARCH" for row in rows)
 
 
+def test_goal_scorer_candidates_preserve_verified_event_start(monkeypatch):
+    start = "2026-10-22T23:00:00Z"
+    monkeypatch.setattr(nhl, "schedule_for_day", lambda day: ({
+        "id": 2026020152,
+        "startTimeUTC": start,
+        "homeTeam": {"abbrev": "BUF"},
+        "awayTeam": {"abbrev": "PHI"},
+    },))
+    monkeypatch.setattr(nhl, "roster_for_team", lambda team, season: (
+        {"player_id": 8484145, "name": f"Player {team}", "team": team, "position": "L"},
+    ))
+    logs = tuple(
+        {"source": "NHL", "goals": 1 if i < 5 else 0, "date": f"2026-10-{i + 1:02d}", "game_id": str(i)}
+        for i in range(20)
+    )
+    monkeypatch.setattr(nhl, "player_game_log", lambda player_id, season: logs)
+    rows = nhl.goal_scorer_candidates(
+        "2026-10-21", current_season="20262027", prior_season="20252026"
+    )
+    assert len(rows) == 2
+    assert all(row["event_start"] == start for row in rows)
+    assert all(row["event_title"] == "PHI at BUF" for row in rows)
+
+
 def test_report_uses_older_season_when_current_season_is_empty(monkeypatch):
     monkeypatch.setattr(nhl, "schedule_for_day", lambda day: ({
         "id": 2026020152, "homeTeam": {"abbrev": "BUF"}, "awayTeam": {"abbrev": "PHI"},
