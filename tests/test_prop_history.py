@@ -77,3 +77,15 @@ def test_unsupported_sport_fails_closed():
     )
     assert report["status"] == "UNSUPPORTED_SPORT"
     assert report["rows"] == []
+
+def test_linemate_inspired_primary_navigation_is_mobile_first():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    assert '"Discover": "Edge Board"' in source
+    assert '"Props": "Player Props"' in source
+    assert '"Parlays": "Parlay Generator"' in source
+    assert '"My Picks": "My Picks"' in source
+    assert 'key="main-nav-shell"' in source
+    assert "position:fixed" in source
+    assert '"Games": "Games"' in source
+    assert '"Performance": "Performance"' in source
