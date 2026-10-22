@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 import importlib
 import inspect
+import io
 import json
 import os
 import requests
@@ -388,6 +389,7 @@ def _settlement_by_prediction(records):
 
 def _save_research_prediction(payload, store):
     row = validate_prediction(payload)
+    row.setdefault("record_origin", "manual")
     if store is not None:
         return store.append_prediction(row)
     prediction_id = str(uuid.uuid4())
@@ -1941,6 +1943,7 @@ elif view == "Player Props":
                                 "event_start": selected_leg.verified_start,
                                 "source": "SportEdge",
                                 "record_type": "prop",
+                                "record_origin": "generated",
                                 "probability": selected_assessment.fair_probability,
                                 "model_version": selected_leg.model_name or "unknown",
                                 "model_confidence": selected_leg.model_confidence,
@@ -2843,6 +2846,7 @@ elif view == "Parlay Generator":
                         "event_start": min(verified_starts).isoformat(),
                         "source": "SportEdge",
                         "record_type": "parlay",
+                        "record_origin": "generated",
                         "leg_count": len(result.legs),
                         "probability": None if dependence_unknown else result.fair_joint_probability,
                         "model_version": "intelligent-parlay",
@@ -3805,7 +3809,7 @@ elif view == "My Picks":
             st.warning("CSV import is limited to 2 MB per upload.")
         else:
             try:
-                import_frame = pd.read_csv(uploaded_picks)
+                import_frame = pd.read_csv(io.BytesIO(uploaded_picks.getvalue()))
                 required_columns = {"sport", "event", "market", "selection", "observed_at", "event_start", "source", "record_type"}
                 missing_columns = sorted(required_columns - set(import_frame.columns))
                 if missing_columns:
@@ -3832,6 +3836,13 @@ elif view == "My Picks":
                                         raise ValueError("American odds cannot be zero")
                                 if payload.get("record_type") == "parlay" and "leg_count" in payload:
                                     payload["leg_count"] = int(float(payload["leg_count"]))
+                                now_utc = datetime.now(timezone.utc)
+                                if parse_timestamp(payload["observed_at"]) > now_utc:
+                                    raise ValueError("observed_at cannot be in the future")
+                                if parse_timestamp(payload["event_start"]) <= now_utc:
+                                    raise ValueError("past-event imports are rejected to prevent backfilling")
+                                payload["record_origin"] = "imported"
+                                payload["provenance_status"] = "imported_unverified"
                                 _save_research_prediction(payload, store)
                                 imported += 1
                             except Exception as exc:
@@ -3934,6 +3945,8 @@ elif view == "My Picks":
                 "Model probability": payload.get("probability"),
                 "Original American odds": payload.get("odds_american"),
                 "Source": payload.get("source"),
+                "Origin": payload.get("record_origin", "manual"),
+                "Provenance": payload.get("provenance_status", "internal_record"),
                 "Status": settlement.get("result", "pending").upper(),
                 "Model": payload.get("model_version"),
             })
@@ -4001,6 +4014,7 @@ elif view == "Performance":
             perf_rows.append({
                 "record_type": payload.get("record_type", "prop"),
                 "source": payload.get("source", "unknown"),
+                "record_origin": payload.get("record_origin", "manual"),
                 "sport": payload.get("sport", "unknown"),
                 "market": payload.get("market", "unknown"),
                 "leg_count": payload.get("leg_count"),
@@ -4012,10 +4026,18 @@ elif view == "Performance":
             })
         performance_groups = [
             ("All tracked research", perf_rows),
-            ("SportEdge-generated", [r for r in perf_rows if str(r["source"]).lower() == "sportedge"]),
+            ("SportEdge-generated", [r for r in perf_rows if str(r["source"]).lower() == "sportedge" and r["record_origin"] == "generated"]),
         ]
-        for source_name in sorted({str(r["source"]) for r in perf_rows if str(r["source"]).lower() != "sportedge"}):
-            performance_groups.append((f"Provider / manual: {source_name}", [r for r in perf_rows if str(r["source"]) == source_name]))
+        attribution_pairs = sorted({
+            (str(r["source"]), str(r["record_origin"]))
+            for r in perf_rows
+            if not (str(r["source"]).lower() == "sportedge" and r["record_origin"] == "generated")
+        })
+        for source_name, origin_name in attribution_pairs:
+            performance_groups.append((
+                f"{origin_name.title()} · {source_name}",
+                [r for r in perf_rows if str(r["source"]) == source_name and str(r["record_origin"]) == origin_name],
+            ))
         for group_name, group_rows in performance_groups:
             st.subheader(group_name)
             report = summarize_performance(group_rows)
