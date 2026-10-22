@@ -39,7 +39,7 @@ def market_player_and_threshold(market: dict) -> tuple[str | None, float | None]
     if floor is not None:
         threshold = float(int(floor + 0.5))
     else:
-        match = re.search(r":\s*[^:]+?\s+(\d+(?:\.\d+)?)\s*\+", title)
+        match = re.search(r":\s*(?:Over\s+)?(\d+(?:\.\d+)?)\s*\+", title, re.I)
         threshold = float(match.group(1)) if match else None
     return player, threshold
 
