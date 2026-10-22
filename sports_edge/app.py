@@ -393,6 +393,51 @@ def _safe_event_start(value):
         return None
 
 
+def _render_prop_history_report(report):
+    status = report.get("status", "UNKNOWN")
+    threshold = report.get("threshold")
+    threshold_label = "not set" if threshold is None else str(threshold)
+    st.markdown(f"**{report.get('player', 'Player')} · {report.get('market', 'Market')}** · threshold {threshold_label}")
+    st.caption(
+        f"Status: {status} · Source: {report.get('source', 'not available')} · "
+        f"Retrieved: {report.get('retrieved_at', '—')} · "
+        f"Season/date range: {report.get('season_used', '—')} / "
+        f"{report.get('date_from') or '—'} to {report.get('date_to') or '—'}"
+    )
+    if report.get("note"):
+        st.info(report["note"])
+    if report.get("rows"):
+        metric_specs = (
+            ("Historical hit rate", "season_hit_rate"),
+            ("Last 5 games", "last5_hit_rate"),
+            ("Home games", "home_hit_rate"),
+            ("Away games", "away_hit_rate"),
+        )
+        metric_columns = st.columns(4)
+        for column, (metric_label, summary_key) in zip(metric_columns, metric_specs):
+            summary = report[summary_key]
+            value = "—" if summary.get("hit_rate") is None else f"{summary['hit_rate']:.1%}"
+            denominator = summary.get("sample_size", 0)
+            hits = summary.get("hits")
+            delta = f"{hits}/{denominator}" if hits is not None else f"n={denominator}"
+            column.metric(metric_label, value, delta)
+        history_table = []
+        for game_row in report["rows"]:
+            threshold = report.get("threshold")
+            cleared = None if threshold is None else game_row["value"] >= threshold
+            history_table.append({
+                "Date": game_row.get("date"),
+                "Opponent": game_row.get("opponent", "Unknown"),
+                "Home/Away": game_row.get("home_away", "Unknown"),
+                "Actual": game_row.get("value"),
+                "Threshold": threshold,
+                "Cleared threshold": "Yes" if cleared is True else "No" if cleared is False else "—",
+            })
+        st.dataframe(pd.DataFrame(history_table), use_container_width=True, hide_index=True)
+    elif status not in {"UNSUPPORTED_MARKET", "UNSUPPORTED_SPORT"}:
+        st.warning("No usable historical game rows were returned. SportEdge will not infer missing results or substitute future games.")
+
+
 def _record_payload(record):
     payload = record.get("payload")
     return payload if isinstance(payload, dict) else {}
@@ -1848,8 +1893,62 @@ elif view == "Player Props":
         _premium_empty("No current player props", "No eligible current Kalshi player-prop contracts are available for this sport. Unsupported markets remain hidden from model recommendations.")
         with st.container(border=True):
             st.subheader("Player history · recent games and descriptive hit rates")
-            st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. Hit rates require a real player-prop contract with an identifiable player and event date. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
-            st.info("History is waiting for an eligible current player-prop contract. No synthetic player, line, or historical result is shown.")
+            st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. When no actual contract exists, use manual history research below; it creates no betting candidate or price/value claim. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
+            st.info("No current Kalshi player-prop contract is available for this sport. You can still inspect historical results for a named player using free data sources.")
+            manual_sports = ["NBA", "WNBA", "NFL", "MLB"]
+            default_manual_sport = sport_filter if sport_filter in manual_sports else "NBA"
+            manual_history_sport = st.selectbox(
+                "Manual research sport",
+                manual_sports,
+                index=manual_sports.index(default_manual_sport),
+                key="manual_prop_history_sport_v1",
+            )
+            manual_market_options = {
+                "NBA": ["Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"],
+                "WNBA": ["Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"],
+                "NFL": ["Passing Yards", "Passing TDs", "Pass Attempts", "Pass Completions", "Pass Interceptions", "Rushing Yards", "Rush Attempts", "Rushing + Receiving Yards", "Receiving Yards", "Receptions", "Player Touchdowns"],
+                "MLB": ["Hits", "Home Runs", "Total Bases", "RBIs", "Runs", "Hits + Runs + RBIs", "Pitcher Strikeouts"],
+            }
+            with st.form(f"manual_prop_history_form_{manual_history_sport}", clear_on_submit=False):
+                manual_player = st.text_input("Player name", placeholder="Enter an exact player name")
+                manual_market = st.selectbox(
+                    "Stat / market",
+                    manual_market_options[manual_history_sport],
+                    key=f"manual_prop_history_market_{manual_history_sport}",
+                )
+                manual_event_date = st.date_input(
+                    "Target event date",
+                    value=datetime.now(ZoneInfo("Pacific/Honolulu")).date(),
+                    key=f"manual_prop_history_date_{manual_history_sport}",
+                )
+                manual_threshold_text = st.text_input("Line / threshold (optional)", placeholder="e.g. 24.5 or 1")
+                manual_submit = st.form_submit_button("Research historical stats", use_container_width=True)
+            if manual_submit:
+                try:
+                    manual_threshold = float(manual_threshold_text.strip()) if manual_threshold_text.strip() else None
+                except ValueError:
+                    manual_threshold = "invalid"
+                    st.warning("Line / threshold must be a number or left blank.")
+                if manual_threshold != "invalid":
+                    try:
+                        manual_report = prop_history_report(
+                            sport=manual_history_sport,
+                            player_name=manual_player.strip(),
+                            market=manual_market,
+                            event_date=manual_event_date,
+                            threshold=manual_threshold,
+                        )
+                        st.session_state["manual_prop_history_report_v1"] = manual_report
+                        st.session_state["manual_prop_history_query_v1"] = (
+                            manual_history_sport, manual_player.strip(), manual_market, manual_event_date.isoformat(), manual_threshold
+                        )
+                    except Exception as exc:
+                        st.warning(f"Historical research could not finish: {_safe_error(exc)}")
+            manual_report = st.session_state.get("manual_prop_history_report_v1")
+            if manual_report:
+                last_query = st.session_state.get("manual_prop_history_query_v1", ())
+                if last_query and last_query[0] == manual_history_sport:
+                    _render_prop_history_report(manual_report)
     else:
         family_options = ["All"] + sorted({row.family for row in prop_rows})
         family = st.selectbox("Prop type", family_options, key=f"kalshi_props_{sport_filter}")
@@ -1900,42 +1999,7 @@ elif view == "Player Props":
                         st.session_state[history_state_key] = report
                 history_report = st.session_state.get(history_state_key)
                 if history_report:
-                    status = history_report.get("status", "UNKNOWN")
-                    st.caption(
-                        f"Status: {status} · Source: {history_report.get('source', 'not available')} · "
-                        f"Retrieved: {history_report.get('retrieved_at', '—')} · "
-                        f"Season/date range: {history_report.get('season_used', '—')} / "
-                        f"{history_report.get('date_from') or '—'} to {history_report.get('date_to') or '—'}"
-                    )
-                    if history_report.get("note"):
-                        st.info(history_report["note"])
-                    if history_report.get("rows"):
-                        for metric_label, summary_key in (
-                            ("Historical hit rate", "season_hit_rate"),
-                            ("Last 5 games", "last5_hit_rate"),
-                            ("Home games", "home_hit_rate"),
-                            ("Away games", "away_hit_rate"),
-                        ):
-                            summary = history_report[summary_key]
-                            value = "—" if summary.get("hit_rate") is None else f"{summary['hit_rate']:.1%}"
-                            denominator = summary.get("sample_size", 0)
-                            hits = summary.get("hits")
-                            delta = f"{hits}/{denominator}" if hits is not None else f"n={denominator}"
-                            st.metric(metric_label, value, delta)
-                        history_table = []
-                        for game_row in history_report["rows"]:
-                            cleared = None if history_report.get("threshold") is None else game_row["value"] >= history_report["threshold"]
-                            history_table.append({
-                                "Date": game_row.get("date"),
-                                "Opponent": game_row.get("opponent", "Unknown"),
-                                "Home/Away": game_row.get("home_away", "Unknown"),
-                                "Actual": game_row.get("value"),
-                                "Threshold": history_report.get("threshold"),
-                                "Cleared threshold": "Yes" if cleared is True else "No" if cleared is False else "—",
-                            })
-                        st.dataframe(pd.DataFrame(history_table), use_container_width=True, hide_index=True)
-                    elif status not in {"UNSUPPORTED_MARKET", "UNSUPPORTED_SPORT"}:
-                        st.warning("No usable historical game rows were returned. SportEdge will not infer missing results or substitute future games.")
+                    _render_prop_history_report(history_report)
 
         model_family_key = None
         if sport_filter == "MLB" and family == "Hits":

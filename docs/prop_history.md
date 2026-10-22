@@ -1,6 +1,6 @@
 # Player prop history workspace
 
-The Props tab's **Player history · recent games and descriptive hit rates** panel is opt-in: users select an actual catalog contract and explicitly request its history. It never invents a market or fills an empty chart with simulated values.
+The Props tab's **Player history · recent games and descriptive hit rates** panel is opt-in: when a real catalog contract exists, users select it and explicitly request history; when no current contract exists, they can enter a player, supported stat family, target date and optional threshold for manual historical research. Manual research does not create a market quote or betting candidate. It never invents a market or fills an empty chart with simulated values.
 
 ## Source and supported market mappings
 
@@ -13,7 +13,7 @@ The Props tab's **Player history · recent games and descriptive hit rates** pan
 
 ## Integrity rules
 
-- Event date is parsed from the market/event ticker. Market close time is not substituted for the event date.
+- For catalog-backed history, event date is parsed from the market/event ticker. Market close time is not substituted for the event date. Manual research requires an explicit target date from the user.
 - Only games dated before the target event are eligible.
 - The report shows actual observed values, opponent/home-away where available, season hit rate, last-five hit rate, home/away splits, sample denominators and the available date range.
 - The table shows the latest 20 eligible games; summary hit rates use the complete eligible history returned by the selected source.

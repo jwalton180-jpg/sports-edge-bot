@@ -77,3 +77,11 @@ def test_unsupported_sport_fails_closed():
     )
     assert report["status"] == "UNSUPPORTED_SPORT"
     assert report["rows"] == []
+
+def test_props_page_keeps_manual_history_research_available_for_empty_catalog():
+    from pathlib import Path
+    source = Path("sports_edge/app.py").read_text()
+    assert 'No current Kalshi player-prop contract is available for this sport.' in source
+    assert 'Research historical stats' in source
+    assert 'manual_prop_history_form_' in source
+
