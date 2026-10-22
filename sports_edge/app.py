@@ -2244,14 +2244,30 @@ elif view == "Edge Board":
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="se-home-grid">'
-        '<div class="se-home-tile"><div class="se-home-tile-kicker">01 · Research</div><div class="se-home-tile-title">Player Props</div><div class="se-home-tile-copy">Compare model estimates with current market prices.</div></div>'
-        '<div class="se-home-tile"><div class="se-home-tile-kicker">02 · Build</div><div class="se-home-tile-title">Parlay Lab</div><div class="se-home-tile-copy">Filter eligible legs with price and correlation checks.</div></div>'
-        '<div class="se-home-tile"><div class="se-home-tile-kicker">03 · Track</div><div class="se-home-tile-title">My Picks</div><div class="se-home-tile-copy">Review saved picks and recorded outcomes.</div></div>'
-        '<div class="se-home-tile"><div class="se-home-tile-kicker">04 · Live</div><div class="se-home-tile-title">Live Feed</div><div class="se-home-tile-copy">Inspect current games and live research signals.</div></div>'
-        '</div>'
+        '<div class="se-home-section"><h3>Explore SportEdge</h3><span>Tap to open</span></div>',
+        unsafe_allow_html=True,
+    )
+    _se_tiles = [
+        ("01 · RESEARCH", "Player Props", "Compare model estimates and market prices.", "Props", "Player Props"),
+        ("02 · BUILD", "Parlay Lab", "Review eligible legs, price and correlation.", "Parlays", "Parlay Generator"),
+        ("03 · TRACK", "My Picks", "Review saved picks and recorded outcomes.", "My Picks", "My Picks"),
+        ("04 · LIVE", "Live Feed", "Inspect current games and live research.", "Live", "Live Feed"),
+    ]
+    _se_cols = st.columns(2, gap="small")
+    for _se_i, (_se_kicker, _se_title, _se_copy, _se_nav, _se_view) in enumerate(_se_tiles):
+        with _se_cols[_se_i % 2]:
+            st.markdown(
+                f'<div class="se-home-tile"><div class="se-home-tile-kicker">{_se_kicker}</div>'
+                f'<div class="se-home-tile-title">{_se_title}</div><div class="se-home-tile-copy">{_se_copy}</div></div>',
+                unsafe_allow_html=True,
+            )
+            if st.button(f"Open {_se_title}  ↗", key=f"se_home_{_se_nav}", use_container_width=True):
+                st.session_state.view = _se_view
+                st.session_state.main_nav_v3 = _se_nav
+                st.rerun()
+    st.markdown(
         '<div class="se-home-section"><h3>Market intelligence</h3><span>Evidence first</span></div>'
-        '<div class="se-home-note">Run the intelligence scan below to load current eligible signals. If no contract clears the model, price, and freshness gates, SportEdge will say so rather than manufacture a pick.</div>',
+        '<div class="se-home-note">Live signals appear below after a scan. If no contract clears model, price, and freshness gates, SportEdge reports no qualifying edge instead of manufacturing a pick.</div>',
         unsafe_allow_html=True,
     )
     _section_hero("DISCOVER", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
