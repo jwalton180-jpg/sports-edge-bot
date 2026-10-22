@@ -3798,6 +3798,50 @@ elif view == "My Picks":
     _section_hero("RESEARCH TRACKER", "My Picks", "Save a timestamped research candidate before the event starts, then keep the original price and attribution when results are recorded.")
     store = _pick_store()
     store_error = None
+    uploaded_picks = st.file_uploader("Import provider or manual research picks (CSV)", type=["csv"], key="research_pick_csv_upload_v1")
+    if uploaded_picks is not None:
+        st.caption("Import requires original observed_at and event_start timestamps. Rows observed at or after event start are rejected; import time is never substituted for a missing original timestamp.")
+        if len(uploaded_picks.getvalue()) > 2_000_000:
+            st.warning("CSV import is limited to 2 MB per upload.")
+        else:
+            try:
+                import_frame = pd.read_csv(uploaded_picks)
+                required_columns = {"sport", "event", "market", "selection", "observed_at", "event_start", "source", "record_type"}
+                missing_columns = sorted(required_columns - set(import_frame.columns))
+                if missing_columns:
+                    st.warning("CSV missing required columns: " + ", ".join(missing_columns))
+                else:
+                    st.dataframe(import_frame.head(8), use_container_width=True, hide_index=True)
+                    if st.button("Import valid CSV rows", key="research_pick_csv_import_button"):
+                        imported = 0
+                        rejected = []
+                        optional_columns = {"probability", "odds_american", "model_version", "leg_count", "notes", "model_confidence", "sample_size"}
+                        for row_index, raw_row in import_frame.iterrows():
+                            try:
+                                payload = {}
+                                for key in required_columns | optional_columns:
+                                    value = raw_row.get(key)
+                                    if value is None or pd.isna(value):
+                                        continue
+                                    payload[key] = value.item() if hasattr(value, "item") else value
+                                if "probability" in payload:
+                                    payload["probability"] = float(payload["probability"])
+                                if "odds_american" in payload:
+                                    payload["odds_american"] = int(float(payload["odds_american"]))
+                                    if payload["odds_american"] == 0:
+                                        raise ValueError("American odds cannot be zero")
+                                if payload.get("record_type") == "parlay" and "leg_count" in payload:
+                                    payload["leg_count"] = int(float(payload["leg_count"]))
+                                _save_research_prediction(payload, store)
+                                imported += 1
+                            except Exception as exc:
+                                rejected.append(f"row {row_index + 2}: {_safe_error(exc)}")
+                        st.success(f"Imported {imported} causal record(s).")
+                        if rejected:
+                            st.warning(f"Rejected {len(rejected)} row(s): " + " · ".join(rejected[:5]))
+            except Exception as exc:
+                st.warning(f"CSV could not be read: {_safe_error(exc)}")
+
     try:
         records = _pick_records(store)
     except Exception as exc:
