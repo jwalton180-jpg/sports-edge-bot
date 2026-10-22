@@ -49,13 +49,10 @@ def test_nfl_touchdown_history_excludes_future_games_and_passing_tds(monkeypatch
         sport="NFL", player_name="Player Name", market="Player Touchdowns",
         event_date=date(2026, 10, 22), threshold=1,
     )
-    assert report["status"] == "UNSUPPORTED_MARKET"
-    # The contract family label is "Player Touchdowns", not the generic scorer alias.
-    report = prop_history.prop_history_report(
-        sport="NFL", player_name="Player Name", market="Player Touchdowns",
-        event_date=date(2026, 10, 22), threshold=1,
-    )
-    assert report["status"] == "UNSUPPORTED_MARKET"
+    assert report["status"] == "AVAILABLE"
+    assert [row["value"] for row in report["rows"]] == [1.0, 1.0]
+    assert [row["opponent"] for row in report["rows"]] == ["MIA", "MIA"]
+    assert report["season_hit_rate"] == {"hits": 2, "sample_size": 2, "hit_rate": 1.0}
 
 
 def test_unsupported_sport_fails_closed():
