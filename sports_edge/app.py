@@ -330,6 +330,27 @@ div[data-testid="stExpander"]{border:1px solid var(--se-line);border-radius:14px
 .st-key-sport-filter-shell{margin:.15rem 0 .65rem}
 }
 
+
+/* SportEdge dashboard components: screenshot-led, responsive, data-truthful */
+.se-home-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:.35rem 0 1.1rem}
+.se-brand{font-size:1.35rem;font-weight:900;letter-spacing:-.045em;color:#f7f7f8}
+.se-brand span{color:#b8bdc5}
+.se-avatar{width:40px;height:40px;border:1px solid #44474e;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#27292e;color:#fff;font-weight:800}
+.se-greeting{color:#aeb2ba;font-size:.85rem;font-weight:650;letter-spacing:.04em;text-transform:uppercase;margin-bottom:.25rem}
+.se-home-title{font-size:clamp(1.65rem,4vw,2.25rem);font-weight:900;letter-spacing:-.055em;line-height:1.08;margin:.15rem 0 .45rem;color:#f8f8f9}
+.se-home-copy{color:#b2b5bd;font-size:.95rem;line-height:1.5;max-width:54rem;margin-bottom:1rem}
+.se-home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;margin:.9rem 0 1.15rem}
+.se-home-tile{display:block;background:linear-gradient(145deg,#26282d,#1c1d21);border:1px solid #3b3e45;border-radius:18px;padding:.95rem;min-height:112px}
+.se-home-tile-kicker{font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#aeb3bc;margin-bottom:.55rem}
+.se-home-tile-title{font-size:1.05rem;font-weight:850;line-height:1.2;color:#f5f5f6}
+.se-home-tile-copy{font-size:.8rem;line-height:1.4;color:#aeb2ba;margin-top:.4rem}
+.se-home-section{display:flex;align-items:end;justify-content:space-between;gap:.5rem;margin:1.2rem 0 .55rem}
+.se-home-section h3{font-size:1.08rem;font-weight:850;letter-spacing:-.02em;margin:0;color:#f5f5f6}
+.se-home-section span{font-size:.76rem;color:#a5a9b1}
+.se-home-note{padding:.85rem .95rem;border:1px solid #3b3e45;border-radius:16px;background:#1b1c20;color:#b6bac2;font-size:.88rem;line-height:1.5}
+@media(min-width:760px){.se-home-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.se-home-tile{min-height:130px}}
+@media(max-width:700px){.se-home-head{margin:.15rem 0 1rem}.se-home-title{font-size:1.85rem}.se-home-grid{gap:.55rem}.se-home-tile{padding:.8rem;min-height:108px;border-radius:16px}.se-home-tile-title{font-size:1rem}.se-home-copy{font-size:.9rem}}
+
 /* Screenshot-led charcoal mobile remodel */
 :root{--se-bg:#101113;--se-panel:#202226;--se-panel2:#292c31;--se-line:#373a40;--se-text:#f4f5f7;--se-muted:#a5a9b1;--se-green:#e7e9ed;--se-green2:#c7cbd1;--se-gold:#e1e3e7;--se-radius:19px}
 .stApp{background:#101113;color:#f4f5f7}.stApp:before{background:linear-gradient(180deg,rgba(35,45,57,.32),transparent 25%);opacity:.8}
@@ -2215,6 +2236,24 @@ elif view == "Player Props":
             )
 
 elif view == "Edge Board":
+    st.markdown(
+        '<div class="se-home-head"><div class="se-brand">SPORT<span>EDGE</span></div><div class="se-avatar">SE</div></div>'
+        '<div class="se-greeting">Your sports intelligence desk</div>'
+        '<div class="se-home-title">Find the edge.<br/>Verify the price.</div>'
+        '<div class="se-home-copy">Research-backed matchup signals, player props and parlays — ranked by evidence, freshness and price. No invented picks, no bet placement.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="se-home-grid">'
+        '<div class="se-home-tile"><div class="se-home-tile-kicker">01 · Research</div><div class="se-home-tile-title">Player Props</div><div class="se-home-tile-copy">Compare model estimates with current market prices.</div></div>'
+        '<div class="se-home-tile"><div class="se-home-tile-kicker">02 · Build</div><div class="se-home-tile-title">Parlay Lab</div><div class="se-home-tile-copy">Filter eligible legs with price and correlation checks.</div></div>'
+        '<div class="se-home-tile"><div class="se-home-tile-kicker">03 · Track</div><div class="se-home-tile-title">My Picks</div><div class="se-home-tile-copy">Review saved picks and recorded outcomes.</div></div>'
+        '<div class="se-home-tile"><div class="se-home-tile-kicker">04 · Live</div><div class="se-home-tile-title">Live Feed</div><div class="se-home-tile-copy">Inspect current games and live research signals.</div></div>'
+        '</div>'
+        '<div class="se-home-section"><h3>Market intelligence</h3><span>Evidence first</span></div>'
+        '<div class="se-home-note">Run the intelligence scan below to load current eligible signals. If no contract clears the model, price, and freshness gates, SportEdge will say so rather than manufacture a pick.</div>',
+        unsafe_allow_html=True,
+    )
     _section_hero("DISCOVER", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
     st.markdown(
         '<div class="section-note">Ranked by Sports Edge Intelligence: executable Kalshi gap + source quality + freshness + cross-book agreement. '
