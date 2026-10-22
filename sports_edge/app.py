@@ -1890,8 +1890,59 @@ elif view == "Player Props":
         _premium_empty("No current player props", "No eligible current Kalshi player-prop contracts are available for this sport. Unsupported markets remain hidden from model recommendations.")
         with st.container(border=True):
             st.subheader("Player history · recent games and descriptive hit rates")
-            st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. Hit rates require a real player-prop contract with an identifiable player and event date. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
-            st.info("History is waiting for an eligible current player-prop contract. No synthetic player, line, or historical result is shown.")
+            st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. When no actual contract exists, use manual history research below; it creates no betting candidate or price/value claim. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
+            st.info("No current Kalshi player-prop contract is available for this sport. You can still inspect historical results for a named player using free data sources.")
+            manual_sports = ["NBA", "WNBA", "NFL", "MLB"]
+            default_manual_sport = sport_filter if sport_filter in manual_sports else "NBA"
+            manual_history_sport = st.selectbox(
+                "Manual research sport",
+                manual_sports,
+                index=manual_sports.index(default_manual_sport),
+                key="manual_prop_history_sport_v1",
+            )
+            manual_market_options = {
+                "NBA": ["Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"],
+                "WNBA": ["Points", "Rebounds", "Assists", "Three-Pointers", "Points + Rebounds + Assists"],
+                "NFL": ["Passing Yards", "Passing TDs", "Pass Attempts", "Pass Completions", "Pass Interceptions", "Rushing Yards", "Rush Attempts", "Rushing + Receiving Yards", "Receiving Yards", "Receptions", "Player Touchdowns"],
+                "MLB": ["Hits", "Home Runs", "Total Bases", "RBIs", "Runs", "Hits + Runs + RBIs", "Pitcher Strikeouts"],
+            }
+            with st.form(f"manual_prop_history_form_{manual_history_sport}", clear_on_submit=False):
+                manual_player = st.text_input("Player name", placeholder="Enter an exact player name")
+                manual_market = st.selectbox(
+                    "Stat / market",
+                    manual_market_options[manual_history_sport],
+                    key=f"manual_prop_history_market_{manual_history_sport}",
+                )
+                manual_event_date = st.date_input(
+                    "Target event date",
+                    value=datetime.now(ZoneInfo("Pacific/Honolulu")).date(),
+                    key=f"manual_prop_history_date_{manual_history_sport}",
+                )
+                manual_threshold_text = st.text_input("Line / threshold (optional)", placeholder="e.g. 24.5 or 1")
+                manual_submit = st.form_submit_button("Research historical stats", use_container_width=True)
+            if manual_submit:
+                try:
+                    manual_threshold = float(manual_threshold_text.strip()) if manual_threshold_text.strip() else None
+                    manual_report = prop_history_report(
+                        sport=manual_history_sport,
+                        player_name=manual_player.strip(),
+                        market=manual_market,
+                        event_date=manual_event_date,
+                        threshold=manual_threshold,
+                    )
+                    st.session_state["manual_prop_history_report_v1"] = manual_report
+                    st.session_state["manual_prop_history_query_v1"] = (
+                        manual_history_sport, manual_player.strip(), manual_market, manual_event_date.isoformat(), manual_threshold
+                    )
+                except ValueError:
+                    st.warning("Line / threshold must be a number or left blank.")
+                except Exception as exc:
+                    st.warning(f"Historical research could not finish: {_safe_error(exc)}")
+            manual_report = st.session_state.get("manual_prop_history_report_v1")
+            if manual_report:
+                last_query = st.session_state.get("manual_prop_history_query_v1", ())
+                if last_query and last_query[0] == manual_history_sport:
+                    _render_prop_history_report(manual_report)
     else:
         family_options = ["All"] + sorted({row.family for row in prop_rows})
         family = st.selectbox("Prop type", family_options, key=f"kalshi_props_{sport_filter}")
