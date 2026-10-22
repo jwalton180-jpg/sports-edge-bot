@@ -1865,7 +1865,8 @@ elif view == "Player Props":
             )
             if history_player and history_date:
                 history_candidates.append((history_row, history_player, history_threshold, history_date))
-        with st.expander("Player history · recent games and descriptive hit rates", expanded=False):
+        with st.container(border=True):
+            st.subheader("Player history · recent games and descriptive hit rates")
             st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. Hit rates include sample sizes and date ranges; no candidate is qualified from historical hit rate alone. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
             if not history_candidates:
                 st.info("This market family has no player-and-event-date contract that can be joined safely to supported game-log data.")
