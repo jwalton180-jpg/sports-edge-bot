@@ -325,7 +325,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-09-29-adaptive-tennis-radar")
+st.caption("Build: 2026-10-22-prop-picks-performance-v1")
 
 
 def _secret(name: str) -> str | None:
@@ -1484,7 +1484,7 @@ if "prop_signal_cache" not in st.session_state:
     st.session_state.prop_signal_cache = {}
 
 nav_map = {
-    "For You": "Edge Board",
+    "Discover": "Edge Board",
     "Games": "Games",
     "Markets": "Game Lines",
     "Props": "Player Props",
@@ -1498,7 +1498,7 @@ more_views = {
     "Data Sources": "Data Sources",
 }
 reverse_nav = {value: key for key, value in nav_map.items()}
-current_nav = reverse_nav.get(st.session_state.view, "More" if st.session_state.view in more_views.values() else "For You")
+current_nav = reverse_nav.get(st.session_state.view, "More" if st.session_state.view in more_views.values() else "Discover")
 nav_labels = list(nav_map) + ["More"]
 
 st.markdown('<div class="section-eyebrow">EXPLORE</div>', unsafe_allow_html=True)
@@ -1980,7 +1980,7 @@ elif view == "Player Props":
             )
 
 elif view == "Edge Board":
-    _section_hero("FOR YOU", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
+    _section_hero("DISCOVER", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
     st.markdown(
         '<div class="section-note">Ranked by Sports Edge Intelligence: executable Kalshi gap + source quality + freshness + cross-book agreement. '
         'Only real current games are eligible; futures are excluded.</div>',
