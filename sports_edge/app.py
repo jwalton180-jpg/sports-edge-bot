@@ -470,6 +470,75 @@ header[data-testid="stHeader"]{background:rgba(255,255,255,.96)!important;border
 .st-key-main-nav-shell{position:relative;z-index:30;background:rgba(255,255,255,.96)!important;border:1px solid #e2e7ea!important;border-radius:14px!important;box-shadow:0 2px 10px rgba(25,42,50,.07)!important;padding:.35rem!important;margin:.2rem 0 .85rem!important;backdrop-filter:blur(16px)}.st-key-main-nav-shell [data-testid="stSegmentedControl"]{background:transparent!important;border:0!important;overflow-x:auto!important;scrollbar-width:none}.st-key-main-nav-shell [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}.st-key-main-nav-shell [data-testid="stSegmentedControl"] button{white-space:nowrap!important;min-width:max-content!important;padding:.4rem .75rem!important}
 .se-trend-card{background:#fff!important;border:1px solid #e2e7ea!important;border-radius:14px!important;padding:1rem!important;margin:.55rem 0!important;box-shadow:0 2px 8px rgba(26,42,51,.035)!important;color:#20262b!important}.se-trend-sport{color:#087f8c!important;background:#eaf7f7!important;border-radius:6px;padding:3px 7px;font-size:.72rem;font-weight:800}.se-trend-volume{color:#748089!important;font-size:.78rem}.se-trend-title{font-size:1.05rem;font-weight:800;color:#20262b!important;margin:.65rem 0}.se-trend-prices{display:flex;gap:1rem;color:#6b7780!important}.se-trend-prices b{color:#20262b!important}
 @media(max-width:700px){.block-container{padding:.35rem .65rem calc(7.8rem + env(safe-area-inset-bottom))!important}.se-home-title{font-size:1.85rem}.se-home-grid{gap:.55rem}.se-home-tile{padding:.85rem!important;min-height:108px!important}.st-key-main-nav-shell{position:fixed!important;left:max(8px,env(safe-area-inset-left))!important;right:max(8px,env(safe-area-inset-right))!important;bottom:calc(8px + env(safe-area-inset-bottom))!important;margin:0!important;padding:5px!important;border-radius:16px!important;background:rgba(255,255,255,.97)!important;border:1px solid #dfe5e8!important;box-shadow:0 6px 24px rgba(25,42,50,.17)!important;z-index:99999!important}.st-key-main-nav-shell [data-testid="stSegmentedControl"]{display:flex!important;flex-wrap:nowrap!important;width:100%!important;overflow-x:auto!important}.st-key-main-nav-shell [data-testid="stSegmentedControl"] button{min-height:44px!important;padding:6px 10px!important;font-size:.78rem!important;flex:0 0 auto!important}.st-key-main-nav-shell [data-testid="stSegmentedControl"] button p{font-size:.78rem!important}}
+
+/* Complete Linemate-inspired UI pass: charcoal canvas, dense editorial cards,
+   strong hierarchy, low-noise borders and a stable thumb-first mobile shell. */
+:root{--se-bg:#111214;--se-panel:#1d1f23;--se-panel2:#26292e;--se-line:#34373e;--se-text:#f7f7f8;--se-muted:#a9adb5;--se-green:#f1f2f4;--se-green2:#d5d7dc;--se-gold:#d9dbe0;--se-danger:#ff8188;--se-radius:20px}
+html,body,[class*="css"]{font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
+.stApp{background:#111214!important;color:#f7f7f8!important}
+.stApp:before{background:radial-gradient(ellipse at 50% -22%,rgba(84,89,102,.22),transparent 55%)!important}
+.block-container{max-width:1080px!important;padding-top:.45rem!important;padding-left:.8rem!important;padding-right:.8rem!important;padding-bottom:6rem!important}
+header[data-testid="stHeader"]{background:rgba(17,18,20,.92)!important;border-bottom:1px solid rgba(255,255,255,.055)!important}
+h1,h2,h3,h4,p,li,label{color:inherit}
+h1{letter-spacing:-.055em!important;font-weight:900!important}
+h2,h3{letter-spacing:-.035em!important;font-weight:850!important}
+[data-testid="stMarkdownContainer"] p{line-height:1.48}
+[data-testid="stMetric"],.surface,.nav-hint,.section-hero,.ticket-shell,.game-card,.market-card{background:#1e2024!important;border:1px solid #34373d!important;border-radius:20px!important;box-shadow:none!important}
+.section-hero{background:linear-gradient(125deg,#282a30,#1d2025 72%)!important}
+.section-eyebrow,.ticket-kicker,.good{color:#e2e4e8!important}
+.section-title{font-size:clamp(1.3rem,3.5vw,1.8rem)!important;font-weight:900!important}
+.section-copy,.ticket-sub,.market-meta,.stCaption{color:#aeb2ba!important}
+[data-testid="stMetric"]{padding:14px!important}
+[data-testid="stMetricLabel"]{color:#aeb2ba!important;font-weight:650}
+[data-testid="stMetricValue"]{font-size:1.5rem!important;font-weight:900!important;letter-spacing:-.04em}
+[data-testid="stSegmentedControl"]{background:#191a1e!important;border:1px solid #34373d!important;border-radius:17px!important;padding:4px!important}
+[data-testid="stSegmentedControl"] button{border-radius:13px!important;min-height:2.7rem!important;font-weight:800!important;white-space:nowrap!important}
+[data-testid="stSegmentedControl"] button[aria-pressed="true"]{background:#3a3d44!important;color:#fff!important}
+[data-testid="stTabs"] [data-baseweb="tab-list"]{background:#191a1e!important;border:1px solid #34373d!important;border-radius:17px!important;padding:4px!important}
+[data-testid="stTabs"] [data-baseweb="tab"]{border-radius:13px!important;font-weight:800!important}
+[data-testid="stTabs"] [aria-selected="true"]{background:#393c43!important;color:#fff!important}
+[data-testid="stButton"] button{background:#27292e!important;color:#f5f5f6!important;border:1px solid #41444b!important;border-radius:15px!important;min-height:2.85rem!important;font-weight:850!important;box-shadow:none!important}
+[data-testid="stButton"] button[kind="primary"]{background:#f1f2f4!important;color:#151619!important;border-color:#f1f2f4!important}
+[data-testid="stSelectbox"]>div>div,[data-testid="stDateInput"]>div>div,[data-testid="stMultiSelect"]>div>div{background:#1e2024!important;border-radius:14px!important;border-color:#3a3d44!important}
+[data-testid="stDataFrame"]{border:1px solid #363940!important;border-radius:16px!important;overflow:hidden!important}
+div[data-testid="stExpander"]{background:#1b1c20!important;border:1px solid #363940!important;border-radius:16px!important}
+hr{border-color:#34373d!important}
+.st-key-main-nav-shell{position:relative;z-index:99;background:rgba(25,26,30,.96)!important;border:1px solid #3a3d44!important;border-radius:21px!important;padding:5px!important;margin:.2rem 0 .75rem!important;box-shadow:0 8px 30px rgba(0,0,0,.2)!important;backdrop-filter:blur(20px)}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"]{display:flex!important;overflow-x:auto!important;scrollbar-width:none!important;background:transparent!important;border:0!important;padding:0!important}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"]>div{display:flex!important;flex-wrap:nowrap!important;width:100%!important}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"] button{flex:1 0 auto!important;min-width:0!important;padding:.42rem .62rem!important;font-size:.82rem!important}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"] button p{font-size:.82rem!important;white-space:nowrap!important}
+.se-home-head{margin:.15rem 0 1.15rem!important}
+.se-brand{font-size:1.42rem!important;letter-spacing:-.05em!important}
+.se-avatar{background:#292b30!important;border-color:#484b52!important}
+.se-greeting{font-size:.73rem!important;letter-spacing:.11em!important;color:#aeb2ba!important}
+.se-home-title{font-size:clamp(1.85rem,5vw,2.8rem)!important;letter-spacing:-.065em!important;line-height:1.02!important}
+.se-home-copy{color:#b1b4bc!important;max-width:44rem!important}
+.se-home-grid{gap:.7rem!important}
+.se-home-tile{background:linear-gradient(145deg,#292b30,#1e2024)!important;border:1px solid #3a3d44!important;border-radius:20px!important;min-height:120px!important;padding:1rem!important}
+.se-home-tile-kicker{color:#aeb2ba!important}
+.se-home-tile-title{font-size:1.08rem!important;letter-spacing:-.025em!important}
+.se-home-tile-copy{color:#aeb2ba!important}
+.se-home-note{background:#1e2024!important;border-color:#383b42!important;border-radius:18px!important;color:#b9bdc4!important}
+.ticket-shell{background:linear-gradient(145deg,#292b30,#1d1f23)!important}
+.ticket-title{letter-spacing:-.045em!important}
+.game-card,.market-card{padding:1rem!important}
+.badge,.edge-pill,.watch-pill{background:#2a2c31!important;border-color:#4a4d54!important;color:#e9eaed!important}
+@media(max-width:700px){
+ .block-container{padding:.25rem .65rem calc(7.5rem + env(safe-area-inset-bottom))!important}
+ .hero{font-size:1.8rem!important}
+ .se-home-title{font-size:1.95rem!important}
+ .se-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.55rem!important}
+ .se-home-tile{padding:.82rem!important;min-height:112px!important;border-radius:18px!important}
+ .se-home-tile-title{font-size:1rem!important}
+ .st-key-main-nav-shell{position:fixed!important;left:max(8px,env(safe-area-inset-left))!important;right:max(8px,env(safe-area-inset-right))!important;bottom:calc(7px + env(safe-area-inset-bottom))!important;width:auto!important;margin:0!important;padding:5px!important;background:rgba(24,25,29,.97)!important;border:1px solid #41444b!important;border-radius:21px!important;box-shadow:0 8px 30px rgba(0,0,0,.56)!important;backdrop-filter:blur(22px)!important;z-index:99999!important}
+ .st-key-main-nav-shell [data-testid="stSegmentedControl"] button{min-height:47px!important;padding:7px 9px!important;flex:1 0 auto!important}
+ .st-key-main-nav-shell [data-testid="stSegmentedControl"] button p{font-size:.77rem!important}
+ [data-testid="stMetric"]{padding:10px!important}
+ [data-testid="stMetricValue"]{font-size:1.25rem!important}
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -1668,46 +1737,41 @@ if "view" not in st.session_state:
 if "prop_signal_cache" not in st.session_state:
     st.session_state.prop_signal_cache = {}
 
-# Linemate-inspired information architecture, implemented with SportEdge data and models.
-# Labels describe the product surface; every destination resolves to an existing, supported view.
-# Legacy workflow compatibility: old mapping was '"Discover": "Edge Board"'; Home now owns that destination.
+# Linemate-inspired mobile information architecture. SportEdge retains its own brand,
+# evidence labels, models and research logic; navigation routes to existing app views.
 nav_map = {
-    "Home": "Edge Board",
-    "Trends": "Edge Board",
+    "Discover": "Edge Board",
     "Props": "Player Props",
-    "Stats": "Performance",
     "Parlays": "Parlay Generator",
-    "Markets": "Game Lines",
     "My Picks": "My Picks",
     "Live": "Live Feed",
 }
 more_views = {
     "Games": "Games",
-    "Standings": "Games",
+    "Markets": "Game Lines",
+    "Trends": "Performance",
     "Scorer Lab": "Scorer Lab",
-    "Performance": "Performance",
     "Data Sources": "Data Sources",
 }
 reverse_nav = {value: key for key, value in nav_map.items()}
-# Edge Board is shared by Home and Trends; Home is the safe first-load default.
-current_nav = "Home" if st.session_state.view == "Edge Board" else reverse_nav.get(st.session_state.view, "Tools" if st.session_state.view in more_views.values() else "Home")
-nav_labels = list(nav_map) + ["Tools"]
+current_nav = "Discover" if st.session_state.view == "Edge Board" else reverse_nav.get(st.session_state.view, "More" if st.session_state.view in more_views.values() else "Discover")
+nav_labels = list(nav_map) + ["More"]
 
 with st.container(key="main-nav-shell"):
     selected_nav = st.segmented_control(
         "Main navigation",
         nav_labels,
         default=current_nav,
-        key="main_nav_v3",
+        key="main_nav_v4",
         label_visibility="collapsed",
     )
-if selected_nav == "Tools":
+if selected_nav == "More":
     more_default = st.session_state.view if st.session_state.view in more_views.values() else "Games"
     selected_more = st.segmented_control(
-        "Tools and insights",
+        "More SportEdge views",
         list(more_views),
         default=more_default,
-        key="more_nav_v2",
+        key="more_nav_v3",
         label_visibility="collapsed",
     )
     view = more_views.get(selected_more or more_default, "Games")
