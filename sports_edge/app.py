@@ -351,6 +351,25 @@ div[data-testid="stExpander"]{border:1px solid var(--se-line);border-radius:14px
 @media(min-width:760px){.se-home-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.se-home-tile{min-height:130px}}
 @media(max-width:700px){.se-home-head{margin:.15rem 0 1rem}.se-home-title{font-size:1.85rem}.se-home-grid{gap:.55rem}.se-home-tile{padding:.8rem;min-height:108px;border-radius:16px}.se-home-tile-title{font-size:1rem}.se-home-copy{font-size:.9rem}}
 
+
+/* Linemate-inspired product shell: compact search, ranked market cards, mobile-first rhythm. */
+.se-home-copy{max-width:44rem;margin-bottom:.85rem}
+[data-testid="stTextInput"] input{background:#202226!important;border:1px solid #41444b!important;border-radius:15px!important;min-height:3.1rem!important;color:#f5f5f7!important;padding-left:1rem!important}
+.se-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.se-home-tile{background:#202226;border:1px solid #383b41;min-height:116px}
+.se-home-tile-kicker{color:#aeb2ba;letter-spacing:.07em}
+.se-home-tile-title{font-size:1.02rem}
+.se-home-section{margin:1.25rem 0 .65rem}
+.se-trend-card{background:#202226;border:1px solid #383b41;border-radius:18px;padding:.95rem 1rem;margin:.55rem 0}
+.se-trend-top,.se-trend-prices{display:flex;align-items:center;justify-content:space-between;gap:.7rem}
+.se-trend-sport{font-size:.7rem;font-weight:850;letter-spacing:.09em;color:#b9bdc5;text-transform:uppercase}
+.se-trend-volume{font-size:.74rem;color:#9297a0}
+.se-trend-title{font-size:1rem;font-weight:850;line-height:1.3;margin:.55rem 0 .8rem;color:#f5f5f7}
+.se-trend-prices{justify-content:flex-start;gap:.6rem}
+.se-trend-prices span{display:flex;justify-content:space-between;gap:1rem;flex:1;background:#17181b;border:1px solid #34373d;border-radius:12px;padding:.6rem .7rem;color:#aeb2ba;font-size:.8rem}
+.se-trend-prices b{color:#f5f5f7;font-size:.98rem}
+@media(max-width:700px){.se-home-head{margin:.2rem 0 .9rem}.se-home-title{font-size:1.9rem}.se-home-grid{gap:.55rem}.se-home-tile{padding:.8rem;min-height:112px}.se-trend-card{padding:.9rem}.se-trend-title{font-size:.98rem}}
+
 /* Screenshot-led charcoal mobile remodel */
 :root{--se-bg:#101113;--se-panel:#202226;--se-panel2:#292c31;--se-line:#373a40;--se-text:#f4f5f7;--se-muted:#a5a9b1;--se-green:#e7e9ed;--se-green2:#c7cbd1;--se-gold:#e1e3e7;--se-radius:19px}
 .stApp{background:#101113;color:#f4f5f7}.stApp:before{background:linear-gradient(180deg,rgba(35,45,57,.32),transparent 25%);opacity:.8}
@@ -2239,41 +2258,80 @@ elif view == "Edge Board":
     st.markdown(
         '<div class="se-home-head"><div class="se-brand">SPORT<span>EDGE</span></div><div class="se-avatar">SE</div></div>'
         '<div class="se-greeting">Your sports intelligence desk</div>'
-        '<div class="se-home-title">Find the edge.<br/>Verify the price.</div>'
-        '<div class="se-home-copy">Research-backed matchup signals, player props and parlays — ranked by evidence, freshness and price. No invented picks, no bet placement.</div>',
+        '<div class="se-home-title">Find your next edge.</div>'
+        '<div class="se-home-copy">Live sports markets, player props and model-backed research in one place. Every signal is checked against price and evidence.</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<div class="se-home-section"><h3>Explore SportEdge</h3><span>Tap to open</span></div>',
-        unsafe_allow_html=True,
+    _se_search = st.text_input(
+        "Search teams, players, markets",
+        placeholder="⌕  Search teams, players or markets",
+        key="se_home_search_v1",
+        label_visibility="collapsed",
     )
     _se_tiles = [
-        ("01 · RESEARCH", "Player Props", "Compare model estimates and market prices.", "Props", "Player Props"),
-        ("02 · BUILD", "Parlay Lab", "Review eligible legs, price and correlation.", "Parlays", "Parlay Generator"),
-        ("03 · TRACK", "My Picks", "Review saved picks and recorded outcomes.", "My Picks", "My Picks"),
-        ("04 · LIVE", "Live Feed", "Inspect current games and live research.", "Live", "Live Feed"),
+        ("PROPS", "Player Props", "Model estimates vs. available prices.", "Props", "Player Props"),
+        ("PARLAY LAB", "Build a parlay", "Qualify legs before combining them.", "Parlays", "Parlay Generator"),
     ]
     _se_cols = st.columns(2, gap="small")
     for _se_i, (_se_kicker, _se_title, _se_copy, _se_nav, _se_view) in enumerate(_se_tiles):
-        with _se_cols[_se_i % 2]:
+        with _se_cols[_se_i]:
             st.markdown(
                 f'<div class="se-home-tile"><div class="se-home-tile-kicker">{_se_kicker}</div>'
                 f'<div class="se-home-tile-title">{_se_title}</div><div class="se-home-tile-copy">{_se_copy}</div></div>',
                 unsafe_allow_html=True,
             )
-            if st.button(f"Open {_se_title}  ↗", key=f"se_home_{_se_nav}", use_container_width=True):
+            if st.button(f"Open  ↗", key=f"se_home_{_se_nav}", use_container_width=True):
                 st.session_state.view = _se_view
                 st.session_state.main_nav_v3 = _se_nav
                 st.rerun()
+
     st.markdown(
-        '<div class="se-home-section"><h3>Market intelligence</h3><span>Evidence first</span></div>'
-        '<div class="se-home-note">Live signals appear below after a scan. If no contract clears model, price, and freshness gates, SportEdge reports no qualifying edge instead of manufacturing a pick.</div>',
+        '<div class="se-home-section"><h3>Trending markets</h3><span>Live catalog · read-only</span></div>',
         unsafe_allow_html=True,
     )
-    _section_hero("DISCOVER", "Sports Edge Intelligence", "The strongest current model-versus-market disagreements, ranked by evidence quality, freshness, and executable Kalshi price.")
+    _se_market_rows = list(kalshi_rows)
+    if _se_search.strip():
+        _se_q = _se_search.strip().casefold()
+        _se_market_rows = [
+            row for row in _se_market_rows
+            if _se_q in str(row.market.get("event_title") or "").casefold()
+            or _se_q in str(row.market.get("title") or "").casefold()
+            or _se_q in str(row.market.get("ticker") or "").casefold()
+            or _se_q in str(row.market.get("subtitle") or "").casefold()
+        ]
+    _se_market_rows.sort(
+        key=lambda row: float(row.market.get("volume_fp", row.market.get("volume", 0)) or 0),
+        reverse=True,
+    )
+    if _se_market_rows:
+        for _se_row in _se_market_rows[:6]:
+            _se_market = _se_row.market
+            _se_event = str(_se_market.get("event_title") or _se_market.get("title") or _se_market.get("ticker") or "Market")
+            _se_yes = market_side_probability(_se_market, "YES")
+            _se_no = market_side_probability(_se_market, "NO")
+            _se_volume = _se_market.get("volume_fp", _se_market.get("volume", 0))
+            try:
+                _se_volume_text = f"{int(float(_se_volume or 0)):,} contracts"
+            except (TypeError, ValueError):
+                _se_volume_text = "Volume unavailable"
+            st.markdown(
+                f'<div class="se-trend-card"><div class="se-trend-top"><span class="se-trend-sport">{_se_row.sport}</span>'
+                f'<span class="se-trend-volume">{_se_volume_text}</span></div>'
+                f'<div class="se-trend-title">{_se_event}</div>'
+                f'<div class="se-trend-prices"><span>YES <b>{f"{_se_yes:.0%}" if _se_yes is not None else "—"}</b></span>'
+                f'<span>NO <b>{f"{_se_no:.0%}" if _se_no is not None else "—"}</b></span></div></div>',
+                unsafe_allow_html=True,
+            )
+        st.caption("Sorted by reported market volume, not by predicted win probability. Prices can move; verify the live contract before relying on them.")
+    else:
+        st.info("No matching markets in the current catalog. Try another search or sport filter.")
+
     st.markdown(
-        '<div class="section-note">Ranked by Sports Edge Intelligence: executable Kalshi gap + source quality + freshness + cross-book agreement. '
-        'Only real current games are eligible; futures are excluded.</div>',
+        '<div class="se-home-section"><h3>Sports Edge intelligence</h3><span>Model vs. market</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="se-home-note">A market is not called an edge unless the independent model, executable price, source freshness and evidence gates support it. No qualifying signal is better than a fabricated pick.</div>',
         unsafe_allow_html=True,
     )
     if st.button("Run intelligence scan", type="primary", use_container_width=True):
@@ -2281,11 +2339,9 @@ elif view == "Edge Board":
             signals, intelligence_map, signal_errors = build_game_line_signals(markets, api_key, sport_filter)
             st.session_state["edge_scan_v2"] = (signals, intelligence_map, signal_errors)
     signals, intelligence_map, signal_errors = st.session_state.get("edge_scan_v2", ([], {}, []))
-
     show = [s for s in signals if s.status in ("QUALIFIED", "WATCH")]
     if signal_errors and not signals:
         st.warning(" | ".join(signal_errors[:2]))
-
     if show:
         ranked = []
         for s in show:
@@ -2293,7 +2349,6 @@ elif view == "Edge Board":
             score = getattr(intel, "intelligence_score", 0.0)
             ranked.append((score, s, intel))
         ranked.sort(key=lambda row: (row[0], row[1].edge_points), reverse=True)
-
         for score, s, intel in ranked[:14]:
             pill = "edge-pill" if s.status == "QUALIFIED" else "watch-pill"
             tier = getattr(intel, "tier", s.status)
@@ -2302,27 +2357,16 @@ elif view == "Edge Board":
             age = getattr(intel, "median_age_s", s.source_age_s)
             disagreement = getattr(intel, "disagreement_pp", None)
             st.markdown(
-                f"""
-                <div class="market-card">
-                  <div class="market-card-top">
-                    <div>
-                      <span class="{pill}">{s.status}</span>
-                      <span class="edge-pill">TIER {tier}</span>
-                      <div class="market-title">{s.selection}</div>
-                    </div>
-                    <div class="market-price">{s.market_probability:.0%}</div>
-                  </div>
-                  <div class="market-meta">
-                    {s.event_title} · {s.sport}<br/>
-                    <span class="score">Sports Edge {score:.0f}/100</span> · Fair {s.fair_probability:.1%} · Edge {s.edge_points:+.1f} pp<br/>
-                    {books} fresh books · {refs} reference source(s) · age {age:.0f}s
-                    {f' · disagreement {disagreement:.1f} pp' if disagreement is not None else ''}
-                  </div>
-                </div>
-                """,
+                f'<div class="market-card"><div class="market-card-top"><div><span class="{pill}">{s.status}</span>'
+                f'<span class="edge-pill">TIER {tier}</span><div class="market-title">{s.selection}</div></div>'
+                f'<div class="market-price">{s.market_probability:.0%}</div></div><div class="market-meta">'
+                f'{s.event_title} · {s.sport}<br/><span class="score">Sports Edge {score:.0f}/100</span> · '
+                f'Fair {s.fair_probability:.1%} · Edge {s.edge_points:+.1f} pp<br/>{books} fresh books · '
+                f'{refs} reference source(s) · age {age:.0f}s'
+                f'{f" · disagreement {disagreement:.1f} pp" if disagreement is not None else ""}</div></div>',
                 unsafe_allow_html=True,
             )
-            with st.expander("Why this signal / copy ticket"):
+            with st.expander("Signal evidence and sources"):
                 st.write(f"**Kalshi:** {s.side} {s.market_probability:.1%}")
                 st.write(f"**Independent fair:** {s.fair_probability:.1%}")
                 st.write(f"**Price edge:** {s.edge_points:+.1f} percentage points")
@@ -2331,20 +2375,13 @@ elif view == "Edge Board":
                         st.caption("• " + reason)
                     if intel.warnings:
                         st.warning(" · ".join(intel.warnings))
-                    source_rows = [
-                        {
-                            "Book": b.bookmaker_title,
-                            "No-vig": f"{b.probability:.1%}",
-                            "Age": f"{b.age_s:.0f}s",
-                            "Reference": "YES" if b.is_reference else "",
-                        }
-                        for b in intel.books
-                    ]
+                    source_rows = [{"Book": b.bookmaker_title, "No-vig": f"{b.probability:.1%}",
+                                    "Age": f"{b.age_s:.0f}s", "Reference": "YES" if b.is_reference else ""}
+                                   for b in intel.books]
                     if source_rows:
                         st.dataframe(pd.DataFrame(source_rows), use_container_width=True, hide_index=True)
-                st.code(kalshi_copy_ticket([s]), language=None)
     else:
-        st.info("No current game contract clears the live edge/watch gates. Sports Edge will not manufacture a pick.")
+        st.info("No current game contract clears the live edge/watch gates. SportEdge will not manufacture a pick.")
 
 
 
