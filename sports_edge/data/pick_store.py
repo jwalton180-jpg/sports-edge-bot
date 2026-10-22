@@ -112,6 +112,12 @@ class SupabasePickStore:
         ]
         if not predictions:
             raise ValueError("unknown prediction id")
+        if any(
+            row.get("record_type") == "settlement"
+            and (row.get("payload") or {}).get("prediction_id") == prediction_id
+            for row in existing
+        ):
+            raise ValueError("prediction already has a settlement record")
         payload = predictions[0].get("payload") or {}
         if settled < parse_timestamp(payload["event_start"]):
             raise ValueError("settlement cannot predate event start")
