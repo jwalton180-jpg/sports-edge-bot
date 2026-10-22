@@ -34,6 +34,7 @@ from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.data.source_registry import get_source_status
 from sports_edge.data.pick_store import SupabasePickStore, validate_prediction, parse_timestamp
+from sports_edge.data.prop_history import event_date_from_ticker, market_player_and_threshold, prop_history_report
 from sports_edge.models.prop_performance import summarize_performance, summarize_parlays, american_to_decimal, net_units
 from sports_edge.core.hot_reload import import_module_fresh
 
@@ -327,7 +328,7 @@ st.markdown(
 )
 st.markdown('<div class="hero">SPORTS EDGE <span class="good">//</span></div>', unsafe_allow_html=True)
 st.caption("Actual games, game lines, player props, Kalshi contracts, and qualified research signals.")
-st.caption("Build: 2026-10-22-prop-picks-performance-v1")
+st.caption("Build: 2026-10-22-prop-picks-performance-v1 · base e04f6e9")
 
 
 def _secret(name: str) -> str | None:
@@ -1854,6 +1855,82 @@ elif view == "Player Props":
             "These are actual Kalshi contracts. Sports Edge will enrich exact markets with sportsbook/model evidence separately; "
             "missing external data no longer hides the Kalshi prop itself."
         )
+
+        history_candidates = []
+        for history_row in show_rows:
+            market_data = history_row.market
+            history_player, history_threshold = market_player_and_threshold(market_data)
+            history_date = event_date_from_ticker(
+                str(market_data.get("event_ticker") or market_data.get("ticker") or "")
+            )
+            if history_player and history_date:
+                history_candidates.append((history_row, history_player, history_threshold, history_date))
+        with st.expander("Player history · recent games and descriptive hit rates", expanded=False):
+            st.caption("Official/free box-score logs are descriptive, not a forecast of the next result. Hit rates include sample sizes and date ranges; no candidate is qualified from historical hit rate alone. [Supported sources and limits](https://github.com/jwalton180-jpg/sports-edge-bot/blob/main/docs/prop_history.md).")
+            if not history_candidates:
+                st.info("This market family has no player-and-event-date contract that can be joined safely to supported game-log data.")
+            else:
+                selected_history_index = st.selectbox(
+                    "Player prop market",
+                    list(range(len(history_candidates))),
+                    format_func=lambda index: (
+                        f"{history_candidates[index][1]} · {history_candidates[index][0].family} · "
+                        f"{history_candidates[index][0].market.get('title', 'untitled')}"
+                    ),
+                    key=f"prop_history_market_{sport_filter}_{family}",
+                )
+                history_row, history_player, history_threshold, history_date = history_candidates[selected_history_index]
+                history_market_key = str(history_row.market.get("ticker") or history_row.market.get("event_ticker") or selected_history_index)
+                history_state_key = f"prop_history_report_{sport_filter}_{family}_{history_market_key}"
+                if st.button("Load official historical game logs", key=f"prop_history_load_{sport_filter}_{family}_{history_market_key}", use_container_width=True):
+                    with st.spinner("Loading causal game history from the available free source…"):
+                        report = prop_history_report(
+                            sport=sport_filter,
+                            player_name=history_player,
+                            market=history_row.family,
+                            event_date=history_date,
+                            threshold=history_threshold,
+                            event_ticker=str(history_row.market.get("event_ticker") or history_row.market.get("ticker") or ""),
+                        )
+                        st.session_state[history_state_key] = report
+                history_report = st.session_state.get(history_state_key)
+                if history_report:
+                    status = history_report.get("status", "UNKNOWN")
+                    st.caption(
+                        f"Status: {status} · Source: {history_report.get('source', 'not available')} · "
+                        f"Retrieved: {history_report.get('retrieved_at', '—')} · "
+                        f"Season/date range: {history_report.get('season_used', '—')} / "
+                        f"{history_report.get('date_from') or '—'} to {history_report.get('date_to') or '—'}"
+                    )
+                    if history_report.get("note"):
+                        st.info(history_report["note"])
+                    if history_report.get("rows"):
+                        for metric_label, summary_key in (
+                            ("Historical hit rate", "season_hit_rate"),
+                            ("Last 5 games", "last5_hit_rate"),
+                            ("Home games", "home_hit_rate"),
+                            ("Away games", "away_hit_rate"),
+                        ):
+                            summary = history_report[summary_key]
+                            value = "—" if summary.get("hit_rate") is None else f"{summary['hit_rate']:.1%}"
+                            denominator = summary.get("sample_size", 0)
+                            hits = summary.get("hits")
+                            delta = f"{hits}/{denominator}" if hits is not None else f"n={denominator}"
+                            st.metric(metric_label, value, delta)
+                        history_table = []
+                        for game_row in history_report["rows"]:
+                            cleared = None if history_report.get("threshold") is None else game_row["value"] >= history_report["threshold"]
+                            history_table.append({
+                                "Date": game_row.get("date"),
+                                "Opponent": game_row.get("opponent", "Unknown"),
+                                "Home/Away": game_row.get("home_away", "Unknown"),
+                                "Actual": game_row.get("value"),
+                                "Threshold": history_report.get("threshold"),
+                                "Cleared threshold": "Yes" if cleared is True else "No" if cleared is False else "—",
+                            })
+                        st.dataframe(pd.DataFrame(history_table), use_container_width=True, hide_index=True)
+                    elif status not in {"UNSUPPORTED_MARKET", "UNSUPPORTED_SPORT"}:
+                        st.warning("No usable historical game rows were returned. SportEdge will not infer missing results or substitute future games.")
 
         model_family_key = None
         if sport_filter == "MLB" and family == "Hits":
@@ -4018,7 +4095,7 @@ elif view == "My Picks":
         records = list(_session_pick_records())
         store = None
     if store is None:
-        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets for durable storage. See docs/pick_storage.md.")
+        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Durable private tracking requires SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SPORTSEDGE_TRACKER_ACCESS_KEY in Streamlit secrets. See docs/pick_storage.md.")
     if store_error:
         st.error(f"Configured storage could not be read ({store_error}). New entries in this view are session-only until storage is healthy.")
 
