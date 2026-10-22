@@ -93,6 +93,7 @@ def summarize_performance(records: Iterable[Mapping[str, Any]]) -> dict[str, Any
         "losses": counts["loss"],
         "pushes": counts["push"],
         "voids": counts["void"],
+        "cancelled": counts["cancelled"],
         "pending": counts["pending"],
         "total_records": len(rows),
         "decided": decided,
