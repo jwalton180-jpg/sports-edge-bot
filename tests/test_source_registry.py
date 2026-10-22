@@ -27,6 +27,15 @@ class SourceRegistryTests(unittest.TestCase):
         for name in ("Betwatch", "BettingPros", "ScoresAndOdds", "StatMuse"):
             self.assertEqual(sources[name]["status"], "research_only")
 
+    def test_external_provider_access_is_truthful_and_not_faked(self):
+        sources = {item["name"]: item for item in get_source_status()}
+        self.assertEqual(sources["PropsBot.AI"]["status"], "research_only")
+        self.assertEqual(sources["Betstamp Pro API"]["status"], "needs_key")
+        self.assertEqual(sources["Juice Reel API"]["status"], "research_only")
+        self.assertEqual(sources["Outlier"]["status"], "research_only")
+        self.assertIn("not connected", sources["Betstamp Pro API"]["detail"])
+        self.assertIn("no user data is accessed", sources["Juice Reel API"]["detail"])
+
     def test_summary_counts_all_sources_without_network_calls(self):
         summary = source_status_summary()
         self.assertEqual(sum(summary.values()), len(get_source_status()))
