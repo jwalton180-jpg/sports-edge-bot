@@ -434,6 +434,22 @@ header[data-testid="stHeader"]{background:rgba(16,17,19,.86);border-bottom:1px s
     padding-bottom: calc(100px + env(safe-area-inset-bottom)) !important;
   }
 }
+/* Persistent Linemate-style app navigation: bottom dock on mobile and desktop. */
+.stApp .st-key-main-nav-shell{
+ position:fixed!important;display:block!important;visibility:visible!important;opacity:1!important;
+ z-index:99999!important;left:50%!important;right:auto!important;bottom:calc(10px + env(safe-area-inset-bottom))!important;
+ transform:translateX(-50%)!important;width:min(760px,calc(100vw - 24px))!important;margin:0!important;
+ padding:6px!important;border:1px solid #41444b!important;border-radius:20px!important;
+ background:rgba(18,19,22,.97)!important;box-shadow:0 8px 28px rgba(0,0,0,.52)!important;
+ -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)
+}
+.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]{display:flex!important;flex-wrap:nowrap!important;width:100%!important;overflow-x:auto!important;scrollbar-width:none;background:transparent!important}
+.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}
+.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]>div{flex-wrap:nowrap!important;min-width:max-content!important;width:100%!important}
+.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] button{min-height:46px!important;flex:1 0 auto!important;padding:7px 10px!important;white-space:nowrap!important;color:#e8e9ec!important;border-radius:14px!important}
+.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] button[aria-pressed="true"]{background:#393c43!important;color:#fff!important}
+@media(max-width:700px){.stApp .st-key-main-nav-shell{width:calc(100vw - 16px)!important;bottom:calc(8px + env(safe-area-inset-bottom))!important}.block-container{padding-bottom:calc(7.6rem + env(safe-area-inset-bottom))!important}}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -4548,20 +4564,3 @@ st.caption(
     f"Actionable Kalshi catalog · {len(markets)} open · {kseries} series · {kpages} pages · Kalshi request max {f'{klat:.0f} ms' if klat else '—'} · "
     f"Deployment {deployment_mode().replace('_', ' ').title()}"
 )
-
-
-/* Persistent Linemate-style app navigation: bottom dock on mobile and desktop. */
-.stApp .st-key-main-nav-shell{
- position:fixed!important;display:block!important;visibility:visible!important;opacity:1!important;
- z-index:99999!important;left:50%!important;right:auto!important;bottom:calc(10px + env(safe-area-inset-bottom))!important;
- transform:translateX(-50%)!important;width:min(760px,calc(100vw - 24px))!important;margin:0!important;
- padding:6px!important;border:1px solid #41444b!important;border-radius:20px!important;
- background:rgba(18,19,22,.97)!important;box-shadow:0 8px 28px rgba(0,0,0,.52)!important;
- -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)
-}
-.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]{display:flex!important;flex-wrap:nowrap!important;width:100%!important;overflow-x:auto!important;scrollbar-width:none;background:transparent!important}
-.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}
-.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"]>div{flex-wrap:nowrap!important;min-width:max-content!important;width:100%!important}
-.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] button{min-height:46px!important;flex:1 0 auto!important;padding:7px 10px!important;white-space:nowrap!important;color:#e8e9ec!important;border-radius:14px!important}
-.stApp .st-key-main-nav-shell [data-testid="stSegmentedControl"] button[aria-pressed="true"]{background:#393c43!important;color:#fff!important}
-@media(max-width:700px){.stApp .st-key-main-nav-shell{width:calc(100vw - 16px)!important;bottom:calc(8px + env(safe-area-inset-bottom))!important}.block-container{padding-bottom:calc(7.6rem + env(safe-area-inset-bottom))!important}}
