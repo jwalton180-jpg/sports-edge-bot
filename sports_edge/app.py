@@ -3886,7 +3886,11 @@ elif view == "Scorer Lab":
                 except Exception as exc:
                     st.warning(f"NFL touchdown analysis unavailable: {_safe_error(exc)}")
                     st.session_state["nfl_td_scorer_results_v1"] = []
-        td_assessments = st.session_state.get("nfl_td_scorer_results_v1", [])
+        td_assessments = [
+            row for row in st.session_state.get("nfl_td_scorer_results_v1", [])
+            if _safe_event_start(row.leg.verified_start) is not None
+            and _safe_event_start(row.leg.verified_start) > datetime.now(timezone.utc)
+        ]
         if not td_assessments:
             st.info("No NFL touchdown-scorer candidates have been generated in this session. Run the analysis; if the actual catalog lacks eligible markets or independent model evidence, the lab will remain empty.")
         else:
@@ -3902,7 +3906,7 @@ elif view == "Scorer Lab":
                 "Event start": row.leg.verified_start or "unverified",
                 "Caveats": "; ".join(row.warnings) or "See model evidence",
             } for row in td_assessments]), use_container_width=True, hide_index=True)
-            savable_td = [(index, row) for index, row in enumerate(td_assessments) if row.qualified and row.leg.verified_start]
+            savable_td = [(index, row) for index, row in enumerate(td_assessments) if row.qualified and _safe_event_start(row.leg.verified_start) is not None and _safe_event_start(row.leg.verified_start) > datetime.now(timezone.utc)]
             if savable_td:
                 selected_td_index = st.selectbox(
                     "NFL touchdown candidate to track",
