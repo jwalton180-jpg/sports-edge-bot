@@ -30,6 +30,21 @@ def test_basketball_history_is_causal_and_uses_descriptive_denominators(monkeypa
     assert report["rows"][0]["opponent"] == "BOS"
 
 
+def test_basketball_prior_season_fallback_is_labeled(monkeypatch):
+    monkeypatch.setattr(basketball_prop_data, "player_history", lambda *args: ())
+    monkeypatch.setattr(basketball_prop_data, "prior_player_history", lambda *args: (
+        {"game_date": "2026-03-01", "points": 22, "home_away": "home", "opponent_abbreviation": "BOS", "game_id": "old1"},
+        {"game_date": "2026-03-10", "points": 14, "home_away": "away", "opponent_abbreviation": "NYK", "game_id": "old2"},
+    ))
+    report = prop_history.prop_history_report(
+        sport="NBA", player_name="Player Name", market="Points",
+        event_date=date(2026, 10, 22), threshold=20,
+    )
+    assert report["season_used"] == "2025 prior season (current-season log empty)"
+    assert report["season_hit_rate"] == {"hits": 1, "sample_size": 2, "hit_rate": 0.5}
+    assert "not a current-season hit rate" in report["note"]
+
+
 def test_nfl_touchdown_history_excludes_future_games_and_passing_tds(monkeypatch):
     monkeypatch.setattr(nfl_prop_data, "player_context", lambda *args: SimpleNamespace(
         player_name="Player Name",
