@@ -1563,7 +1563,7 @@ sport_filter = st.segmented_control(
 
 # NHL goal-scorer pipeline: refresh this dependency explicitly because Streamlit
 # Community Cloud can reload app.py before the updated module file is in sys.modules.
-if view == "Scorer Lab" or (sport_filter == "NHL" and view == "Player Props"):
+if (view == "Scorer Lab" and sport_filter == "NHL") or (sport_filter == "NHL" and view == "Player Props"):
     st.markdown("### 🏒 NHL Goal Scorer Lab")
     st.caption("Official NHL schedule, roster and game logs. Research probabilities are unvalidated and do not imply betting value.")
     try:
@@ -3863,8 +3863,92 @@ elif view == "Live Feed":
         st.info(merr or "No MLB live events right now.")
 
 elif view == "Scorer Lab":
-    _section_hero("NHL SCORER LAB", "Anytime-goal research", "Official NHL schedule, roster and player-history coverage. The panel above reports only eligible research estimates; no scorer is invented to fill a quota.")
-    st.caption("For a model estimate to count as a valuable bet, SportEdge still needs a current, verified anytime-goal price and relevant lineup/role context. Unvalidated baselines are not value claims.")
+    if sport_filter == "NHL":
+        _section_hero("NHL SCORER LAB", "Anytime-goal research", "Official NHL schedule, roster and player-history coverage. Only eligible history-backed research estimates appear; no scorer is invented to fill a quota.")
+        st.caption("Current lineup, line combination, power-play role, goalie context and executable anytime-goal odds are not yet complete in this baseline. These estimates are not validated value picks.")
+    elif sport_filter == "NFL":
+        _section_hero("NFL TD SCORER LAB", "Anytime-touchdown research", "Run the existing independent NFL touchdown model against the actual current Kalshi player-prop catalog. Missing prices or verified starts block tracking and value claims.")
+        if st.button("Run NFL touchdown scorer analysis", type="primary", use_container_width=True, key="nfl_td_scorer_scan_v1"):
+            with st.spinner("Checking current NFL touchdown markets and independent model evidence…"):
+                try:
+                    td_candidates = model_candidates_from_kalshi(
+                        kalshi_grouped,
+                        sport_filter="NFL",
+                        include_nfl_touchdowns=True,
+                        max_nfl_td_players=24,
+                        target_local_date=datetime.now(ZoneInfo("Pacific/Honolulu")).date(),
+                        ticket_timezone="Pacific/Honolulu",
+                    )
+                    td_candidates = [row for row in td_candidates if row.market_key == "player_anytime_td"]
+                    td_assessments = [assess_leg(row, "best") for row in td_candidates]
+                    td_assessments.sort(key=lambda row: (row.qualified, row.score), reverse=True)
+                    st.session_state["nfl_td_scorer_results_v1"] = td_assessments
+                except Exception as exc:
+                    st.warning(f"NFL touchdown analysis unavailable: {_safe_error(exc)}")
+                    st.session_state["nfl_td_scorer_results_v1"] = []
+        td_assessments = st.session_state.get("nfl_td_scorer_results_v1", [])
+        if not td_assessments:
+            st.info("No NFL touchdown-scorer candidates have been generated in this session. Run the analysis; if the actual catalog lacks eligible markets or independent model evidence, the lab will remain empty.")
+        else:
+            st.dataframe(pd.DataFrame([{
+                "Status": "QUALIFIED RESEARCH" if row.qualified else "WATCH / PASS",
+                "Event": row.leg.event_title,
+                "Selection": row.leg.selection,
+                "Model probability": f"{row.fair_probability:.1%}",
+                "Sportsbook price": row.leg.median_odds if row.leg.median_odds is not None else "—",
+                "Kalshi price": f"{row.kalshi_probability:.1%}" if row.kalshi_probability is not None else "—",
+                "Edge": f"{row.edge_points:+.1f} pp" if row.edge_points is not None else "—",
+                "Model confidence": f"{row.leg.model_confidence:.0%}",
+                "Event start": row.leg.verified_start or "unverified",
+                "Caveats": "; ".join(row.warnings) or "See model evidence",
+            } for row in td_assessments]), use_container_width=True, hide_index=True)
+            savable_td = [(index, row) for index, row in enumerate(td_assessments) if row.qualified and row.leg.verified_start]
+            if savable_td:
+                selected_td_index = st.selectbox(
+                    "NFL touchdown candidate to track",
+                    [index for index, _ in savable_td],
+                    format_func=lambda index: next(row.leg.selection for i, row in savable_td if i == index),
+                    key="track_nfl_td_select_v1",
+                )
+                if st.button("Save qualified NFL touchdown candidate to My Picks", key="track_nfl_td_button_v1", use_container_width=True):
+                    row = td_assessments[selected_td_index]
+                    leg = row.leg
+                    try:
+                        payload = {
+                            "sport": "NFL",
+                            "event": leg.event_title,
+                            "market": "Anytime touchdown scorer",
+                            "selection": leg.selection,
+                            "observed_at": datetime.now(timezone.utc).isoformat(),
+                            "event_start": leg.verified_start,
+                            "source": "SportEdge",
+                            "record_type": "nfl_td_scorer",
+                            "record_origin": "generated",
+                            "probability": row.fair_probability,
+                            "model_version": leg.model_name or "unknown",
+                            "model_confidence": leg.model_confidence,
+                            "sample_size": leg.model_sample_size,
+                            "event_id": leg.event_id,
+                            "kalshi_ticker": leg.kalshi_ticker,
+                            "kalshi_price": leg.kalshi_price,
+                            "notes": "; ".join(row.warnings) or "Review current availability and exact odds before any value assessment.",
+                        }
+                        if leg.median_odds is not None:
+                            payload["odds_american"] = leg.median_odds
+                        tracking_store = _pick_store()
+                        _save_research_prediction(payload, tracking_store)
+                        if tracking_store is None:
+                            st.warning("NFL touchdown candidate saved to this session only. Configure the private tracker and Supabase secrets for durable tracking.")
+                        else:
+                            st.success("NFL touchdown research candidate saved before kickoff. No wager was placed.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.warning(f"NFL touchdown candidate was not saved: {_safe_error(exc)}")
+            else:
+                st.caption("No qualified touchdown candidate with a verified future start is available to save.")
+    else:
+        _section_hero("SCORER LAB", "Choose NHL or NFL", "NHL anytime-goal and NFL anytime-touchdown research use separate source pipelines and separate records.")
+        st.info("Select NHL or NFL in the sport selector above to load the corresponding scorer research pipeline.")
 
 elif view == "My Picks":
     _section_hero("RESEARCH TRACKER", "My Picks", "Save a timestamped research candidate before the event starts, then keep the original price and attribution when results are recorded.")
