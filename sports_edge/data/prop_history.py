@@ -64,12 +64,13 @@ def _hit_summary(rows: list[dict], threshold: float | None) -> dict:
 
 def _report(*, sport: str, player: str, market: str, threshold: float | None,
             source: str, rows: list[dict], season_used: str, note: str) -> dict:
-    rows = sorted(rows, key=lambda row: str(row.get("date") or ""))[-20:]
-    recent = rows[-5:]
-    home_rows = [row for row in rows if row.get("home_away") == "Home"]
-    away_rows = [row for row in rows if row.get("home_away") == "Away"]
+    all_rows = sorted(rows, key=lambda row: str(row.get("date") or ""))
+    display_rows = all_rows[-20:]
+    recent = all_rows[-5:]
+    home_rows = [row for row in all_rows if row.get("home_away") == "Home"]
+    away_rows = [row for row in all_rows if row.get("home_away") == "Away"]
     return {
-        "status": "AVAILABLE" if rows else "NO_HISTORY",
+        "status": "AVAILABLE" if all_rows else "NO_HISTORY",
         "sport": sport,
         "player": player,
         "market": market,
@@ -77,14 +78,14 @@ def _report(*, sport: str, player: str, market: str, threshold: float | None,
         "source": source,
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
         "season_used": season_used,
-        "sample_size": len(rows),
-        "date_from": rows[0].get("date") if rows else None,
-        "date_to": rows[-1].get("date") if rows else None,
-        "season_hit_rate": _hit_summary(rows, threshold),
+        "sample_size": len(all_rows),
+        "date_from": all_rows[0].get("date") if all_rows else None,
+        "date_to": all_rows[-1].get("date") if all_rows else None,
+        "season_hit_rate": _hit_summary(all_rows, threshold),
         "last5_hit_rate": _hit_summary(recent, threshold),
         "home_hit_rate": _hit_summary(home_rows, threshold),
         "away_hit_rate": _hit_summary(away_rows, threshold),
-        "rows": rows,
+        "rows": display_rows,
         "note": note,
     }
 
