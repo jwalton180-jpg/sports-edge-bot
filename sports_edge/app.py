@@ -4169,8 +4169,6 @@ elif view == "Performance":
             payload = _record_payload(record)
             settlement = settlements.get(record.get("id"), {})
             result_value = str(settlement.get("result") or "pending").lower()
-            if result_value == "cancelled":
-                result_value = "void"
             perf_rows.append({
                 "record_type": payload.get("record_type", "prop"),
                 "source": payload.get("source", "unknown"),
@@ -4252,7 +4250,7 @@ elif view == "Performance":
         if parlay_rows:
             st.subheader("Whole-parlay results by leg count")
             parlay_report = summarize_parlays(parlay_rows)
-            st.dataframe(pd.DataFrame([{"Legs": legs, "Wins": row["wins"], "Losses": row["losses"], "Pushes": row["pushes"], "Voids": row["voids"], "Pending": row["pending"], "Hit rate": row["hit_rate"], "ROI": row["roi"], "Net units": row["net_units"], "n": row["total_records"]} for legs, row in parlay_report.items()]), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame([{"Legs": legs, "Wins": row["wins"], "Losses": row["losses"], "Pushes": row["pushes"], "Voids": row["voids"], "Cancelled": row["cancelled"], "Pending": row["pending"], "Hit rate": row["hit_rate"], "ROI": row["roi"], "Net units": row["net_units"], "n": row["total_records"]} for legs, row in parlay_report.items()]), use_container_width=True, hide_index=True)
         st.caption("Only candidates captured before event start are eligible. Manually entered settlements are marked manual and are not represented as independently verified. Whole parlays are graded separately from individual legs.")
 
 elif view == "Data Sources":
