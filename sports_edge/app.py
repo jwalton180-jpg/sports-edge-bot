@@ -3992,8 +3992,9 @@ elif view == "Data Sources":
     _section_hero("INTEGRATIONS", "Data sources", "Connected, configured, partial and research-only sources are kept distinct. A website or API document does not mean credentials are available.")
     source_rows = get_source_status()
     st.dataframe(pd.DataFrame([{"Source": row["name"], "Role": row["role"], "Access": row["access"], "Status": row["status"].replace("_", " ").title(), "Notes": row["detail"]} for row in source_rows]), use_container_width=True, hide_index=True)
-    st.markdown("Official provider documentation: [Betstamp API](https://www.betstamp.com/docs) · [Juice Reel API](https://www.juicereel.com/api-docs)")
-    st.caption("PropsBot.AI and Outlier remain research-only until authorized API/export access is verified. Betstamp requires an authorized provisioned key. Juice Reel requires user consent and a secure server-side OAuth implementation. No provider is marked connected without actual configuration.")
+    st.markdown("Manual research links: [PropsBot free prop preview](https://propsbot.ai/free-ai-player-prop-generator/) · [PropsBot public ledger / methodology](https://propsbot.ai/about/) · [Outlier free NFL research](https://www.outlier.bet/nfl-free-bets/)")
+    st.markdown("Official API documentation: [Betstamp API](https://www.betstamp.com/docs) · [Juice Reel API](https://www.juicereel.com/api-docs)")
+    st.caption("PropsBot's High ROI and High Hit Rate signals are separate and provider-reported; their published metrics are not SportEdge results or parlay ROI. PropsBot and Outlier are manual research links only until authorized API/export access is verified. Betstamp requires a provisioned key and plan entitlements. Juice Reel requires user consent and a secure server-side OAuth implementation. No provider is marked connected without actual configuration.")
 
 with st.expander("Data source coverage / integrations", expanded=False):
     source_rows = get_source_status()
