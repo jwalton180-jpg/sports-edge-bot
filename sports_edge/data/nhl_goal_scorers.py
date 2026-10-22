@@ -214,7 +214,11 @@ def goal_scorer_report(day_iso: str, *, current_season: str, prior_season: str,
                     if estimate["probability"] is None:
                         continue
                     report["history_qualified"] += 1
+                    home_name = str((game.get("homeTeam") or {}).get("abbrev") or "")
+                    away_name = str((game.get("awayTeam") or {}).get("abbrev") or "")
                     team_candidates.append({**player, "opponent": str(opponent), "game_id": game["id"],
+                        "event_title": f"{away_name} at {home_name}",
+                        "event_start": game.get("startTimeUTC") or game.get("startTime"),
                         "game_date": day_iso, "season_used": history["season"], **estimate,
                         "model": "official_game_log_poisson_v1",
                         "warnings": ["UNVALIDATED: no goalie/line/ice-time adjustment",
