@@ -25,7 +25,11 @@ jobs:
           s = Path("sports_edge/app.py").read_text()
           ticket_build = Path("sports_edge/models/ticket_build.py").read_text()
           required_views = [
-              '"For You": "Edge Board"',
+              '"Discover": "Edge Board"',
+              '"Scorer Lab": "Scorer Lab"',
+              '"My Picks": "My Picks"',
+              '"Performance": "Performance"',
+              '"Data Sources": "Data Sources"',
               '"Games": "Games"',
               '"Markets": "Game Lines"',
               '"Props": "Player Props"',
