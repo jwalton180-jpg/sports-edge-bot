@@ -31,12 +31,14 @@ class PropPerformanceTests(unittest.TestCase):
             {"result": "loss", "odds_american": -110, "stake_units": 1, "probability": .6},
             {"result": "push", "odds_american": -110},
             {"result": "void", "odds_american": -110},
+            {"result": "cancelled", "odds_american": -110},
             {"result": "pending"},
         ])
         self.assertEqual(report["wins"], 1)
         self.assertEqual(report["losses"], 1)
         self.assertEqual(report["pushes"], 1)
         self.assertEqual(report["voids"], 1)
+        self.assertEqual(report["cancelled"], 1)
         self.assertEqual(report["pending"], 1)
         self.assertEqual(report["hit_rate_denominator"], 2)
         self.assertAlmostEqual(report["hit_rate"], .5)
