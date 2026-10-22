@@ -4080,7 +4080,9 @@ elif view == "Performance":
             b.metric("ROI", "—" if report["roi"] is None else f'{report["roi"]:+.1%}', "Requires complete original odds")
             d.metric("Net units", "—" if report["net_units"] is None else f'{report["net_units"]:+.2f}', f'{report["risked_units"]:.2f} units priced')
             e.metric("Brier score", "—" if report["brier_score"] is None else f'{report["brier_score"]:.3f}', f'n={report["brier_denominator"]}')
-            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Settled results with missing odds {report["missing_odds_resolved"]}. Average decimal odds: {report["average_decimal_odds"]:.3f if report["average_decimal_odds"] is not None else "—"} · Average stake: {report["average_stake_units"]:.2f if report["average_stake_units"] is not None else "—"} units. ROI remains unavailable if any resolved win/loss is missing its original price.')
+            avg_odds_text = "—" if report["average_decimal_odds"] is None else f'{report["average_decimal_odds"]:.3f}'
+            avg_stake_text = "—" if report["average_stake_units"] is None else f'{report["average_stake_units"]:.2f}'
+            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Settled results with missing odds {report["missing_odds_resolved"]}. Average decimal odds: {avg_odds_text} · Average stake: {avg_stake_text} units. ROI remains unavailable if any resolved win/loss is missing its original price.')
         st.subheader("Breakdown by sport, market, source and model")
         breakdown_rows = []
         breakdown_keys = sorted({(r["sport"], r["market"], r["source"], r["model_version"]) for r in perf_rows})
