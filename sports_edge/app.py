@@ -2135,6 +2135,7 @@ elif view == "Edge Board":
 
 elif view == "Parlay Generator":
     _section_hero("PARLAY LAB", "Build an intelligent ticket", "Choose the slate you want. Sports Edge models eligible contracts first, then applies price, EV, confidence, and correlation controls.")
+    st.info("Joint success probability: Unavailable until a validated dependence model exists. Actual combined price: Unavailable until a real sportsbook combo quote is verified. SportEdge will not make an expected-value or model/market-ratio claim from independent leg products.")
     st.markdown(
         '<div class="section-note"><b>Model-first.</b> Kalshi defines what is tradable, but Kalshi price and sportsbook consensus do not define the pick. '
         'Each qualifying leg needs a sport-specific model probability first. Sportsbooks and public sharp/social research are secondary confirmation only.</div>',
@@ -4018,7 +4019,7 @@ elif view == "My Picks":
         records = list(_session_pick_records())
         store = None
     if store is None:
-        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Streamlit secrets for durable storage. See docs/pick_storage.md.")
+        st.warning("SESSION-ONLY STORAGE: picks may disappear when this Streamlit session ends or the app redeploys. Durable storage requires SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SPORTSEDGE_TRACKER_ACCESS_KEY in Streamlit secrets. See docs/pick_storage.md.")
     if store_error:
         st.error(f"Configured storage could not be read ({store_error}). New entries in this view are session-only until storage is healthy.")
 
