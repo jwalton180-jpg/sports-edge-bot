@@ -315,7 +315,20 @@ header[data-testid="stHeader"]{background:rgba(3,7,6,.72);backdrop-filter:blur(1
 .game-title,.market-title{font-weight:800;font-size:1.04rem;line-height:1.25}.market-card-top{display:flex;justify-content:space-between;gap:.7rem;align-items:flex-start}.market-price{font-size:1.45rem;font-weight:900;white-space:nowrap}.market-meta{font-size:.82rem;color:#93aaa0;margin-top:.4rem;line-height:1.5}.live{color:var(--se-green);font-weight:900}.soon{color:var(--se-gold);font-weight:900}.score{font-weight:900;color:var(--se-green)}
 [data-testid="stDataFrame"]{border:1px solid var(--se-line);border-radius:16px;overflow:hidden;background:rgba(7,16,13,.8)}
 div[data-testid="stExpander"]{border:1px solid var(--se-line);border-radius:14px;background:rgba(7,17,14,.7)} hr{border-color:#173127!important}
-@media(max-width:700px){.block-container{padding:.25rem .6rem 7rem}.hero{font-size:1.8rem}.section-hero{padding:.85rem;border-radius:17px}.section-title{font-size:1.3rem}[data-testid="stMetric"]{padding:8px}.ticket-shell{padding:.85rem;border-radius:17px}.market-card{padding:.8rem}.market-price{font-size:1.25rem}button[kind="secondary"],button[kind="primary"]{min-height:3.15rem}.section-copy,.ticket-sub,.market-meta{font-size:.88rem}.game-card,.market-card{border-radius:18px}.stCaption{line-height:1.4}}
+.st-key-main-nav-shell{position:relative;z-index:20;padding:.3rem;background:rgba(7,17,14,.88);border:1px solid rgba(95,240,173,.14);border-radius:18px;backdrop-filter:blur(18px);margin:.25rem 0 .65rem}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"]{border:0;background:transparent;padding:0}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"] button{min-width:0;padding:.48rem .65rem;font-size:.84rem}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"] button p{white-space:nowrap}
+.st-key-sport-filter-shell{margin:.15rem 0 .6rem}
+[data-testid="stRadio"] [role="radiogroup"]{gap:.35rem}
+@media(max-width:700px){.block-container{padding:.25rem .6rem 7rem}.hero{font-size:1.8rem}.section-hero{padding:.85rem;border-radius:17px}.section-title{font-size:1.3rem}[data-testid="stMetric"]{padding:8px}.ticket-shell{padding:.85rem;border-radius:17px}.market-card{padding:.8rem}.market-price{font-size:1.25rem}button[kind="secondary"],button[kind="primary"]{min-height:3.15rem}.section-copy,.ticket-sub,.market-meta{font-size:.88rem}.game-card,.market-card{border-radius:18px}.stCaption{line-height:1.4}
+.st-key-main-nav-shell{position:fixed;left:.45rem;right:.45rem;bottom:calc(.35rem + env(safe-area-inset-bottom));margin:0;padding:.3rem;border-radius:20px;background:rgba(4,12,9,.94);border:1px solid rgba(95,240,173,.25);box-shadow:0 10px 36px rgba(0,0,0,.45);backdrop-filter:blur(22px)}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"]{overflow-x:auto;scrollbar-width:none}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"]::-webkit-scrollbar{display:none}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"] button{min-height:3.15rem;padding:.4rem .5rem;font-size:.76rem;flex:1 0 auto}
+.st-key-main-nav-shell [data-testid="stSegmentedControl"] button p{font-size:.76rem}
+.st-key-sport-filter-shell{margin:.15rem 0 .65rem}
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1516,15 +1529,15 @@ if "prop_signal_cache" not in st.session_state:
 
 nav_map = {
     "Discover": "Edge Board",
-    "Games": "Games",
-    "Markets": "Game Lines",
     "Props": "Player Props",
     "Parlays": "Parlay Generator",
+    "My Picks": "My Picks",
     "Live": "Live Feed",
 }
 more_views = {
+    "Games": "Games",
+    "Markets": "Game Lines",
     "Scorer Lab": "Scorer Lab",
-    "My Picks": "My Picks",
     "Performance": "Performance",
     "Data Sources": "Data Sources",
 }
@@ -1532,24 +1545,24 @@ reverse_nav = {value: key for key, value in nav_map.items()}
 current_nav = reverse_nav.get(st.session_state.view, "More" if st.session_state.view in more_views.values() else "Discover")
 nav_labels = list(nav_map) + ["More"]
 
-st.markdown('<div class="section-eyebrow">EXPLORE</div>', unsafe_allow_html=True)
-selected_nav = st.segmented_control(
-    "Navigation",
-    nav_labels,
-    default=current_nav,
-    key="main_nav_v2",
-    label_visibility="collapsed",
-)
+with st.container(key="main-nav-shell"):
+    selected_nav = st.segmented_control(
+        "Main navigation",
+        nav_labels,
+        default=current_nav,
+        key="main_nav_v3",
+        label_visibility="collapsed",
+    )
 if selected_nav == "More":
-    more_default = st.session_state.view if st.session_state.view in more_views.values() else "My Picks"
+    more_default = st.session_state.view if st.session_state.view in more_views.values() else "Games"
     selected_more = st.segmented_control(
         "More tools",
         list(more_views),
         default=more_default,
-        key="more_nav_v1",
+        key="more_nav_v2",
         label_visibility="collapsed",
     )
-    view = more_views.get(selected_more or more_default, "My Picks")
+    view = more_views.get(selected_more or more_default, "Games")
 else:
     view = nav_map.get(selected_nav or current_nav, "Edge Board")
 st.session_state.view = view
