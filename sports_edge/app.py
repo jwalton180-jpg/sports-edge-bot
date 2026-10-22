@@ -34,7 +34,7 @@ from sports_edge.data.nfl import NFLClient
 from sports_edge.data.odds import OddsClient
 from sports_edge.data.source_registry import get_source_status
 from sports_edge.data.pick_store import SupabasePickStore, validate_prediction, parse_timestamp
-from sports_edge.models.prop_performance import summarize_performance, summarize_parlays
+from sports_edge.models.prop_performance import summarize_performance, summarize_parlays, american_to_decimal, net_units
 from sports_edge.core.hot_reload import import_module_fresh
 
 # Streamlit Community Cloud can hot-reload this entrypoint while dependency
@@ -4049,6 +4049,8 @@ elif view == "Performance":
                 "record_origin": payload.get("record_origin", "manual"),
                 "sport": payload.get("sport", "unknown"),
                 "market": payload.get("market", "unknown"),
+                "model_version": payload.get("model_version", "unknown"),
+                "observed_at": payload.get("observed_at"),
                 "leg_count": payload.get("leg_count"),
                 "result": result_value,
                 "odds_american": payload.get("odds_american"),
@@ -4078,7 +4080,44 @@ elif view == "Performance":
             b.metric("ROI", "—" if report["roi"] is None else f'{report["roi"]:+.1%}', "Requires complete original odds")
             d.metric("Net units", "—" if report["net_units"] is None else f'{report["net_units"]:+.2f}', f'{report["risked_units"]:.2f} units priced')
             e.metric("Brier score", "—" if report["brier_score"] is None else f'{report["brier_score"]:.3f}', f'n={report["brier_denominator"]}')
-            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Settled results with missing odds {report["missing_odds_resolved"]}. ROI remains unavailable if any resolved win/loss is missing its original price.')
+            st.caption(f'Pending {report["pending"]} · Pushes {report["pushes"]} · Voids {report["voids"]} · Settled results with missing odds {report["missing_odds_resolved"]}. Average decimal odds: {report["average_decimal_odds"]:.3f if report["average_decimal_odds"] is not None else "—"} · Average stake: {report["average_stake_units"]:.2f if report["average_stake_units"] is not None else "—"} units. ROI remains unavailable if any resolved win/loss is missing its original price.')
+        st.subheader("Breakdown by sport, market, source and model")
+        breakdown_rows = []
+        breakdown_keys = sorted({(r["sport"], r["market"], r["source"], r["model_version"]) for r in perf_rows})
+        for sport_name, market_name, source_name, model_name in breakdown_keys:
+            subset = [r for r in perf_rows if (r["sport"], r["market"], r["source"], r["model_version"]) == (sport_name, market_name, source_name, model_name)]
+            report = summarize_performance(subset)
+            breakdown_rows.append({
+                "Sport": sport_name, "Market": market_name, "Source": source_name, "Model": model_name,
+                "Wins": report["wins"], "Losses": report["losses"], "Pushes": report["pushes"],
+                "Voids": report["voids"], "Pending": report["pending"], "n": report["total_records"],
+                "Hit rate": report["hit_rate"], "ROI": report["roi"], "Net units": report["net_units"],
+                "Brier": report["brier_score"],
+            })
+        st.dataframe(pd.DataFrame(breakdown_rows), use_container_width=True, hide_index=True)
+        resolved_rows = []
+        for record in predictions:
+            payload = _record_payload(record)
+            settlement = settlements.get(record.get("id"), {})
+            result_value = str(settlement.get("result") or "pending").lower()
+            if result_value in {"win", "loss"}:
+                resolved_rows.append((payload, result_value, settlement.get("settled_at")))
+        has_missing_price = any(payload.get("odds_american") is None for payload, _, _ in resolved_rows)
+        if resolved_rows and not has_missing_price:
+            equity_rows = []
+            running_units = 0.0
+            for payload, result_value, settled_at in sorted(resolved_rows, key=lambda row: str(row[2] or "")):
+                stake = float(payload.get("stake_units", 1.0))
+                decimal_price = american_to_decimal(payload["odds_american"])
+                running_units += net_units(result_value, decimal_price, stake)
+                equity_rows.append({"Settlement": str(settled_at or payload.get("event_start")), "Cumulative net units": running_units})
+            st.subheader("Cumulative net units")
+            st.line_chart(pd.DataFrame(equity_rows).set_index("Settlement"))
+        elif resolved_rows:
+            st.caption("Cumulative-profit chart withheld because at least one settled win/loss is missing its original odds.")
+        observed_values = [str(r["observed_at"]) for r in perf_rows if r.get("observed_at")]
+        if observed_values:
+            st.caption(f"Observation date range: {min(observed_values)} to {max(observed_values)} · probability coverage: {sum(r.get('probability') is not None for r in perf_rows)}/{len(perf_rows)} records.")
         parlay_rows = [r for r in perf_rows if r["record_type"] == "parlay" and type(r.get("leg_count")) is int]
         if parlay_rows:
             st.subheader("Whole-parlay results by leg count")
