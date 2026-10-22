@@ -2855,7 +2855,7 @@ elif view == "Parlay Generator":
             c1.metric("Qualified legs", len(result.legs))
             c2.metric("Joint success probability", "Unavailable")
             c3.metric("Actual combined price", "Unavailable")
-            c4.metric("Illustrative payout", f"{result.market_payout_multiplier:.2f}x")
+            c4.metric("Illustrative leg-price payout", f"{result.market_payout_multiplier:.2f}x")
             st.warning("No validated joint-dependence model or executable combined parlay quote is available. The product of individual leg probabilities is only an independence benchmark, not a joint probability; expected value and a model/market value ratio are withheld.")
             st.caption(
                 f"Build: {builder_label.upper()} · Ticket math risk: {result.risk_label} · "
