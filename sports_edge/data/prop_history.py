@@ -168,8 +168,13 @@ def prop_history_report(*, sport: str, player_name: str, market: str,
         if context is None:
             return {"status": "PLAYER_UNRESOLVED", "note": "Player identity or causal history could not be resolved uniquely.", "rows": []}
         schedule_by_id = {str(game.get("game_id") or ""): game for game in schedule}
+        history_source_rows = context.current_rows
+        season_used = str(context.event_date.year)
+        if not history_source_rows:
+            history_source_rows = context.prior_rows
+            season_used = f"{context.event_date.year - 1} prior season (current-season log empty)"
         rows = []
-        for raw in context.current_rows:
+        for raw in history_source_rows:
             day = str(raw.get("date") or "")[:10]
             if not day or day >= event_date.isoformat():
                 continue
@@ -185,7 +190,7 @@ def prop_history_report(*, sport: str, player_name: str, market: str,
                          "value": sum(values), "game_id": raw.get("game_id"), "team": team})
         return _report(sport=sport, player=context.player_name, market=market, threshold=threshold,
                        source="nflverse player-week stats + official schedule", rows=rows,
-                       season_used=str(context.event_date.year), note="Current-season games before the event only. Passing TDs are not counted as player touchdown-scorer outcomes; player touchdowns sum rushing and receiving scores only.")
+                       season_used=season_used, note="Observed causal games only. A prior-season fallback is labeled explicitly and is not a current-season hit rate. Passing TDs are not counted as player touchdown-scorer outcomes; player touchdowns sum rushing and receiving scores only.")
 
     if sport == "MLB":
         from sports_edge.data.mlb_prop_data import resolve_player, game_log_stats
