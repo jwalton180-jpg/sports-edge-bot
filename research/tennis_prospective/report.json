@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 1172,
   "last_worker_run": {
-    "confirmed_radar_signals": 3,
+    "confirmed_radar_signals": 1,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,18 +227,18 @@
     "model_sides": 274,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-26T10:29:39.134037+00:00",
-    "open_contracts": 488,
+    "observed_at": "2026-10-26T10:34:02.760885+00:00",
+    "open_contracts": 486,
     "pending_settlements": 9,
     "post_surge_audits": 0,
-    "price_only_scanned": 84,
-    "price_only_watches": 8,
+    "price_only_scanned": 86,
+    "price_only_watches": 9,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
       "stale_live_score": 2,
-      "unique_live_score_not_found": 486
+      "unique_live_score_not_found": 484
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
