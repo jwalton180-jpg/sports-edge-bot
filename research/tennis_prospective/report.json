@@ -62,29 +62,29 @@
         "wins": 6
       },
       "4-10c": {
-        "settled": 25,
+        "settled": 26,
         "wins": 2
       },
       "causal_forward": {
-        "evaluated": 140,
+        "evaluated": 141,
         "minimum_prior_verified": 30,
-        "model_brier": 0.169588,
-        "quote_brier": 0.116551,
+        "model_brier": 0.169354,
+        "quote_brier": 0.115735,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.2,
-      "hypothetical_gross_dollars_per_contract": -0.82,
-      "losses": 147,
-      "model_brier": 0.16256865105116375,
+      "first_half_win_rate": 0.19767441860465115,
+      "hypothetical_gross_dollars_per_contract": -0.86,
+      "losses": 148,
+      "model_brier": 0.16241793109752325,
       "observations": 175,
-      "pending": 4,
-      "quote_brier": 0.1185029239766082,
+      "pending": 3,
+      "quote_brier": 0.11782325581395349,
       "second_half_win_rate": 0.08139534883720931,
-      "settled": 171,
-      "win_rate": 0.14035087719298245,
+      "settled": 172,
+      "win_rate": 0.13953488372093023,
       "wins": 24
     },
     "RECOVERY BUILDING \u2014 RESEARCH": {
@@ -224,12 +224,12 @@
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 180,
+    "model_sides": 184,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-10-31T20:41:44.843012+00:00",
-    "open_contracts": 218,
-    "pending_settlements": 13,
+    "observed_at": "2026-10-31T20:46:14.317878+00:00",
+    "open_contracts": 222,
+    "pending_settlements": 12,
     "post_surge_audits": 0,
     "price_only_scanned": 18,
     "price_only_watches": 1,
@@ -237,7 +237,7 @@
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 218
+      "unique_live_score_not_found": 222
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 722,
-  "total_pending": 13,
-  "total_settled": 709
+  "total_pending": 12,
+  "total_settled": 710
 }
