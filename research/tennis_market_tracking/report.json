@@ -3,28 +3,28 @@
   "by_lane": {},
   "extreme_dip_quote_snapshots": 0,
   "last_worker_run": {
-    "cheap_contracts": 77,
+    "cheap_contracts": 67,
     "errors": [],
     "healthy": true,
-    "history_contracts": 77,
+    "history_contracts": 67,
     "late_poll_gap": true,
-    "live_score_states": 12,
-    "observed_at": "2026-11-04T17:35:34.123609+00:00",
-    "open_contracts": 408,
-    "poll_gap_minutes": 902.9,
+    "live_score_states": 8,
+    "observed_at": "2026-11-04T22:51:54.135389+00:00",
+    "open_contracts": 386,
+    "poll_gap_minutes": 316.3,
     "post_alert_bid_samples": 0,
     "post_alert_eligible": 0,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "score_verified": true,
-    "suppressed_unverified_or_late": 7,
+    "suppressed_unverified_or_late": 3,
     "suppression_reasons": {
-      "stale_live_score": 10,
-      "unique_live_score_not_found": 398
+      "stale_live_score": 4,
+      "unique_live_score_not_found": 382
     },
     "survivability_cleared": 0,
-    "tracking_observations": 7
+    "tracking_observations": 3
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 14,
