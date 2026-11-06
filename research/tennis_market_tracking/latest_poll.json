@@ -1,23 +1,24 @@
 {
-  "cheap_contracts": 34,
+  "cheap_contracts": 21,
   "errors": [],
   "healthy": true,
-  "history_contracts": 34,
+  "history_contracts": 21,
   "late_poll_gap": true,
-  "live_score_states": 2,
-  "observed_at": "2026-11-06T03:38:27.207951+00:00",
-  "open_contracts": 260,
-  "poll_gap_minutes": 242.9,
+  "live_score_states": 10,
+  "observed_at": "2026-11-06T11:29:10.922376+00:00",
+  "open_contracts": 204,
+  "poll_gap_minutes": 470.7,
   "post_alert_bid_samples": 0,
   "post_alert_eligible": 0,
   "push_accepted": 0,
   "push_configured": true,
   "push_failed": 0,
   "score_verified": true,
-  "suppressed_unverified_or_late": 0,
+  "suppressed_unverified_or_late": 2,
   "suppression_reasons": {
-    "unique_live_score_not_found": 260
+    "stale_live_score": 10,
+    "unique_live_score_not_found": 194
   },
   "survivability_cleared": 0,
-  "tracking_observations": 0
+  "tracking_observations": 2
 }
