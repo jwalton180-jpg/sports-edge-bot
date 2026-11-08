@@ -54,7 +54,7 @@
         "wins": 4
       },
       "15-20c": {
-        "settled": 85,
+        "settled": 86,
         "wins": 14
       },
       "20-25c": {
@@ -62,29 +62,29 @@
         "wins": 6
       },
       "4-10c": {
-        "settled": 30,
+        "settled": 31,
         "wins": 3
       },
       "causal_forward": {
-        "evaluated": 160,
+        "evaluated": 162,
         "minimum_prior_verified": 30,
-        "model_brier": 0.172463,
-        "quote_brier": 0.118249,
+        "model_brier": 0.172144,
+        "quote_brier": 0.116977,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.2,
-      "hypothetical_gross_dollars_per_contract": -0.45,
-      "losses": 164,
-      "model_brier": 0.1657123440074555,
+      "first_half_win_rate": 0.19791666666666666,
+      "hypothetical_gross_dollars_per_contract": -0.68,
+      "losses": 166,
+      "model_brier": 0.16551420983546114,
       "observations": 193,
-      "pending": 2,
-      "quote_brier": 0.11972094240837697,
-      "second_half_win_rate": 0.08333333333333333,
-      "settled": 191,
-      "win_rate": 0.14136125654450263,
+      "pending": 0,
+      "quote_brier": 0.11863834196891192,
+      "second_half_win_rate": 0.08247422680412371,
+      "settled": 193,
+      "win_rate": 0.13989637305699482,
       "wins": 27
     },
     "RECOVERY BUILDING \u2014 RESEARCH": {
@@ -179,11 +179,11 @@
         "wins": 0
       },
       "10-15c": {
-        "settled": 28,
+        "settled": 29,
         "wins": 3
       },
       "15-20c": {
-        "settled": 26,
+        "settled": 27,
         "wins": 5
       },
       "20-25c": {
@@ -195,25 +195,25 @@
         "wins": 2
       },
       "causal_forward": {
-        "evaluated": 331,
+        "evaluated": 333,
         "minimum_prior_verified": 30,
-        "model_brier": 0.210223,
-        "quote_brier": 0.194465,
+        "model_brier": 0.209865,
+        "quote_brier": 0.193424,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
-      "first_half_win_rate": 0.3279569892473118,
-      "hypothetical_gross_dollars_per_contract": 3.38,
-      "losses": 259,
-      "model_brier": 0.2104429650144355,
+      "first_half_win_rate": 0.32620320855614976,
+      "hypothetical_gross_dollars_per_contract": 3.09,
+      "losses": 261,
+      "model_brier": 0.21012259447282086,
       "observations": 375,
-      "pending": 3,
-      "quote_brier": 0.1978483870967742,
-      "second_half_win_rate": 0.27956989247311825,
-      "settled": 372,
-      "win_rate": 0.30376344086021506,
+      "pending": 1,
+      "quote_brier": 0.19690401069518718,
+      "second_half_win_rate": 0.27807486631016043,
+      "settled": 374,
+      "win_rate": 0.30213903743315507,
       "wins": 113
     }
   },
@@ -224,20 +224,20 @@
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 122,
+    "model_sides": 118,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-08T01:50:49.307616+00:00",
-    "open_contracts": 250,
-    "pending_settlements": 5,
+    "observed_at": "2026-11-08T08:02:12.168917+00:00",
+    "open_contracts": 218,
+    "pending_settlements": 1,
     "post_surge_audits": 0,
-    "price_only_scanned": 26,
-    "price_only_watches": 1,
+    "price_only_scanned": 27,
+    "price_only_watches": 2,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 250
+      "unique_live_score_not_found": 218
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 785,
-  "total_pending": 5,
-  "total_settled": 780
+  "total_pending": 1,
+  "total_settled": 784
 }
