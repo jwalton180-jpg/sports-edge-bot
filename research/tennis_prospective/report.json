@@ -54,8 +54,8 @@
         "wins": 4
       },
       "15-20c": {
-        "settled": 86,
-        "wins": 14
+        "settled": 87,
+        "wins": 15
       },
       "20-25c": {
         "settled": 24,
@@ -66,26 +66,26 @@
         "wins": 3
       },
       "causal_forward": {
-        "evaluated": 165,
+        "evaluated": 166,
         "minimum_prior_verified": 30,
-        "model_brier": 0.180263,
-        "quote_brier": 0.114894,
+        "model_brier": 0.18116,
+        "quote_brier": 0.118252,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.19387755102040816,
-      "hypothetical_gross_dollars_per_contract": -0.8,
+      "hypothetical_gross_dollars_per_contract": 0.02,
       "losses": 169,
-      "model_brier": 0.17245047828620919,
+      "model_brier": 0.17324563383582742,
       "observations": 197,
-      "pending": 1,
-      "quote_brier": 0.1168591836734694,
-      "second_half_win_rate": 0.08163265306122448,
-      "settled": 196,
-      "win_rate": 0.1377551020408163,
-      "wins": 27
+      "pending": 0,
+      "quote_brier": 0.11967918781725889,
+      "second_half_win_rate": 0.09090909090909091,
+      "settled": 197,
+      "win_rate": 0.14213197969543148,
+      "wins": 28
     },
     "RECOVERY BUILDING \u2014 RESEARCH": {
       "1-4c": {
@@ -152,26 +152,26 @@
         "wins": 0
       },
       "causal_forward": {
-        "evaluated": 149,
+        "evaluated": 150,
         "minimum_prior_verified": 30,
-        "model_brier": 0.237138,
-        "quote_brier": 0.215095,
+        "model_brier": 0.237751,
+        "quote_brier": 0.217312,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.35555555555555557,
-      "hypothetical_gross_dollars_per_contract": 11.04,
+      "hypothetical_gross_dollars_per_contract": 11.78,
       "losses": 120,
-      "model_brier": 0.2302348960337,
+      "model_brier": 0.23078109064987293,
       "observations": 181,
-      "pending": 1,
-      "quote_brier": 0.21456,
-      "second_half_win_rate": 0.3111111111111111,
-      "settled": 180,
-      "win_rate": 0.3333333333333333,
-      "wins": 60
+      "pending": 0,
+      "quote_brier": 0.2164,
+      "second_half_win_rate": 0.31868131868131866,
+      "settled": 181,
+      "win_rate": 0.3370165745856354,
+      "wins": 61
     },
     "WATCH": {
       "1-4c": {
@@ -219,29 +219,30 @@
   },
   "extreme_dip_quote_snapshots": 1395,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 3,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 390,
+    "model_sides": 446,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-10T23:57:48.151457+00:00",
-    "open_contracts": 576,
-    "pending_settlements": 2,
+    "observed_at": "2026-11-11T03:13:01.232480+00:00",
+    "open_contracts": 668,
+    "pending_settlements": 0,
     "post_surge_audits": 0,
-    "price_only_scanned": 112,
-    "price_only_watches": 1,
+    "price_only_scanned": 141,
+    "price_only_watches": 5,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 576
+      "stale_live_score": 2,
+      "unique_live_score_not_found": 666
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
-    "score_states": 0,
+    "score_states": 8,
     "settlement_checks_due": 0,
     "survivability_cleared": 0
   },
@@ -252,6 +253,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 794,
-  "total_pending": 2,
-  "total_settled": 792
+  "total_pending": 0,
+  "total_settled": 794
 }
