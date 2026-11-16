@@ -217,7 +217,7 @@
       "wins": 116
     }
   },
-  "extreme_dip_quote_snapshots": 1425,
+  "extreme_dip_quote_snapshots": 1429,
   "last_worker_run": {
     "confirmed_radar_signals": 1,
     "early_watches": 0,
@@ -227,28 +227,28 @@
     "model_sides": 222,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-16T16:06:06.445292+00:00",
-    "open_contracts": 366,
+    "observed_at": "2026-11-16T16:10:30.283247+00:00",
+    "open_contracts": 362,
     "pending_settlements": 5,
     "post_surge_audits": 0,
-    "price_only_scanned": 77,
-    "price_only_watches": 4,
+    "price_only_scanned": 76,
+    "price_only_watches": 6,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "stale_live_score": 10,
-      "unique_live_score_not_found": 356
+      "stale_live_score": 8,
+      "unique_live_score_not_found": 354
     },
     "quoted_snapshots_added": 1,
     "recovery_building": 0,
-    "score_states": 12,
+    "score_states": 10,
     "settlement_checks_due": 0,
     "survivability_cleared": 0
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 67,
-  "recorded_snapshots": 7573,
+  "recorded_snapshots": 7577,
   "recovery_building_quote_snapshots": 132,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
