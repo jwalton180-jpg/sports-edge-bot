@@ -227,17 +227,17 @@
     "model_sides": 418,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-18T06:57:28.215326+00:00",
-    "open_contracts": 612,
+    "observed_at": "2026-11-18T07:01:46.162600+00:00",
+    "open_contracts": 610,
     "pending_settlements": 2,
     "post_surge_audits": 0,
-    "price_only_scanned": 133,
-    "price_only_watches": 2,
+    "price_only_scanned": 131,
+    "price_only_watches": 1,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 612
+      "unique_live_score_not_found": 610
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
