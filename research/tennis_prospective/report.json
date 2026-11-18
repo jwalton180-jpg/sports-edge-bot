@@ -54,7 +54,7 @@
         "wins": 5
       },
       "15-20c": {
-        "settled": 88,
+        "settled": 89,
         "wins": 15
       },
       "20-25c": {
@@ -66,25 +66,25 @@
         "wins": 4
       },
       "causal_forward": {
-        "evaluated": 173,
+        "evaluated": 174,
         "minimum_prior_verified": 30,
-        "model_brier": 0.183719,
-        "quote_brier": 0.1235,
+        "model_brier": 0.183107,
+        "quote_brier": 0.122956,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.18627450980392157,
-      "hypothetical_gross_dollars_per_contract": 1.18,
-      "losses": 174,
-      "model_brier": 0.17568770683316176,
+      "hypothetical_gross_dollars_per_contract": 1.01,
+      "losses": 175,
+      "model_brier": 0.17520756671214635,
       "observations": 206,
-      "pending": 2,
-      "quote_brier": 0.12408039215686276,
-      "second_half_win_rate": 0.10784313725490197,
-      "settled": 204,
-      "win_rate": 0.14705882352941177,
+      "pending": 1,
+      "quote_brier": 0.12361609756097562,
+      "second_half_win_rate": 0.10679611650485436,
+      "settled": 205,
+      "win_rate": 0.14634146341463414,
       "wins": 30
     },
     "RECOVERY BUILDING \u2014 RESEARCH": {
@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 1446,
   "last_worker_run": {
-    "confirmed_radar_signals": 2,
+    "confirmed_radar_signals": 1,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,17 +227,17 @@
     "model_sides": 334,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-18T23:03:49.464116+00:00",
-    "open_contracts": 444,
-    "pending_settlements": 6,
+    "observed_at": "2026-11-18T23:08:20.232685+00:00",
+    "open_contracts": 442,
+    "pending_settlements": 5,
     "post_surge_audits": 0,
-    "price_only_scanned": 87,
-    "price_only_watches": 1,
+    "price_only_scanned": 85,
+    "price_only_watches": 0,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 444
+      "unique_live_score_not_found": 442
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 830,
-  "total_pending": 6,
-  "total_settled": 824
+  "total_pending": 5,
+  "total_settled": 825
 }
