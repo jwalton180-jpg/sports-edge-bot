@@ -187,7 +187,7 @@
         "wins": 6
       },
       "20-25c": {
-        "settled": 64,
+        "settled": 65,
         "wins": 11
       },
       "4-10c": {
@@ -195,25 +195,25 @@
         "wins": 2
       },
       "causal_forward": {
-        "evaluated": 355,
+        "evaluated": 356,
         "minimum_prior_verified": 30,
-        "model_brier": 0.211094,
-        "quote_brier": 0.193541,
+        "model_brier": 0.210656,
+        "quote_brier": 0.193146,
         "sufficient_for_exploration": true,
         "trained_on_future_results": false
       },
       "chronological_out_of_sample_ready": true,
       "fees_fills_slippage": "unknown; not realized ROI",
       "first_half_win_rate": 0.3282828282828283,
-      "hypothetical_gross_dollars_per_contract": 2.57,
-      "losses": 278,
-      "model_brier": 0.21120973403852777,
+      "hypothetical_gross_dollars_per_contract": 2.34,
+      "losses": 279,
+      "model_brier": 0.21081725546857935,
       "observations": 399,
-      "pending": 3,
-      "quote_brier": 0.19681540404040404,
-      "second_half_win_rate": 0.2676767676767677,
-      "settled": 396,
-      "win_rate": 0.29797979797979796,
+      "pending": 2,
+      "quote_brier": 0.1964528967254408,
+      "second_half_win_rate": 0.2663316582914573,
+      "settled": 397,
+      "win_rate": 0.2972292191435768,
       "wins": 118
     }
   },
@@ -224,12 +224,12 @@
     "errors": [],
     "extreme_dip_observations": 0,
     "healthy": true,
-    "model_sides": 270,
+    "model_sides": 266,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-23T22:19:00.567364+00:00",
-    "open_contracts": 424,
-    "pending_settlements": 5,
+    "observed_at": "2026-11-23T22:23:27.612778+00:00",
+    "open_contracts": 420,
+    "pending_settlements": 4,
     "post_surge_audits": 0,
     "price_only_scanned": 99,
     "price_only_watches": 1,
@@ -237,7 +237,7 @@
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 424
+      "unique_live_score_not_found": 420
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
@@ -252,6 +252,6 @@
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
   "total_observations": 840,
-  "total_pending": 5,
-  "total_settled": 835
+  "total_pending": 4,
+  "total_settled": 836
 }
