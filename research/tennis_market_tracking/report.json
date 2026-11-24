@@ -8,23 +8,22 @@
     "healthy": true,
     "history_contracts": 100,
     "late_poll_gap": true,
-    "live_score_states": 4,
-    "observed_at": "2026-11-24T00:34:07.330456+00:00",
-    "open_contracts": 442,
-    "poll_gap_minutes": 698.5,
+    "live_score_states": 0,
+    "observed_at": "2026-11-24T10:22:02.893699+00:00",
+    "open_contracts": 406,
+    "poll_gap_minutes": 587.9,
     "post_alert_bid_samples": 0,
     "post_alert_eligible": 0,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
-    "score_verified": true,
-    "suppressed_unverified_or_late": 4,
+    "score_verified": false,
+    "suppressed_unverified_or_late": 7,
     "suppression_reasons": {
-      "stale_live_score": 4,
-      "unique_live_score_not_found": 438
+      "unique_live_score_not_found": 406
     },
     "survivability_cleared": 0,
-    "tracking_observations": 4
+    "tracking_observations": 7
   },
   "no_hindsight": "first observations are immutable; no holdout was reopened",
   "push_accepted_notifications": 14,
