@@ -165,8 +165,8 @@
       "hypothetical_gross_dollars_per_contract": 12.66,
       "losses": 127,
       "model_brier": 0.23064650911765625,
-      "observations": 194,
-      "pending": 2,
+      "observations": 195,
+      "pending": 3,
       "quote_brier": 0.21754791666666667,
       "second_half_win_rate": 0.3125,
       "settled": 192,
@@ -219,7 +219,7 @@
   },
   "extreme_dip_quote_snapshots": 1494,
   "last_worker_run": {
-    "confirmed_radar_signals": 1,
+    "confirmed_radar_signals": 3,
     "early_watches": 0,
     "errors": [],
     "extreme_dip_observations": 0,
@@ -227,21 +227,22 @@
     "model_sides": 74,
     "new_settlements": 0,
     "new_signals": 0,
-    "observed_at": "2026-11-27T12:46:52.097805+00:00",
+    "observed_at": "2026-11-27T12:51:15.190053+00:00",
     "open_contracts": 80,
-    "pending_settlements": 7,
+    "pending_settlements": 8,
     "post_surge_audits": 0,
-    "price_only_scanned": 16,
-    "price_only_watches": 2,
+    "price_only_scanned": 13,
+    "price_only_watches": 0,
     "push_accepted": 0,
     "push_configured": true,
     "push_failed": 0,
     "push_rejection_reasons": {
-      "unique_live_score_not_found": 80
+      "stale_live_score": 2,
+      "unique_live_score_not_found": 78
     },
     "quoted_snapshots_added": 0,
     "recovery_building": 0,
-    "score_states": 0,
+    "score_states": 2,
     "settlement_checks_due": 0,
     "survivability_cleared": 0
   },
@@ -251,7 +252,7 @@
   "recovery_building_quote_snapshots": 140,
   "schema_version": 1,
   "status": "prospective observational research, no confirmed model uplift",
-  "total_observations": 857,
-  "total_pending": 7,
+  "total_observations": 858,
+  "total_pending": 8,
   "total_settled": 850
 }
